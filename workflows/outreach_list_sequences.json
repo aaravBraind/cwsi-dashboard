@@ -1,0 +1,136 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Outreach.io — LIST SEQUENCES (export to file)\n\nOne-off helper to fetch your real sequences so we can define the SEQUENCE_MAP.\n\nRUN:\n1. \"Outreach: Get Sequences\" is pre-wired to the \"Outreach Sequence\" OAuth2 credential.\n2. Click \"Test workflow\".\n3. On \"Sequences -> File\", open the output and DOWNLOAD outreach_sequences.json.\n4. Send that file back for analysis -> we map each sequence_id to region + pillar.\n\nPagination is OFF (page[size]=1000 returns all ~15 sequences in one request).\nRead-only: this workflow does NOT write to the database.\n",
+          "height": 260,
+          "width": 460
+        },
+        "id": "d50b460a-5e43-43d6-b093-d68fa73bdeba",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          144,
+          400
+        ]
+      },
+      {
+        "parameters": {},
+        "id": "cd392719-db02-497e-a211-72595472d097",
+        "name": "When clicking Test",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          144,
+          752
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.outreach.io/api/v2/sequences?page[size]=1000",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.api+json"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "a43c8f03-af77-4218-91eb-02553a8359c5",
+        "name": "Outreach: Get Sequences",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          384,
+          752
+        ],
+        "credentials": {
+          "oAuth2Api": {
+            "id": "GyVW4j5ZbEKjDTRQ",
+            "name": "Outreach Sequence"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Flatten Outreach /sequences -> one row per sequence for export/analysis.\n// Spreads ALL sequence attributes so we can see the real field names + values.\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const seq of list) {\n    if (!seq || seq.id == null) continue;\n    const a = seq.attributes || {};\n    out.push({ json: Object.assign(\n      { sequence_id: String(seq.id),\n        _name: a.name || '',\n        _tags: Array.isArray(a.tags) ? a.tags.join(' | ') : '' },\n      a) });\n  }\n}\nif (out.length === 0) {\n  throw new Error('No sequences returned - check the Outreach OAuth2 credential and token scope read_sequences.');\n}\nreturn out;"
+        },
+        "id": "1091d12d-b1a2-4582-9b41-66dd68608332",
+        "name": "Flatten Sequences",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          624,
+          752
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "toJson",
+          "options": {
+            "format": true,
+            "fileName": "outreach_sequences.json"
+          }
+        },
+        "id": "07988937-c088-47c1-bd10-00b4b33c7b88",
+        "name": "Sequences → File",
+        "type": "n8n-nodes-base.convertToFile",
+        "typeVersion": 1.1,
+        "position": [
+          864,
+          752
+        ]
+      }
+    ],
+    "connections": {
+      "When clicking Test": {
+        "main": [
+          [
+            {
+              "node": "Outreach: Get Sequences",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Outreach: Get Sequences": {
+        "main": [
+          [
+            {
+              "node": "Flatten Sequences",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Flatten Sequences": {
+        "main": [
+          [
+            {
+              "node": "Sequences → File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    }
+  }

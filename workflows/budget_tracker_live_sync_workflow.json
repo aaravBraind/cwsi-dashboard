@@ -1,0 +1,239 @@
+{
+  "name": "Budget Tracker Live Sync -> fact_marketing_spend",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Live Budget Tracker -> fact_marketing_spend  (scheduled full-replace)\n\nSETUP AFTER IMPORT:\n1. On \"Read Spend Tracker\", pick your Microsoft Excel credential, then select the\n   Workbook (\"Marketing Budget Tracker 2026\") and the Worksheet = **Spend Tracker**.\n2. Range is preset A1:I2000 with keyRow=1 (header on row 2) and dataStartRow=2 (data from row 3).\n   If the sheet layout changes (title row removed/added), adjust keyRow/dataStartRow.\n\nBEHAVIOUR:\n- Runs daily; reads the live Spend Tracker, then FULL-REPLACES source='budget_tracker'\n  (delete all, re-insert) so edits/deletes/corrections are reflected exactly.\n- Market -> region (UK/UK & IE -> UKI, BELUX -> BeLux, NL -> NL, ALL/blank -> UNASSIGNED).\n- amount is NATIVE EUR; negative correction lines are kept (net = SUM(amount)).\n- The \"TEST IGNORE\" sheet is excluded because we read only the Spend Tracker worksheet.\n",
+        "height": 320,
+        "width": 540
+      },
+      "id": "note-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "sch-1",
+      "name": "Schedule: Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "worksheet",
+        "operation": "readRows",
+        "workbook": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "worksheet": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "useRange": true,
+        "range": "A1:I2000",
+        "keyRow": 1,
+        "dataStartRow": 2,
+        "options": {}
+      },
+      "id": "xl-1",
+      "name": "Read Spend Tracker",
+      "type": "n8n-nodes-base.microsoftExcel",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the live \"Spend Tracker\" sheet -> fact_marketing_spend rows.\n// Source rows already keyed by header (Excel node keyRow=1 / dataStartRow=2).\n// Market -> region; native EUR; signed corrections kept; the \"TEST IGNORE\" sheet is\n// excluded simply by selecting the Spend Tracker worksheet.\n\nfunction findKey(obj, token) {\n  const k = Object.keys(obj).find((k) => k.toLowerCase().indexOf(token) >= 0);\n  return k || null;\n}\nfunction num(v) {\n  const n = Number(String(v == null ? '' : v).replace(/[^0-9.\\-]/g, ''));\n  return isNaN(n) ? 0 : n;\n}\nfunction toISO(v) {\n  if (v == null || v === '') return null;\n  if (typeof v === 'number') {            // Excel serial date\n    const d = new Date(Math.round((v - 25569) * 86400 * 1000));\n    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);\n  }\n  const s = String(v).trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const t = Date.parse(s);\n  return isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);\n}\nfunction regionCode(m) {\n  const s = String(m || '').trim().toUpperCase();\n  if (s === 'NL') return 'NL';\n  if (s === 'BELUX') return 'BeLux';\n  if (s === 'UK' || s === 'UK & IE' || s === 'UK&IE' || s === 'UKI' || s === 'UK & IRL') return 'UKI';\n  return 'UNASSIGNED'; // ALL / blank / anything else\n}\n\nconst rows = $input.all();\nlet kDate, kQ, kLine, kAud, kMarket, kStatus, kOwner, kCost, kNotes;\nif (rows.length) {\n  const r0 = rows[0].json;\n  kDate = findKey(r0, 'date'); kQ = findKey(r0, 'quarter'); kLine = findKey(r0, 'budget line');\n  kAud = findKey(r0, 'audience'); kMarket = findKey(r0, 'market'); kStatus = findKey(r0, 'status');\n  kOwner = findKey(r0, 'owner'); kCost = findKey(r0, 'cost'); kNotes = findKey(r0, 'note');\n}\n\nconst out = [];\nlet rowsIn = 0;\nfor (const item of rows) {\n  const j = item.json || {};\n  const date = toISO(j[kDate]);\n  const amount = num(j[kCost]);\n  const market = j[kMarket];\n  // skip blank/filler rows (no date and no amount)\n  if (!date && amount === 0 && !market) continue;\n  if (!date) continue;            // a real spend line always has a date\n  rowsIn++;\n  out.push({ json: {\n    activity_date: date,\n    quarter: j[kQ] != null ? String(j[kQ]).trim() : null,\n    budget_line: j[kLine] != null ? String(j[kLine]).trim() : null,\n    primary_audience: j[kAud] != null ? String(j[kAud]).trim() : null,\n    market_raw: market != null ? String(market).trim() : null,\n    region_code: regionCode(market),\n    status: j[kStatus] != null ? String(j[kStatus]).trim() : null,\n    owner: j[kOwner] != null ? String(j[kOwner]).trim() : null,\n    amount: amount,\n    notes: j[kNotes] != null ? String(j[kNotes]).trim() : null\n  } });\n}\nif (out.length === 0) {\n  throw new Error('Budget sync: no spend rows parsed - check the workbook/worksheet selection and the keyRow/dataStartRow offsets (title row sits above the header).');\n}\nreturn out;"
+      },
+      "id": "code-parse",
+      "name": "Parse Budget Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM fact_marketing_spend WHERE source = 'budget_tracker';",
+        "options": {}
+      },
+      "id": "pg-del",
+      "name": "Delete existing budget rows",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        680,
+        460
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Re-emit parsed rows after the delete, so the insert has data even though\n// the delete node returns no items.\nreturn $('Parse Budget Rows').all();"
+      },
+      "id": "code-reload",
+      "name": "Reload Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_marketing_spend\n  (activity_date, quarter, budget_line, primary_audience, market_raw, region_id,\n   status, owner, amount, currency, notes, source)\nVALUES (\n  $1, $2, $3, $4, $5,\n  (SELECT region_id FROM dim_region WHERE region_code = $6),\n  $7, $8, $9, 'EUR', $10, 'budget_tracker');",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.activity_date, $json.quarter, $json.budget_line, $json.primary_audience, $json.market_raw, $json.region_code, $json.status, $json.owner, $json.amount, $json.notes] }}"
+        }
+      },
+      "id": "pg-ins",
+      "name": "Insert fact_marketing_spend",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1120,
+        460
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('budget_tracker', CURRENT_DATE, $1, $2, 0, 0);",
+        "options": {
+          "queryBatching": "single",
+          "queryReplacement": "={{ [ $('Parse Budget Rows').all().length, $('Parse Budget Rows').all().length ] }}"
+        }
+      },
+      "id": "pg-dq",
+      "name": "Write data_quality_log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1340,
+        460
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule: Daily": {
+      "main": [
+        [
+          {
+            "node": "Read Spend Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Spend Tracker": {
+      "main": [
+        [
+          {
+            "node": "Parse Budget Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Budget Rows": {
+      "main": [
+        [
+          {
+            "node": "Delete existing budget rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete existing budget rows": {
+      "main": [
+        [
+          {
+            "node": "Reload Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reload Rows": {
+      "main": [
+        [
+          {
+            "node": "Insert fact_marketing_spend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert fact_marketing_spend": {
+      "main": [
+        [
+          {
+            "node": "Write data_quality_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+  }
+}

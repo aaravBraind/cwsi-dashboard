@@ -1,0 +1,342 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Google Ads historical export -> fact_channel_daily\n\nT-2 edge case: 'Google Ads developer token not yet approved -> stub the source as historical, wire the API later.'\n\nAFTER IMPORT:\n1. Open 'Drive: Watch Drop Folder' and select your Google Drive OAuth2 credential.\n2. Ask Aryamaan to name the export file with 'google_ads' in it, e.g. google_ads_historical.csv (only matching names are processed).\n\nBehaviour:\n- Handles Google Ads CSV quirks: title/date-range preamble lines before the header, 'Total: ...' footer rows, '--' placeholder values, comma or tab delimiter.\n- Export should be CSV (UTF-8), daily breakdown, columns: Day, Campaign, Campaign ID (add it via column picker), Cost, Impressions, Clicks, Conversions.\n- campaign_key = 'GADS_' + Campaign ID (falls back to a slug of the campaign name if the ID column was not included).\n- Conversions are mapped to leads. TODO: confirm with Margot whether Ads conversions = leads for the dashboard.\n- Region parsed from campaign name; otherwise UNASSIGNED for triage.",
+          "height": 440,
+          "width": 480
+        },
+        "id": "dd2a9096-f376-44e7-b793-556458bab7e8",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "pollTimes": {
+            "item": [
+              {
+                "mode": "everyHour"
+              }
+            ]
+          },
+          "triggerOn": "specificFolder",
+          "folderToWatch": {
+            "__rl": true,
+            "value": "11hOJq7fj7IBwkEWWe4pv9nNefe0mWYGd",
+            "mode": "id"
+          },
+          "event": "fileCreated",
+          "options": {}
+        },
+        "id": "68bfacf8-b75e-49e1-aa37-e92a8387265d",
+        "name": "Drive: Watch Drop Folder",
+        "type": "n8n-nodes-base.googleDriveTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          560
+        ],
+        "credentials": {
+          "googleDriveOAuth2Api": {
+            "id": "fQTUvc2y3OMxNeiG",
+            "name": "Google Drive OAuth2 API"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.name }}",
+                "rightValue": "google_ads",
+                "operator": {
+                  "type": "string",
+                  "operation": "contains"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "6603fac6-45bc-4731-af92-26af3f17d473",
+        "name": "Is Google Ads export?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          208,
+          560
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "download",
+          "fileId": {
+            "__rl": true,
+            "value": "={{ $json.id }}",
+            "mode": "id"
+          },
+          "options": {}
+        },
+        "id": "ed42e8bc-1d2e-4158-8282-7900f89ff6df",
+        "name": "Download File",
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [
+          416,
+          544
+        ],
+        "credentials": {
+          "googleDriveOAuth2Api": {
+            "id": "fQTUvc2y3OMxNeiG",
+            "name": "Google Drive OAuth2 API"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "text",
+          "options": {}
+        },
+        "id": "98a9e83d-7688-44c3-bff3-5541208d05f2",
+        "name": "Extract Text",
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          608,
+          544
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Parse + validate Google Ads Campaign performance export -> fact rows.\nlet text = String($input.first().json.data || '');\ntext = text.replace(/^\\uFEFF/, '');\nif (text.indexOf('\\u0000') >= 0) {\n  throw new Error('Google Ads CSV rejected - file appears UTF-16 encoded; re-export as plain CSV (UTF-8), not Excel CSV');\n}\n\nfunction parseCSV(t, delim) {\n  const rows = []; let row = []; let cur = ''; let inQ = false;\n  for (let i = 0; i < t.length; i++) {\n    const ch = t[i];\n    if (inQ) {\n      if (ch === '\"') { if (t[i + 1] === '\"') { cur += '\"'; i++; } else { inQ = false; } }\n      else { cur += ch; }\n    } else if (ch === '\"') { inQ = true; }\n    else if (ch === delim) { row.push(cur); cur = ''; }\n    else if (ch === '\\n') { row.push(cur); rows.push(row); row = []; cur = ''; }\n    else if (ch === '\\r') { /* skip */ }\n    else { cur += ch; }\n  }\n  if (cur.length || row.length) { row.push(cur); rows.push(row); }\n  return rows;\n}\n\nconst norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/ +/g, ' ').trim();\n\n// Google Ads exports put a title + date-range preamble above the header. Find the header line.\nconst lines = text.split('\\n');\nlet delim = ',';\nfor (let i = 0; i < Math.min(lines.length, 10); i++) {\n  if (lines[i].indexOf('\\t') >= 0) { delim = '\\t'; break; }\n}\nconst all = parseCSV(text, delim).filter((r) => r.some((c) => String(c).trim() !== ''));\nlet hIdx = -1;\nfor (let i = 0; i < Math.min(all.length, 10); i++) {\n  const h = all[i].map(norm);\n  const hasCampaign = h.some((c) => c === 'campaign' || c.indexOf('campaign') >= 0);\n  const hasMetric = h.some((c) => c.indexOf('cost') >= 0 || c.indexOf('impr') >= 0);\n  if (hasCampaign && hasMetric) { hIdx = i; break; }\n}\nif (hIdx < 0) {\n  throw new Error('Google Ads CSV rejected - header row not found (expected Campaign + Cost/Impressions columns). Use the Campaign performance report with daily breakdown.');\n}\nconst headers = all[hIdx].map(norm);\nfunction col() {\n  for (let n = 0; n < arguments.length; n++) {\n    const want = arguments[n];\n    let i = headers.findIndex((h) => h === want);\n    if (i < 0) i = headers.findIndex((h) => h.indexOf(want) >= 0);\n    if (i >= 0) return i;\n  }\n  return -1;\n}\nconst iDate = col('day', 'date');\nconst iId = col('campaign id');\nlet iName = headers.findIndex((h) => h === 'campaign');\nif (iName < 0) iName = col('campaign');\nif (iName === iId) iName = headers.findIndex((h, idx) => h.indexOf('campaign') >= 0 && idx !== iId);\nconst iSpend = col('cost', 'total cost', 'spend');\nconst iImpr = col('impr', 'impressions');\nconst iClicks = col('clicks');\nconst iConv = col('conversions', 'conv');\nconst missing = [];\nif (iDate < 0) missing.push('Day/Date');\nif (iName < 0) missing.push('Campaign');\nif (iSpend < 0) missing.push('Cost');\nif (iImpr < 0) missing.push('Impressions');\nif (iClicks < 0) missing.push('Clicks');\nif (missing.length) {\n  throw new Error('Google Ads CSV rejected - missing required columns: ' + missing.join(', '));\n}\n\nfunction num(v) {\n  const s = String(v == null ? '' : v).trim();\n  if (s === '--' || s === '') return 0;\n  const n = Number(s.replace(/[^0-9.\\-]/g, ''));\n  return isNaN(n) ? 0 : n;\n}\nfunction toISO(v) {\n  const s = String(v || '').trim();\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const t = Date.parse(s);\n  if (!isNaN(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction slug(s) {\n  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);\n}\nfunction regionFromName(name) {\n  const n = ' ' + String(name || '').toLowerCase() + ' ';\n  if (/(belux|benelux|belgium|luxembourg)/.test(n)) return 'BeLux';\n  if (/(netherlands|holland)/.test(n) || / nl /.test(n) || /[ _\\-]nl[ _\\-]/.test(n)) return 'NL';\n  if (/(uki|uk i|uk and ireland|united kingdom|ireland)/.test(n) || / uk /.test(n) || /[ _\\-]uk[ _\\-]/.test(n)) return 'UKI';\n  return 'UNASSIGNED';\n}\n\nconst agg = {};\nlet rowsIn = 0;\nlet issues = 0;\nfor (let i = hIdx + 1; i < all.length; i++) {\n  const r = all[i];\n  const nameRaw = String(r[iName] || '').trim();\n  const nameNorm = norm(nameRaw);\n  if (!nameRaw) continue;\n  if (nameNorm.indexOf('total') === 0) continue; // 'Total: ...' footer rows\n  rowsIn++;\n  const date = toISO(r[iDate]);\n  if (!date) { issues++; continue; }\n  const idRaw = iId >= 0 ? String(r[iId] || '').trim() : '';\n  const ck = idRaw ? 'GADS_' + idRaw : 'GADS_' + slug(nameRaw);\n  const region = regionFromName(nameRaw);\n  const key = ck + '|' + region + '|' + date;\n  if (!agg[key]) {\n    agg[key] = { campaign_key: ck, campaign_name: nameRaw, region_code: region,\n      channel_name: 'Paid Search', activity_date: date, source: 'google_ads',\n      spend: 0, impressions: 0, clicks: 0, leads: 0 };\n  }\n  const a = agg[key];\n  a.spend += num(r[iSpend]);\n  a.impressions += num(r[iImpr]);\n  a.clicks += num(r[iClicks]);\n  a.leads += iConv >= 0 ? num(r[iConv]) : 0; // TODO: confirm conversions==leads with Margot\n}\n\nconst out = Object.values(agg);\nif (out.length === 0) {\n  throw new Error('Google Ads CSV rejected - no valid data rows after validation (rows in: ' + rowsIn + ', invalid: ' + issues + ')');\n}\nconst meta = { rows_in: rowsIn, issues: issues, issue_pct: rowsIn ? Number(((issues / rowsIn) * 100).toFixed(2)) : 0 };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
+        },
+        "id": "b95efdae-a4a1-4fb4-bf68-b3d3f7a7ec48",
+        "name": "Parse + Validate Ads CSV",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          800,
+          544
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Distinct campaigns for dim_campaign upsert.\nconst seen = {};\nconst out = [];\nfor (const item of $('Parse + Validate Ads CSV').all()) {\n  const j = item.json;\n  if (seen[j.campaign_key]) continue;\n  seen[j.campaign_key] = 1;\n  out.push({ json: { campaign_key: j.campaign_key, campaign_name: j.campaign_name,\n    channel_name: j.channel_name, source_system: 'google_ads' } });\n}\nreturn out;"
+        },
+        "id": "c409499b-1c3c-4632-962a-cc377b192569",
+        "name": "Distinct Campaigns",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          992,
+          544
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  channel_id = EXCLUDED.channel_id;",
+          "options": {
+            "queryBatching": "independently",
+            "queryReplacement": "={{ $json.campaign_key }},{{ $json.channel_name }},{{ $json.campaign_name }},{{ $json.source_system }}"
+          }
+        },
+        "id": "a0a7ea71-7e58-4d43-b36d-5df4732dec4b",
+        "name": "Upsert dim_campaign",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1184,
+          544
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "ch1cQkzV21w5Wpxf",
+            "name": "CWSI"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Re-load the validated fact rows after the dim upsert.\nreturn $('Parse + Validate Ads CSV').all();"
+        },
+        "id": "78dc3534-7a1b-4968-ac3c-904a47e96d11",
+        "name": "Fact Rows",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1376,
+          544
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO fact_channel_daily\n  (campaign_key, region_id, channel_id, pillar_id, activity_date, source,\n   spend, impressions, clicks, leads)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  (SELECT channel_id FROM dim_channel WHERE channel_name = $3),\n  NULL,\n  $4, $5, $6, $7, $8, $9)\nON CONFLICT ON CONSTRAINT uq_fact_grain DO UPDATE SET\n  spend = EXCLUDED.spend,\n  impressions = EXCLUDED.impressions,\n  clicks = EXCLUDED.clicks,\n  leads = EXCLUDED.leads,\n  loaded_at = now();",
+          "options": {
+            "queryBatching": "independently",
+            "queryReplacement": "={{ $json.campaign_key }},{{ $json.region_code }},{{ $json.channel_name }},{{ $json.activity_date }},{{ $json.source }},{{ $json.spend }},{{ $json.impressions }},{{ $json.clicks }},{{ $json.leads }}"
+          }
+        },
+        "id": "819462f3-9309-4565-951e-d56ac92ac02d",
+        "name": "Upsert fact_channel_daily",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1568,
+          544
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "ch1cQkzV21w5Wpxf",
+            "name": "CWSI"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('google_ads', CURRENT_DATE, $1, $2, $3, $4);",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ $(\"Parse + Validate Ads CSV\").first().json._meta.rows_in }},{{ $(\"Fact Rows\").all().length }},{{ $(\"Parse + Validate Ads CSV\").first().json._meta.issues }},{{ $(\"Parse + Validate Ads CSV\").first().json._meta.issue_pct }}"
+          }
+        },
+        "id": "4183f727-ddef-4bf9-9234-1bd500b906c6",
+        "name": "Write data_quality_log",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1760,
+          544
+        ],
+        "executeOnce": true,
+        "credentials": {
+          "postgres": {
+            "id": "ch1cQkzV21w5Wpxf",
+            "name": "CWSI"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Drive: Watch Drop Folder": {
+        "main": [
+          [
+            {
+              "node": "Is Google Ads export?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Google Ads export?": {
+        "main": [
+          [
+            {
+              "node": "Download File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download File": {
+        "main": [
+          [
+            {
+              "node": "Extract Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Text": {
+        "main": [
+          [
+            {
+              "node": "Parse + Validate Ads CSV",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse + Validate Ads CSV": {
+        "main": [
+          [
+            {
+              "node": "Distinct Campaigns",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Distinct Campaigns": {
+        "main": [
+          [
+            {
+              "node": "Upsert dim_campaign",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert dim_campaign": {
+        "main": [
+          [
+            {
+              "node": "Fact Rows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fact Rows": {
+        "main": [
+          [
+            {
+              "node": "Upsert fact_channel_daily",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert fact_channel_daily": {
+        "main": [
+          [
+            {
+              "node": "Write data_quality_log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    }
+  }

@@ -1,0 +1,136 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Outreach.io — LIST SEQUENCE STEPS (export to file)\n\nOne-off helper to inspect step-level data (for the \"Engagement by Step\" panel).\n\nBEFORE RUNNING:\n- The OAuth2 credential needs scope **sequenceSteps.read** (in addition to sequences.read).\n  If you only granted sequences.read, add it and reconnect the credential.\n\nRUN:\n1. \"Get Sequence Steps\" is pre-wired to the \"Outreach Sequence\" OAuth2 credential.\n2. Click \"Test workflow\".\n3. On \"Steps -> File\", open the output and DOWNLOAD outreach_sequence_steps.json.\n4. Send it back -> we confirm which per-step counters exist and design the step table.\n\nPulls up to 1000 steps (page[size]=1000), no pagination. Read-only: no DB writes.\n",
+          "height": 280,
+          "width": 470
+        },
+        "id": "ba4284e5-7bde-4a9e-ba65-13acc199250f",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {},
+        "id": "fb8e6f8e-9ac9-4c14-a180-9eecdd9b046d",
+        "name": "When clicking Test",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.outreach.io/api/v2/sequenceSteps?page[size]=1000",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.api+json"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "fb7189b2-9b97-4106-95f9-ee420c247b7b",
+        "name": "Get Sequence Steps",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          368
+        ],
+        "credentials": {
+          "oAuth2Api": {
+            "id": "GyVW4j5ZbEKjDTRQ",
+            "name": "Outreach Sequence"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Flatten Outreach /sequenceSteps -> one row per step for analysis.\n// Spreads ALL step attributes so we can see whether per-step engagement counters\n// (open/click/reply) exist, plus the step order, type, and parent sequence id.\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const st of list) {\n    if (!st || st.id == null) continue;\n    const a = st.attributes || {};\n    const rel = st.relationships || {};\n    const seqId = rel.sequence && rel.sequence.data && rel.sequence.data.id;\n    out.push({ json: Object.assign(\n      { step_id: String(st.id), sequence_id: seqId != null ? String(seqId) : null },\n      a) });\n  }\n}\nif (out.length === 0) {\n  throw new Error('No sequence steps returned - check the OAuth2 credential and that the token scope includes sequenceSteps.read.');\n}\nreturn out;"
+        },
+        "id": "db247274-ee56-41ac-a0da-29b3b267e996",
+        "name": "Flatten Steps",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "toJson",
+          "options": {
+            "format": true,
+            "fileName": "outreach_sequence_steps.json"
+          }
+        },
+        "id": "14c45e17-a3da-4525-86aa-2ebf4a183f7d",
+        "name": "Steps → File",
+        "type": "n8n-nodes-base.convertToFile",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          368
+        ]
+      }
+    ],
+    "connections": {
+      "When clicking Test": {
+        "main": [
+          [
+            {
+              "node": "Get Sequence Steps",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Sequence Steps": {
+        "main": [
+          [
+            {
+              "node": "Flatten Steps",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Flatten Steps": {
+        "main": [
+          [
+            {
+              "node": "Steps → File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    }
+  }

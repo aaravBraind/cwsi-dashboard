@@ -1,0 +1,327 @@
+{
+  "name": "LinkedIn Ingestion -> fact_channel_daily (snapshot)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## LinkedIn export -> fact_channel_daily  (SNAPSHOT-aware)\n\nAFTER IMPORT:\n1. Open 'Drive: Watch Drop Folder' and select a Google Drive OAuth2 credential that can read the BraindAI drop folder.\n2. Drop a test file (e.g. account_<id>_creative_performance_report.csv or linkedin_export_2026-06.csv) to verify end-to-end.\n\nBehaviour:\n- Watches the drop folder; processes files whose name contains 'linkedin_export' OR 'performance_report' (case-insensitive).\n- BOM-aware decode: handles LinkedIn UI exports (UTF-16) as well as UTF-8. No longer rejects UTF-16.\n- Preamble + header auto-detected; file is REJECTED with a clear error if required metric columns are missing (T-3 AC).\n- SNAPSHOT semantics: the LinkedIn \"Ad/Creative Performance Report\" is a lifetime-to-date aggregate with NO per-day rows\n  (every row's Start Date = the report start date). activity_date is therefore taken from the report's\n  \"Date Generated\" preamble line (fallback: \"Report End\"). Re-running with a newer report inserts a new snapshot;\n  re-running the same report date upserts in place. NOTE: figures are cumulative-to-date, not incremental daily.\n- Ad-level rows are rolled up to campaign x region. campaign_key = 'LI_' + Campaign ID.\n- Region parsed from campaign name tokens (UKI / BeLux / NL); otherwise UNASSIGNED for triage. Most legacy CWSI\n  campaign names carry no region token -> expect a chunk of UNASSIGNED. TODO: confirm naming convention with Margot/Fluoro.\n- Spend is in the account currency (GBP in the sample) and is stored as-is; add FX normalisation if the warehouse needs it.\n- Leads here = LinkedIn-reported leads; pixel reconciliation against SF thank-you page is a separate T-3 step.",
+        "height": 440,
+        "width": 480
+      },
+      "id": "701acb1c-f364-4572-94cc-813938a06489",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "11hOJq7fj7IBwkEWWe4pv9nNefe0mWYGd",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "d4679ef6-9f59-4a7c-940e-b0894da7ba51",
+      "name": "Drive: Watch Drop Folder",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        528
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "fQTUvc2y3OMxNeiG",
+          "name": "Google Drive OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "linkedin_export",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "performance_report",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "395b7881-f0db-4ccc-81b3-957a89cb59cc",
+      "name": "Is LinkedIn export?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        208,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "a3dcddb7-e22e-4ff2-b480-9f360c289ad4",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        416,
+        512
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "fQTUvc2y3OMxNeiG",
+          "name": "Google Drive OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse + validate LinkedIn Ad / Creative Performance export -> fact rows (SNAPSHOT ingest).\n// CHANGES vs original daily-export version:\n//   1. BOM-aware decode: handles UTF-16 LE/BE *and* UTF-8 (LinkedIn UI exports are UTF-16).\n//   2. Snapshot semantics: this export is a lifetime-to-date aggregate with NO per-day rows\n//      (every row's \"Start Date (in UTC)\" = the report's start date). We therefore stamp\n//      activity_date from the report's \"Date Generated\" preamble line, NOT the row date.\n//   3. Skips the multi-line preamble and auto-detects the header row.\n// Rejects the whole file with a clear error if required metric columns are missing (T-3 AC).\n\n// ---- 1. Decode bytes (BOM-aware). Falls back to upstream text if no binary present. ----\nfunction decodeBuf(buf) {\n  if (!buf || !buf.length) return '';\n  if (buf[0] === 0xFF && buf[1] === 0xFE) return buf.toString('utf16le');        // UTF-16 LE\n  if (buf[0] === 0xFE && buf[1] === 0xFF) {                                       // UTF-16 BE -> byte-swap\n    const s = Buffer.alloc(buf.length);\n    for (let i = 0; i + 1 < buf.length; i += 2) { s[i] = buf[i + 1]; s[i + 1] = buf[i]; }\n    return s.toString('utf16le');\n  }\n  return buf.toString('utf8');\n}\nlet text;\ntry {\n  const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\n  text = decodeBuf(buf);\n} catch (e) {\n  text = String($input.first().json.data || '');\n}\ntext = text.replace(/^\\uFEFF/, '');\nif (text.indexOf('\\x00') >= 0) text = text.replace(/\\x00/g, ''); // scrub stray nulls if any slipped through\n\n// ---- 2. Snapshot date from the report preamble ----\nfunction toISOlong(s) { const t = Date.parse(s); return isNaN(t) ? null : new Date(t).toISOString().slice(0, 10); }\nfunction snapshotDate(t) {\n  let m = t.match(/Date Generated:\\s*([A-Za-z]+ \\d{1,2},\\s*\\d{4})/i);\n  if (!m) m = t.match(/Report End:\\s*([A-Za-z]+ \\d{1,2},\\s*\\d{4})/i);\n  if (m) { const iso = toISOlong(m[1]); if (iso) return iso; }\n  return new Date().toISOString().slice(0, 10); // last-resort fallback\n}\nconst snapDate = snapshotDate(text);\n\n// ---- 3. CSV/TSV parse (quoted, multi-line safe) ----\nfunction parseCSV(t, delim) {\n  const rows = []; let row = []; let cur = ''; let inQ = false;\n  for (let i = 0; i < t.length; i++) {\n    const ch = t[i];\n    if (inQ) {\n      if (ch === '\"') { if (t[i + 1] === '\"') { cur += '\"'; i++; } else { inQ = false; } }\n      else { cur += ch; }\n    } else if (ch === '\"') { inQ = true; }\n    else if (ch === delim) { row.push(cur); cur = ''; }\n    else if (ch === '\\n') { row.push(cur); rows.push(row); row = []; cur = ''; }\n    else if (ch === '\\r') { /* skip */ }\n    else { cur += ch; }\n  }\n  if (cur.length || row.length) { row.push(cur); rows.push(row); }\n  return rows;\n}\nconst delim = text.indexOf('\\t') >= 0 ? '\\t' : ','; // LinkedIn UI export is tab-delimited\nconst all = parseCSV(text, delim).filter((r) => r.some((c) => String(c).trim() !== ''));\n\nconst norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/ +/g, ' ').trim();\nlet hIdx = -1;\nfor (let i = 0; i < Math.min(all.length, 15); i++) {\n  const h = all[i].map(norm);\n  if (h.some((c) => c.indexOf('campaign name') >= 0) && h.some((c) => c.indexOf('impressions') >= 0)) { hIdx = i; break; }\n}\nif (hIdx < 0) {\n  throw new Error('LinkedIn CSV rejected - header row not found (expected Campaign Name + Impressions columns). Check the export is a LinkedIn Ad/Campaign performance report.');\n}\nconst headers = all[hIdx].map(norm);\nfunction col() {\n  for (let n = 0; n < arguments.length; n++) {\n    const want = arguments[n];\n    let i = headers.findIndex((h) => h === want);\n    if (i < 0) i = headers.findIndex((h) => h.indexOf(want) >= 0);\n    if (i >= 0) return i;\n  }\n  return -1;\n}\nconst iName = col('campaign name');\nconst iId = col('campaign id');\nconst iSpend = col('total spent', 'spent', 'cost');\nconst iImpr = col('impressions');\nconst iClicks = col('clicks');\nconst iLeads = col('leads');\nconst missing = [];\nif (iName < 0) missing.push('Campaign Name');\nif (iId < 0) missing.push('Campaign ID');\nif (iSpend < 0) missing.push('Total Spent');\nif (iImpr < 0) missing.push('Impressions');\nif (iClicks < 0) missing.push('Clicks');\nif (iLeads < 0) missing.push('Leads');\nif (missing.length) {\n  throw new Error('LinkedIn CSV rejected - missing required columns: ' + missing.join(', '));\n}\n\nfunction num(v) {\n  const n = Number(String(v == null ? '' : v).replace(/[^0-9.\\-]/g, ''));\n  return isNaN(n) ? 0 : n;\n}\nfunction regionFromName(name) {\n  const n = ' ' + String(name || '').toLowerCase() + ' ';\n  if (/(belux|benelux|belgium|luxembourg)/.test(n)) return 'BeLux';\n  if (/(netherlands|holland)/.test(n) || / nl /.test(n) || /[ _\\-]nl[ _\\-]/.test(n)) return 'NL';\n  if (/(uki|uk i|uk and ireland|united kingdom|ireland)/.test(n) || / uk /.test(n) || /[ _\\-]uk[ _\\-]/.test(n)) return 'UKI';\n  return 'UNASSIGNED'; // TODO(Margot/Fluoro): confirm region tokens used in campaign names\n}\n\n// ---- 4. Aggregate ad-level rows up to campaign x region (date is the constant snapshot date) ----\nconst agg = {};\nlet rowsIn = 0;\nfor (let i = hIdx + 1; i < all.length; i++) {\n  const r = all[i];\n  const nameNorm = norm(r[iName]);\n  if (nameNorm.indexOf('total') === 0) continue; // totals footer\n  if (!String(r[iId] || '').trim()) continue;    // blank / footer rows\n  rowsIn++;\n  const id = String(r[iId]).trim();\n  const region = regionFromName(r[iName]);\n  const key = id + '|' + region;\n  if (!agg[key]) {\n    agg[key] = { campaign_key: 'LI_' + id, campaign_name: String(r[iName] || '').trim(),\n      region_code: region, channel_name: 'LinkedIn Paid', activity_date: snapDate,\n      source: 'linkedin', spend: 0, impressions: 0, clicks: 0, leads: 0 };\n  }\n  const a = agg[key];\n  a.spend += num(r[iSpend]);\n  a.impressions += num(r[iImpr]);\n  a.clicks += num(r[iClicks]);\n  a.leads += num(r[iLeads]);\n}\n\nconst out = Object.values(agg);\nif (out.length === 0) {\n  throw new Error('LinkedIn CSV rejected - no valid data rows after validation (rows in: ' + rowsIn + ')');\n}\nconst meta = { rows_in: rowsIn, issues: 0, issue_pct: 0, snapshot_date: snapDate, report_type: 'lifetime_snapshot' };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
+      },
+      "id": "3870697d-9525-455f-988b-671a72f46e45",
+      "name": "Parse + Validate LinkedIn CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Distinct campaigns for dim_campaign upsert.\nconst seen = {};\nconst out = [];\nfor (const item of $('Parse + Validate LinkedIn CSV').all()) {\n  const j = item.json;\n  if (seen[j.campaign_key]) continue;\n  seen[j.campaign_key] = 1;\n  out.push({ json: { campaign_key: j.campaign_key, campaign_name: j.campaign_name,\n    channel_name: j.channel_name, source_system: 'linkedin' } });\n}\nreturn out;"
+      },
+      "id": "95ac412e-219a-4d8a-8e42-6511e1741dc2",
+      "name": "Distinct Campaigns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  channel_id = EXCLUDED.channel_id;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ $json.campaign_key }},{{ $json.channel_name }},{{ $json.campaign_name }},{{ $json.source_system }}"
+        }
+      },
+      "id": "c2fe6196-3cc4-4bc3-a100-afa18e552e39",
+      "name": "Upsert dim_campaign",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1088,
+        512
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Re-load the validated fact rows after the dim upsert.\nreturn $('Parse + Validate LinkedIn CSV').all();"
+      },
+      "id": "5b3fb810-a7a6-4c7f-95a7-2ff83767a0fc",
+      "name": "Fact Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_channel_daily\n  (campaign_key, region_id, channel_id, pillar_id, activity_date, source,\n   spend, impressions, clicks, leads)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  (SELECT channel_id FROM dim_channel WHERE channel_name = $3),\n  NULL,\n  $4, $5, $6, $7, $8, $9)\nON CONFLICT ON CONSTRAINT uq_fact_grain DO UPDATE SET\n  spend = EXCLUDED.spend,\n  impressions = EXCLUDED.impressions,\n  clicks = EXCLUDED.clicks,\n  leads = EXCLUDED.leads,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ $json.campaign_key }},{{ $json.region_code }},{{ $json.channel_name }},{{ $json.activity_date }},{{ $json.source }},{{ $json.spend }},{{ $json.impressions }},{{ $json.clicks }},{{ $json.leads }}"
+        }
+      },
+      "id": "ee01f65b-4350-40dd-8e28-644955664dfa",
+      "name": "Upsert fact_channel_daily",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1536,
+        512
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('linkedin', CURRENT_DATE, $1, $2, $3, $4);",
+        "options": {
+          "queryBatching": "single",
+          "queryReplacement": "={{ $(\"Parse + Validate LinkedIn CSV\").first().json._meta.rows_in }},{{ $(\"Fact Rows\").all().length }},{{ $(\"Parse + Validate LinkedIn CSV\").first().json._meta.issues }},{{ $(\"Parse + Validate LinkedIn CSV\").first().json._meta.issue_pct }}"
+        }
+      },
+      "id": "5c849ce9-8885-49ae-a562-381f3b76096c",
+      "name": "Write data_quality_log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        512
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Drive: Watch Drop Folder": {
+      "main": [
+        [
+          {
+            "node": "Is LinkedIn export?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is LinkedIn export?": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Parse + Validate LinkedIn CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + Validate LinkedIn CSV": {
+      "main": [
+        [
+          {
+            "node": "Distinct Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Distinct Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Upsert dim_campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert dim_campaign": {
+      "main": [
+        [
+          {
+            "node": "Fact Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fact Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_channel_daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert fact_channel_daily": {
+      "main": [
+        [
+          {
+            "node": "Write data_quality_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+  }
+}
