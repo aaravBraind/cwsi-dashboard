@@ -1,90 +1,168 @@
 # CWSI Marketing Dashboard — Dependencies & Blockers
 
-**For:** client meeting · **Owner:** BrainD (Aarav) · **Target delivery:** 2026-06-23
-**Status key:** 🟢 live · 🟡 partial / live-but-incomplete · 🔴 blocked (needs data/build) · ⛔ blocked on client/external party
+**Owner:** BrainD (Aarav) · **Target delivery:** 2026-06-23 · **Last updated:** 2026-06-15
+**Companion docs:** `PROGRESS.md` (ticket status) · `WORKFLOWS.md` (ingestion) · `CWSI_Dashboard_DataSource_Mapping.md` (panel→source)
 
-> One-line: the dashboard shell, filters, funnel/pipeline, LinkedIn delivery, EUR marketing
-> budget, and Outreach engagement are **live on real data**. The gaps below are all **upstream
-> data / access / sign-off** items — not frontend work.
+**Status key:** 🟢 live · 🟡 partial · 🔴 blocked on build · ⛔ blocked on client/external · ⚪ N/A
 
----
-
-## 1. Decisions needed FROM CWSI (discuss in the meeting)
-
-| # | Item | Why it matters | Owner | Blocks |
-|---|------|----------------|-------|--------|
-| 1 | **KPI targets + traffic-light thresholds** (full register, not just Paul's Q2) | Every "% of target", gap-to-close, and status colour is unsourced without them. Currently all targets are config placeholders. | Paul + Claire | KPI Tracker status, Overview health, Board pack |
-| 2 | **Marketing budget PLAN (EUR)** | We have actual spend live (€98,819 net). Budget-vs-actual needs the *planned* figure — the feed only has actuals (status='Spent'). | Margot/Paul | Budget-vs-actual KPI |
-| 3 | **Influenced-margin definition** | No margin/COGS input in any source — we show closed-won £ as a proxy. Need the cost basis or an agreed rate. | Paul | Margin tile, Board pack metric 6 |
-| 4 | **EUR↔GBP FX rate** | 🟢 HANDLED — budget/Outreach cost (EUR) displays in GBP at a per-day-pinned **ECB rate** (frankfurter.dev), labelled on the panel for reproducibility. **No fallback rate** — if the API is down, amounts show in native EUR (a stale rate could produce false GBP). Decision only if CWSI wants a *specific treasury rate* instead of ECB. | Margot/Paul (optional) | — |
-| 5 | **Region resolution rule** | ~half of spend (54/88 lines) and 82/211 Outreach sequences are UNASSIGNED; most LinkedIn campaign names carry no region token. Decide: dedicated SF/campaign region field vs name-parsing convention. | Margot + Fluoro | Region filter accuracy everywhere |
-| 6 | **"Others" / unmapped practice area** | 77/211 Outreach sequences have no pillar (ad-hoc account/event cadences). Shown as "Others". Confirm that's acceptable vs back-filling pillars. | Margot | Region × Practice grid completeness |
+> **Where we are:** Foundation + surface are largely live on real data (shell, filters, funnel/pipeline, LinkedIn, EUR budget, Outreach engagement, and now **Organic SEO via GA4 + Search Console**). The Salesforce **channel attribution** and **MQL** ingestion bugs are fixed. What remains before **T-7 (AI board pack)** is a short list of **client decisions + two ingestion items** — itemised below by who owns each.
 
 ---
 
-## 2. Access / provisioning (gates live data)
+## 0. T-7 readiness gate — blockers holding us back
 
-| Source | Needed for | Status |
-|--------|-----------|--------|
-| **Salesforce admin/API** (kept current under new connection policy) | Funnel, pipeline, leads/MQL/SQL, email, events | 🟢 live (monitor connection health) |
-| **GA4** + **`insights.cwsisecurity.com`** subdomain linked | Organic SEO traffic, Visitor→MQL, Website KPIs | ⛔ pending provisioning — `fact_web_daily` empty |
-| **Google Search Console** | SEO keywords + top pages | ⛔ pending — `fact_seo_*` empty |
-| **Google Ads** (dev token, MCC) | Paid Search (historical) | ⛔ pending; no live campaigns anyway |
-| **LinkedIn Ads** (Fluoro CSV/export) | LinkedIn delivery (spend/impr/clicks) | 🟡 live via manual lifetime-report ingest; no API (manual step is the dependency) |
-| **GoToWebinar** attendance | Events attendance rate (≠ registrations) | ⛔ pending API/export |
-| **Outreach.io API** | Outreach engagement | 🟢 live (sequence-level); see step-level + attribution below |
-| **In-person event SF field** | In-person attendance in Events | ⛔ field to be created |
+Everything through T-6 is done **except** these. Each is tagged with its owner. T-7 should not start in earnest until these are resolved or explicitly accepted as "pending".
 
----
-
-## 3. Data not in the store yet (panels stubbed "pending")
-
-| Area | Missing data | Source when it lands |
-|------|-------------|----------------------|
-| Outreach **meetings / SQL / pipeline £** | not in Outreach API (=0 in feed) | Salesforce attribution. `v_outreach_pipeline` is wired but reads ~£0 — **no Outreach opportunities exist in SF yet** (confirmed); tiles auto-fill when they do. Do **not** fold SoPro pipeline in. |
-| **Clicks/CTR/CPC** for non-LinkedIn channels | spend/impr/clicks = 0 on Salesforce rows | LinkedIn ✅ done; others need ad-platform/spend ingest |
-| **Events sub-types** (Webinar/Owned/Earned) | channel is undifferentiated | event-type classification in SF |
-| **Opportunity stages** | fact is channel-daily, not opp-level | SF opportunity stage pull |
-| **Multi-touch attribution / CLV** | not modelled | SF "in progress · Q3" |
+| # | Blocker | Owner | Type |
+|---|---|---|---|
+| A | **KPI targets + traffic-light thresholds** (full register) | ⛔ Paul + Claire | decision |
+| B | ~~MQL definition (SQL > MQL)~~ ✅ **FIXED & LIVE (15 Jun)** — "reached MQL or beyond"; all-time MQL 3,945 > SQL 691, YTD 272 > 155. Only open: Margot's nod on the status buckets (1-line tweak). | 🟢 Margot (confirm only) | done |
+| C | ~~Influenced-margin / COGS basis~~ ✅ **RESOLVED in workflow (15 Jun), pending re-run** — `Opportunity.Vendor_Cost_Price__c` cost rollup is real (£4.19M cost on £7.20M won → **~£3.0M influenced margin**). Computed as Amount − vendor cost. | 🟡 Aarav (re-run) | done |
+| D | **Per-channel spend** for CPL/ROI (only LinkedIn has spend) | 🟡 Aarav + Margot | build + data |
+| E | **GoToWebinar attendance** — workflow + `fact_event_daily` built (15 Jun); pending OAuth client + run. **In-person SF field** still ⛔ Margot. | 🟡 Aarav + Margot | build (in progress) |
+| ~~F~~ | ~~Outreach step-ingestion workflow~~ | ✅ Aarav | **DONE 15 Jun** — authored, live (1,150 rows) |
 
 ---
 
-## 4. Known data-quality items
+## 0b. Remaining steps — in detail
 
-- **Region = UNASSIGNED is large** (spend + Outreach + most LinkedIn). Not an error — it's the
-  triage bucket — but it makes the region filter look thin until item #5 is resolved.
-- **MQL mapping** in `fact_channel_daily` looked distorted (MQL < SQL on some channels) — confirm
-  the SF MQL flag mapping.
-- **Campaign names** — FIXED this week: `v_fact_enriched` was showing campaign IDs because the
-  name join missed historical rows; now resolves current names.
-- **Outreach "Step N" is not a consistent thing across sequences** — each of the ~200 cadences
-  designs its own steps, so the *same step number is a different type in different sequences*
-  (e.g. Step 1 = Auto Email in one sequence, Manual Email in another, LinkedIn / Phone Call in
-  others). The "Engagement by Step" panel aggregates across all sequences at the
-  `(step_order, step_type)` grain, so a single step number can appear as several rows
-  (Step 1 · Auto Email, Step 1 · Manual Email, Step 1 · LinkedIn …). This is expected, not a bug —
-  but it means "Step 1" is not a uniform funnel stage the way the mockup implied. **Decision for
-  CWSI:** keep the cross-sequence aggregate (current), or add a single-sequence drill-down so one
-  cadence's real Step 1→N flow can be read on its own. Outreach also has no semantic stage names
-  (Intro/Value/…) — steps are named only by number + channel type.
+Each blocker below: **what's needed → why it matters → what we build once unblocked → interim state → how to unblock**.
+
+### A. KPI targets + traffic-light thresholds — ⛔ Paul + Claire
+- **What's needed:** the full KPI register's quarterly + FY **target values** (Paul's Q2 numbers exist: 5,000 prospects, 100 meetings, £1M new pipeline vs £6M creation; the rest of the 28-KPI register is missing), plus the **threshold bands** for green/amber/red on each metric.
+- **Why it matters:** every "% of target", gaps-to-close strip, traffic-light status, Quarter-Health panel, and the board pack's vs-target narrative is unsourced without them. Today they are config placeholders.
+- **What we build once unblocked:** load into a `kpi_targets` config; status dots + gaps-to-close compute automatically (thresholds already configurable in `src/data/thresholds.js`).
+- **Interim:** actuals render live; targets show "not set", status dots neutral.
+- **Unblock:** Paul + Claire supply one row per KPI (target, FY target, green/amber cutoffs). Lock in a 30-min session.
+
+### B. MQL definition / event-date — ⛔ Margot + SF admin
+- **What's needed:** confirmation of whether Salesforce exposes an **MQL-transition date** (a "Became MQL" timestamp or lead status-history). 
+- **Why it matters:** MQL is currently a *current-status snapshot* (only leads whose status is *right now* 'Marketing Qualified Lead', dated at campaign-join). SQL is a *cumulative event*. So leads that progressed past MQL vanish from the MQL count → **SQL > MQL in 2026 (55 vs 156)** and the funnel reads as broken. This is a definition problem, not a code bug.
+- **What we build once unblocked:** (i) if an MQL date/history field exists → date MQL by that event (clean cohort funnel); (ii) else → count MQL cumulatively as "ever reached MQL" (status MQL **or beyond**) so progression doesn't shrink it, dated at campaign-join as a documented proxy.
+- **Interim:** funnel shown with a caveat; MQL→SQL not presented as a same-cohort rate.
+- **Unblock:** Margot/SF admin answer "is there an MQL date or status history?" → 1-line workflow change.
+
+### C. Influenced margin — ✅ RESOLVED in workflow (15 Jun), pending re-run
+- **Found:** `Opportunity.Vendor_Cost_Price__c` (cost rollup from Opportunity Products) is reliably populated in aggregate — £4.19M cost on £7.20M won across 245 campaign-attributed deals → **~£3.0M influenced margin (~42%)**.
+- **Built:** `margin_value` column added to `fact_channel_daily` + exposed in `v_fact_enriched`; SF workflow now pulls `Vendor_Cost_Price__c` and computes **margin = Amount − vendor cost** on won opps; `funnelOf` surfaces it.
+- **Caveat:** we use the **cost rollup**, NOT `Gross_Profit_Margin__c` (% field defaults to 100 on cost-0 rows). Deals with no product cost show 100% margin (likely PS/services) — minor overstatement, flag to Paul.
+- **Remaining:** re-import + re-run the SF workflow → margin populates; then wire the Overview/Board margin tile. (No longer a Paul blocker — just confirm the cost-rollup basis is acceptable.)
+
+### D. Per-channel spend + spend→campaign mapping — 🟡 Aarav + Margot
+- **What's needed:** Margot's **merged spend sheet with a column linking each spend line to a channel/campaign** (she committed to co-designing one sheet that serves both her and the dashboard, per the 4-May call). Today `fact_marketing_spend` is **finance/budget-line grained, not channel-attributable**.
+- **Why it matters:** every CPL, CPC, ROI, and "performance vs spend" figure (Overview tribar, Pipeline-by-source CPL, Board CPL, channel ROI) needs spend joined at channel/campaign level. Only LinkedIn has delivery spend today (its own GBP snapshot).
+- **What we build once unblocked:** BrainD adds the campaign-link column structure to Margot's sheet → ingest maps spend→channel/campaign → CPL/ROI compute across channels.
+- **Interim:** CPL/ROI render "n/a"; budget shown as net EUR actual only.
+- **Unblock:** co-design the one merged sheet (BrainD provides the column spec; Margot maintains it).
+
+### E. Events completeness — GoToWebinar attendance + in-person SF field — 🟡 in progress
+- **What's needed:** (1) **GoToWebinar attendance** (≠ registration). (2) A **new SF field for in-person attendance** (no field exists).
+- **DONE 15 Jun:** `fact_event_daily` + `v_event_daily` created; **`gotowebinar_ingest.json` workflow built** (Schedule → Get Webinars → Get Attendees → upsert reg + attended per webinar, region parsed from the subject).
+- **Remaining (you):** create the GoTo OAuth2 client, attach it to the two HTTP nodes, set `organizer_key` in Config, run once, and **verify the API field paths** against your account's response (registrant count + attendees array — flagged in the workflow sticky note). Then I wire the Events page attendance panel.
+- **Remaining (Margot):** the in-person attendance SF field (no field exists; manual until created). Live vs on-demand webinar sub-split still open.
+- **Interim:** Events shows registrations + pipeline; attendance "pending" until the workflow runs.
+
+### Dev items we own (Aarav) — detail in §1
+- **Per-channel spend join** (pairs with D), **opportunity-stage distribution** pull (Pipeline stage panel), **GA4 key-events** confirm/map (organic conversions), **re-import fixed SF workflow + delete stale n8n stub**. None blocked on the client.
 
 ---
 
-## 5. What's LIVE today (no dependency — done)
+## 1. ON AARAV (BrainD — dev) — build items we own
+
+| Item | Detail | Status | Blocks |
+|---|---|---|---|
+| ~~Outreach step-ingestion workflow~~ | ✅ **DONE 15 Jun** — `outreach_sequence_steps_ingestion.json` authored (daily, `/sequenceSteps` → `fact_outreach_step_daily`, 1,150 rows). | ✅ | — |
+| **Re-import fixed Salesforce workflow into n8n** | Channel-map + `channel_id` upsert fixes are in the **file**; n8n still runs an older copy. Re-import + re-run to make the file the source of truth. Data is already correct (re-synced manually). | 🟡 | Future SF runs staying correct |
+| **Delete stale n8n stub** | MCP-visible `rtigmdeHcI6NAjRQ` "CWSI - Salesforce Ingestion (T-2)" is a 10-Jun stub (opps-only, hardcoded channel). Remove to avoid running the wrong one. | 🟡 | Operational hygiene |
+| **Per-channel spend join** | Wire spend→channel so CPL/CPC/ROI compute beyond LinkedIn (depends on Margot's merged spend mapping, item in §2). | 🔴 | CPL/ROI on every channel, Board CPL |
+| **Opportunity-stage distribution** | Pipeline page stage breakdown needs an opp-level pull (fact is channel-daily today). | 🔴 | Pipeline Stage Distribution panel |
+| **GA4 key-events** | Confirm whether GA4 conversions exist; if so map them (currently 0 → "pending"). | 🟡 | Organic conversion KPI |
+| **T-7 / T-8 / T-9 / T-10** | AI board pack, exports, QA gate, handover — not started. | ⬜ | Delivery |
+
+## 2. ON MARGOT (client — marketing ops) — data, access, hygiene
+
+| Item | Why it matters | Status | Depends on |
+|---|---|---|---|
+| ~~Region resolution rule~~ | ✅ **RESOLVED & LIVE (15 Jun)** — resolved off `Lead_Region__c` / `Account.Region__c`. UNASSIGNED dropped from ~70% to **~4%** of leads (1,042 / 25,242). | 🟢 | done |
+| **MQL event-date / status-history** | The funnel inverts (SQL>MQL) because MQL is a *current-status snapshot*. Confirm whether SF has a "Became MQL" date or status history we can date MQL by. | ⛔ | Margot + SF admin |
+| **Merged spend sheet → channel/campaign mapping** | Budget tracker is finance-grained (not per-channel). Need each spend line mapped to a channel/campaign to compute CPL/ROI. | ⛔ | Margot |
+| **GoToWebinar access** (API/export) | Events **attendance** (≠ registrations) — currently unavailable. | ⛔ | Margot |
+| **In-person event SF field** | In-person attendance has no SF field — manual until one is created. | ⛔ | Margot |
+| **GA4 conversions / key events** | If organic conversions should be tracked, configure GA4 key events (none landing today). | ⛔ | Margot |
+| ~~`insights.cwsisecurity.com` in GA4~~ | ✅ **RESOLVED** — both `cwsisecurity.com` (main / white papers) and `insights.cwsisecurity.com` (SF landing pages) are tracked in `fact_web_daily`. | 🟢 | — |
+| **"Others"/unmapped practice area** | 77/211 Outreach sequences have no pillar (ad-hoc) → shown as "Others". Confirm acceptable vs back-fill. | ⛔ | Margot |
+
+## 3. ON PAUL / CLAIRE (client — exec) — targets, definitions, sign-off
+
+| Item | Why it matters | Status | Depends on |
+|---|---|---|---|
+| **KPI targets + thresholds** (full register) | Every "% of target", gap-to-close, status colour, and the board pack's vs-target story is unsourced without them. | ⛔ | Paul + Claire |
+| **Influenced-margin definition** | No margin/COGS in any source; we show closed-won £ as a proxy. Need the cost basis or an agreed rate. | ⛔ | Paul |
+| **Planned marketing budget (EUR)** | Actuals are live (€98,819 net); budget-vs-actual needs the *planned* figure. | ⛔ | Margot/Paul |
+| **Board-pack scope** | Confirm T-7 ships with blocked metrics as "pending" if A–C aren't resolved by build. | ⛔ | Paul |
+
+## 4. Data-quality items (tracked, with root cause)
+
+| Item | Root cause | Status |
+|---|---|---|
+| ~~SQL > MQL in current year~~ | ✅ **RESOLVED (15 Jun)** — switched MQL to "reached MQL or beyond" (no MQL-date field exists). All-time MQL 3,945 > SQL 691; YTD 272 > 155. Status buckets pending Margot's confirm (1-line tweak). | 🟢 |
+| ~~Region = UNASSIGNED is large~~ | ✅ **RESOLVED (15 Jun)** — moved off dirty `Lead.Country` to `Lead_Region__c`/`Account.Region__c`. UNASSIGNED ~70% → ~4%. | 🟢 |
+| **Lead/Contact misclassification** | Per 4-May call: a colleague from an *existing customer* org who signs up is created as a **Lead** (not Contact); leads are converted to contacts manually by sales. So lead/MQL counts can include people from customer orgs. Inherent SF hygiene, affects funnel counts — note, not fixable in ingest. | 🟡 |
+| **Channel attribution** | FIXED 15 Jun — unmapped SF Campaign.Type no longer dumped into Organic SEO; 43 strays → "Other / Unmapped". Organic SEO 8,388→3,042 leads. | 🟢 |
+| **Fact channel_id frozen on re-run** | FIXED 15 Jun — `Upsert fact_channel_daily` now sets `channel_id`; one-time re-sync applied. | 🟢 |
+| **Campaign names** | FIXED — `v_fact_enriched` now resolves current names, not IDs. | 🟢 |
+| **GA4 key_events = 0** | No GA4 conversions configured/landing → shown "pending". Margot to confirm (§2). | 🟡 |
+| **Outreach "Step N" not uniform** | Each cadence designs its own steps; same step number is a different type across sequences. Aggregated at `(step_order, step_type)`. Expected, documented. | 🟢 |
+
+## 4b. How REGION and PILLAR are derived (provenance)
+
+**Region** (UKI = UK & Ireland · BeLux = Belgium + Luxembourg · NL = Netherlands · UNASSIGNED = triage). Mapping applied everywhere: UK/IRELAND/GB/England/Scotland/Wales/Guernsey/Jersey/Isle of Man → **UKI**; BELGIUM/BEL/LUXEMBOURG/LUX → **BeLux**; NETHERLANDS/NL/Holland → **NL**; blank/other → **UNASSIGNED**.
+
+| Source | Region comes from | Coverage |
+|---|---|---|
+| Salesforce — leads / MQL | `Lead.Lead_Region__c` (fallback `Lead.Country`) | ~86% (≈4% UNASSIGNED) — **fixed 15 Jun** |
+| Salesforce — opps / SQL / pipeline | `Opportunity.Account.Region__c` (fallback `Account.BillingCountry`) | ~99.6% — **fixed 15 Jun** |
+| GA4 (web) | GA4 `countryId` (alpha-2) | good for subdomains; main `cwsisecurity.com` skews UNASSIGNED (no per-country split) |
+| Search Console | GSC country dimension | clean |
+| LinkedIn (delivery) | region token parsed from campaign name | mostly UNASSIGNED (Fluoro naming) |
+| Marketing budget (EUR) | region column in the spend sheet | mostly UNASSIGNED |
+| Outreach.io | sequence region (sequence name / mapping) | 82/211 UNASSIGNED |
+| Events (GoToWebinar) | parsed from the webinar **subject** (UK/Ireland→UKI, Belgium/Benelux/Lux→BeLux, Netherlands→NL) | best-effort |
+
+**Pillar** (practice area: Secure AI=AI Guard · Secure Data=Data Guard · Secure Endpoints=Device Guard · Secure Identity=Identity Guard · Secure Operations=Watch Guard).
+
+| Source | Pillar comes from | State |
+|---|---|---|
+| **Outreach.io** | sequence → pillar mapping | ✅ **the only populated pillar source today**; 77/211 sequences have no pillar → bucketed **"Others"** |
+| Salesforce channel facts | **not derivable from `Campaign.Type`** → `pillar_id` is NULL on all SF rows | 🔴 would need campaign-name parsing or a custom Campaign field (discovery query pending — see below) |
+| GA4 / GSC / LinkedIn / Events | no pillar at source | 🔴 none |
+
+**So today pillar is meaningful only on the Outreach page.** To get pillar onto SEO/Paid-Search/Events/funnel, we need either a campaign-name keyword parse (AI/Data/Endpoint/Identity/Operations) or a Salesforce Campaign pillar/product field — pending the discovery query in §0b dev items.
+
+## 5. External / vendor
+
+| Dependency | Party | Note |
+|---|---|---|
+| LinkedIn delivery export | Fluoro | No affordable API → manual CSV drop is the recurring dependency |
+| Outreach.io API | Robin / Outreach | Engagement live; meetings/SQL/pipeline need SF attribution (no Outreach opps in SF yet) |
+| GoToWebinar | vendor | Attendance API/export pending |
+| Google Ads | Google | ⚪ N/A — no campaigns; wire only if Paid Search launches |
+
+---
+
+## 6. What's LIVE today (no dependency)
 
 - 🟢 Shell, sidebar, region tabs + quarter filters (re-scope every figure)
 - 🟢 Overview funnel + pipeline-by-channel; KPI register actuals; Pipeline report (funnel + by-source)
-- 🟢 LinkedIn Paid — GBP delivery snapshot (spend/impr/clicks/CTR/CPL) + SF-attributed funnel
-- 🟢 Marketing budget (EUR) — net actual, by budget-line / region / audience, correction-row handling
-- 🟢 Outreach.io — engagement snapshot (active sequences, prospects, reply rate), funnel, Region × Practice grid, **Engagement by Step (email steps, live)**
-- 🟢 **RLS fixed** — all tables have read-only anon SELECT policies; no fetch failures
+- 🟢 **Organic SEO — GA4 traffic + Search Console search + top pages** (NEW)
+- 🟢 LinkedIn Paid — GBP delivery snapshot + SF-attributed funnel
+- 🟢 Marketing budget (EUR) — net actual, by line/region/audience, correction handling
+- 🟢 Outreach.io — engagement snapshot, funnel, Region × Practice grid, Engagement by Step
+- 🟢 Salesforce funnel/pipeline with **correct channel attribution** + MQL fix
+- 🟢 RLS read-only anon policies; no fetch failures
 
----
+## 7. Guardrails (how we keep it honest)
 
-## 6. Cross-cutting guardrails (how we keep it honest)
-
-- **Currencies never summed raw** — LinkedIn = GBP (native); budget/Outreach cost = EUR, converted to GBP at a pinned ECB rate before any comparison. The rate + source + date are shown on the budget panel so the board-pack export is reproducible.
-- **Snapshots ≠ trends** — LinkedIn and Outreach are cumulative lifetime snapshots; shown as
-  current totals with an "as of" date, never plotted daily.
-- **No fabricated numbers** — anything without a real source renders "pending"/"not available yet",
-  never a zero that reads as real.
+- Currencies never summed raw (GBP vs EUR; pinned ECB rate, labelled for board reproducibility).
+- Snapshots ≠ trends (LinkedIn, Outreach are lifetime snapshots with an "as of" date).
+- No fabricated numbers — missing sources render "pending"/"not available yet", never a zero that reads as real.

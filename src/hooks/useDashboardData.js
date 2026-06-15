@@ -11,6 +11,8 @@ import {
   getMarketingSpend,
   getOutreach,
   getOutreachSteps,
+  getWebTraffic,
+  getSeo,
 } from '../data/queries'
 
 // Each hook reads the active filters from context, so every consumer re-scopes
@@ -96,5 +98,23 @@ export function useOutreachSteps(pillar = null) {
   return useQuery({
     queryKey: ['outreach-steps', filters.region, pillar],
     queryFn: () => getOutreachSteps({ region: filters.region, pillar }),
+  })
+}
+
+// GA4 web traffic — region + quarter scoped.
+export function useWebTraffic() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['web-traffic', filters.region, filters.quarter],
+    queryFn: () => getWebTraffic({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// Search Console — region + quarter scoped (top-pages table is quarter-only).
+export function useSeo() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['seo', filters.region, filters.quarter],
+    queryFn: () => getSeo({ region: filters.region, quarter: filters.quarter }),
   })
 }

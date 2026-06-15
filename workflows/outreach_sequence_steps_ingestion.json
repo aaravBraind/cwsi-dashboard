@@ -1,0 +1,275 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Outreach.io -> fact_outreach_step_daily  (per-step engagement, snapshot)\n\nFeeds the \"Engagement by Step\" panel (open/reply rate per step 1..N).\n\nFLOW: Get Sequences (for id->name) -> Build map -> Get Sequence Steps (paginated) ->\n      inherit region/pillar from parent sequence name -> upsert.\n\nNOTES:\n- Pre-wired to the \"Outreach Sequence\" OAuth2 credential (needs sequenceSteps.read scope).\n- Per-step counters are LIFETIME totals -> activity_date = run date (snapshot; same-day re-run upserts).\n- Pagination follows links.next (handles >1000 steps). Grain: one row per step per day.\n- step_type covers email/call/linkedin/task; the panel typically filters to email steps.\n",
+          "height": 460,
+          "width": 560
+        },
+        "id": "454473ab-2d80-4531-9e35-d604bea64abc",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -240,
+          -96
+        ]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 6
+              }
+            ]
+          }
+        },
+        "id": "932342b9-9b72-4f3e-a7d1-7438f4bccd5c",
+        "name": "Schedule: Daily",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.outreach.io/api/v2/sequences?page[size]=1000",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.api+json"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "pagination": {
+              "pagination": {
+                "paginationMode": "responseContainsNextURL",
+                "nextURL": "={{ $response.body.links.next }}",
+                "paginationCompleteWhen": "other",
+                "completeExpression": "={{ !$response.body.links.next }}"
+              }
+            }
+          }
+        },
+        "id": "99adad70-0a36-4f4f-9044-dae5ec79bc9f",
+        "name": "Get Sequences",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          464
+        ],
+        "credentials": {
+          "oAuth2Api": {
+            "id": "GyVW4j5ZbEKjDTRQ",
+            "name": "Outreach Sequence"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Build {sequence_id -> name} so steps can inherit region/pillar from their parent sequence.\nconst map = {};\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const s of list) {\n    if (s && s.id != null) map[String(s.id)] = (s.attributes && s.attributes.name) || '';\n  }\n}\nreturn [{ json: { map } }];"
+        },
+        "id": "2a52c59f-22a2-4783-8890-f385e56b53be",
+        "name": "Build Sequence Map",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.outreach.io/api/v2/sequenceSteps?page[size]=1000",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "oAuth2Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.api+json"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "pagination": {
+              "pagination": {
+                "paginationMode": "responseContainsNextURL",
+                "nextURL": "={{ $response.body.links.next }}",
+                "paginationCompleteWhen": "other",
+                "completeExpression": "={{ !$response.body.links.next }}"
+              }
+            }
+          }
+        },
+        "id": "c22026f4-f0be-4ecb-b4ef-e01c3d33e5c0",
+        "name": "Get Sequence Steps",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          688,
+          464
+        ],
+        "credentials": {
+          "oAuth2Api": {
+            "id": "GyVW4j5ZbEKjDTRQ",
+            "name": "Outreach Sequence"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Outreach /sequenceSteps -> fact_outreach_step_daily (SNAPSHOT per run).\n// Per-step counters are LIFETIME totals -> activity_date = run date (upserts in place).\n// region/pillar are inherited from the parent sequence's name (same rules as the sequence feed).\nconst seqMap = ($('Build Sequence Map').first().json || {}).map || {};\n\nconst REGIONS = ['UKI', 'BeLux', 'NL', 'UNASSIGNED'];\nconst PILLARS = ['Secure AI', 'Secure Data', 'Secure Endpoints', 'Secure Identity', 'Secure Operations'];\nfunction regionFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/belux/.test(n)) return 'BeLux';\n  if (/(^|[^a-z])nl([^a-z]|$)|netherlands|gemeente/.test(n)) return 'NL';\n  if (/uk&i|uk & i|\\buki\\b|united kingdom|\\buk\\b|ireland|dublin/.test(n)) return 'UKI';\n  return 'UNASSIGNED';\n}\nfunction pillarFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/secure ai|copilot|(^|[^a-z])ai([^a-z]|$)|agents? 365/.test(n)) return 'Secure AI';\n  if (/secure data|data security|data is an asset/.test(n)) return 'Secure Data';\n  if (/secure endpoint|endpoint|\\buem\\b|device/.test(n)) return 'Secure Endpoints';\n  if (/secure identity|identity/.test(n)) return 'Secure Identity';\n  if (/secure operations|secops|threat protection|frontline operations/.test(n)) return 'Secure Operations';\n  return null;\n}\nfunction num(v) { const n = Number(v); return isNaN(n) ? 0 : n; }\n\nconst today = new Date().toISOString().slice(0, 10);\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const st of list) {\n    if (!st || st.id == null) continue;\n    const a = st.attributes || {};\n    const rel = st.relationships || {};\n    const seqId = rel.sequence && rel.sequence.data && rel.sequence.data.id;\n    if (seqId == null) continue;\n    const name = seqMap[String(seqId)] || '';\n    let region = regionFromName(name);\n    let pillar = pillarFromName(name);\n    if (REGIONS.indexOf(region) < 0) region = 'UNASSIGNED';\n    if (pillar && PILLARS.indexOf(pillar) < 0) pillar = null;\n    out.push({ json: {\n      activity_date: today,\n      sequence_id: String(seqId),\n      step_id: String(st.id),\n      region_code: region,\n      pillar_name: pillar,\n      step_order: a.order != null ? Number(a.order) : null,\n      step_type: a.stepType || null,\n      delivered: num(a.deliverCount),\n      opens: num(a.openCount),\n      clicks: num(a.clickCount),\n      replies: num(a.replyCount),\n      bounces: num(a.bounceCount),\n      opt_outs: num(a.optOutCount)\n    } });\n  }\n}\nif (out.length === 0) {\n  throw new Error('Outreach steps: nothing returned - check sequenceSteps.read scope on the credential.');\n}\nreturn out;"
+        },
+        "id": "34a3e22c-ce71-4bc3-b636-3d406f7c56ff",
+        "name": "Map Steps → Fact Rows",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          912,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO fact_outreach_step_daily\n  (activity_date, sequence_id, step_id, region_id, pillar_id, step_order, step_type,\n   delivered, opens, clicks, replies, bounces, opt_outs, source)\nVALUES (\n  $1, $2, $3,\n  (SELECT region_id FROM dim_region WHERE region_code = $4),\n  (SELECT pillar_id FROM dim_practice_pillar WHERE pillar_name = $5),\n  $6, $7, $8, $9, $10, $11, $12, $13, 'outreach')\nON CONFLICT ON CONSTRAINT uq_outreach_step_grain DO UPDATE SET\n  sequence_id = EXCLUDED.sequence_id, region_id = EXCLUDED.region_id, pillar_id = EXCLUDED.pillar_id,\n  step_order = EXCLUDED.step_order, step_type = EXCLUDED.step_type,\n  delivered = EXCLUDED.delivered, opens = EXCLUDED.opens, clicks = EXCLUDED.clicks,\n  replies = EXCLUDED.replies, bounces = EXCLUDED.bounces, opt_outs = EXCLUDED.opt_outs,\n  loaded_at = now();",
+          "options": {
+            "queryBatching": "independently",
+            "queryReplacement": "={{ [$json.activity_date, $json.sequence_id, $json.step_id, $json.region_code, $json.pillar_name, $json.step_order, $json.step_type, $json.delivered, $json.opens, $json.clicks, $json.replies, $json.bounces, $json.opt_outs] }}"
+          }
+        },
+        "id": "1d59975b-aed0-4b6d-88b4-0487d97d0680",
+        "name": "Upsert fact_outreach_step_daily",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1120,
+          464
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "ch1cQkzV21w5Wpxf",
+            "name": "CWSI"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('outreach_steps', CURRENT_DATE, $1, $2, 0, 0);",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ [ $('Map Steps → Fact Rows').all().length, $('Map Steps → Fact Rows').all().length ] }}"
+          }
+        },
+        "id": "8034d57e-e75c-43f7-adb9-0ce6e07c9e5c",
+        "name": "Write data_quality_log",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1344,
+          464
+        ],
+        "executeOnce": true,
+        "credentials": {
+          "postgres": {
+            "id": "ch1cQkzV21w5Wpxf",
+            "name": "CWSI"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule: Daily": {
+        "main": [
+          [
+            {
+              "node": "Get Sequences",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Sequences": {
+        "main": [
+          [
+            {
+              "node": "Build Sequence Map",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Sequence Map": {
+        "main": [
+          [
+            {
+              "node": "Get Sequence Steps",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Sequence Steps": {
+        "main": [
+          [
+            {
+              "node": "Map Steps → Fact Rows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Map Steps → Fact Rows": {
+        "main": [
+          [
+            {
+              "node": "Upsert fact_outreach_step_daily",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert fact_outreach_step_daily": {
+        "main": [
+          [
+            {
+              "node": "Write data_quality_log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    }
+  }

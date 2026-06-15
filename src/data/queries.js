@@ -18,7 +18,7 @@ import {
 // absent — it lives on base fact_channel_daily, not on v_fact_enriched, so we
 // never request it (see MAPPING.md).
 const FACT_COLS =
-  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,pillar_name,activity_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,pipeline_value,closed_won_value'
+  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,pillar_name,activity_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,pipeline_value,closed_won_value,margin_value'
 
 // Translate the shared filter object into PostgREST predicates. Every active
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
@@ -62,6 +62,7 @@ function funnelOf(rows) {
     sql: sum(rows, 'sql_count'),
     pipeline: sum(rows, 'pipeline_value'),
     closedWon: sum(rows, 'closed_won_value'),
+    margin: naIfAllZero(rows, 'margin_value'), // influenced margin = won amount − vendor cost
     spend: naIfAllZero(rows, 'spend'),
     impressions: naIfAllZero(rows, 'impressions'),
   }
@@ -394,6 +395,132 @@ export async function getOutreachSteps(filters = {}) {
     .sort((a, b) => a.step - b.step || a.type.localeCompare(b.type))
 
   return { allSteps, hasData: rows.length > 0 }
+}
+
+// ---- Organic SEO: GA4 web traffic + Search Console -----------------------
+// GA4 lands in fact_web_daily (sessions/engaged/key_events) and Search Console
+// in fact_seo_daily (region-coded clicks/impressions/position) + fact_seo_page_daily
+// (per-page, no region). Read through v_web_daily / v_seo_daily / v_seo_pages,
+// which already exclude dev/preview/proxy hostnames and expose year/quarter +
+// region_code so the shared region/quarter filters re-scope every figure.
+
+// Apply region_code + quarter to a v_web_daily / v_seo_daily query (both views
+// share the same year/quarter/region_code shape).
+function applyWebFilters(q, f = {}) {
+  if (f.quarter && f.quarter !== 'ytd') {
+    q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(f.quarter).replace('q', '')))
+  } else {
+    q = q.gte('year', HISTORY_START_YEAR)
+  }
+  if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
+  return q
+}
+
+// GA4 web traffic — sessions / engaged sessions / engagement rate, scoped by
+// region + quarter. key_events is 0 across every row today (GA4 conversions not
+// confirmed) → surfaced as NA ("pending"), never a misleading 0.
+export async function getWebTraffic(filters = {}) {
+  let q = supabase
+    .from('v_web_daily')
+    .select('activity_date,region_code,region_name,hostname,sessions,engaged_sessions,key_events')
+    .limit(50000)
+  q = applyWebFilters(q, filters)
+  const { data, error } = await q
+  if (error) throw error
+  const rows = data || []
+
+  const sessions = sum(rows, 'sessions')
+  const engaged = sum(rows, 'engaged_sessions')
+  const totals = {
+    sessions,
+    engaged,
+    engagementRate: sessions ? engaged / sessions : NA,
+    keyEvents: naIfAllZero(rows, 'key_events'), // pending: GA4 conversions not confirmed
+  }
+
+  const byHostname = [...groupBy(rows, 'hostname')]
+    .map(([hostname, rs]) => ({
+      hostname,
+      sessions: sum(rs, 'sessions'),
+      engaged: sum(rs, 'engaged_sessions'),
+    }))
+    .sort((a, b) => b.sessions - a.sessions)
+
+  const byRegion = [...groupBy(rows, 'region_code')]
+    .map(([region, rs]) => ({
+      region,
+      sessions: sum(rs, 'sessions'),
+      engaged: sum(rs, 'engaged_sessions'),
+    }))
+    .sort((a, b) => b.sessions - a.sessions)
+
+  const dateRange = rows.reduce(
+    (acc, r) => ({
+      min: !acc.min || r.activity_date < acc.min ? r.activity_date : acc.min,
+      max: !acc.max || r.activity_date > acc.max ? r.activity_date : acc.max,
+    }),
+    { min: null, max: null },
+  )
+
+  return { totals, byHostname, byRegion, dateRange, hasData: rows.length > 0, rowCount: rows.length }
+}
+
+// Search Console — region-scoped clicks/impressions/CTR/avg position (daily
+// aggregate) plus the top organic landing pages (page grain has no region, so
+// the pages table is quarter-scoped only — flagged in the UI).
+export async function getSeo(filters = {}) {
+  let dq = supabase
+    .from('v_seo_daily')
+    .select('activity_date,region_code,clicks,impressions,ctr,avg_position')
+    .limit(50000)
+  dq = applyWebFilters(dq, filters)
+
+  // Pages: quarter-scoped only (no region_code on the page-grain source).
+  let pq = supabase
+    .from('v_seo_pages')
+    .select('page,clicks,impressions,ctr,avg_position,year,quarter')
+    .limit(50000)
+  if (filters.quarter && filters.quarter !== 'ytd') {
+    pq = pq.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+  } else {
+    pq = pq.gte('year', HISTORY_START_YEAR)
+  }
+
+  const [{ data: dData, error: dErr }, { data: pData, error: pErr }] = await Promise.all([dq, pq])
+  if (dErr) throw dErr
+  if (pErr) throw pErr
+  const daily = dData || []
+  const pagesRaw = pData || []
+
+  const clicks = sum(daily, 'clicks')
+  const impressions = sum(daily, 'impressions')
+  // avg position weighted by impressions (an unweighted mean over-counts low-traffic days).
+  const weightedPos = sum(daily.map((r) => ({ p: Number(r.avg_position) * Number(r.impressions) })), 'p')
+  const totals = {
+    clicks,
+    impressions,
+    ctr: impressions ? clicks / impressions : NA,
+    avgPosition: impressions ? weightedPos / impressions : NA,
+  }
+
+  // Aggregate pages across the scoped days (same URL appears once per day).
+  const topPages = [...groupBy(pagesRaw, 'page')]
+    .map(([page, rs]) => {
+      const c = sum(rs, 'clicks')
+      const i = sum(rs, 'impressions')
+      const wp = sum(rs.map((r) => ({ p: Number(r.avg_position) * Number(r.impressions) })), 'p')
+      return {
+        page,
+        clicks: c,
+        impressions: i,
+        ctr: i ? c / i : NA,
+        avgPosition: i ? wp / i : NA,
+      }
+    })
+    .sort((a, b) => b.clicks - a.clicks)
+    .slice(0, 15)
+
+  return { totals, topPages, hasData: daily.length > 0 || pagesRaw.length > 0, dayCount: daily.length }
 }
 
 // ---- Marketing budget / spend (EUR, finance-grained) ---------------------

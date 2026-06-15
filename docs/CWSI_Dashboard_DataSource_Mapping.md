@@ -4,6 +4,8 @@
 
 **Grounding:** this reflects the live `supabase-cwsi` store, not the mockup's placeholder numbers. All mockup figures (£290k pipeline, 160 MQL, etc.) are illustrative — they do **not** match the live store and should be treated as design dummy data.
 
+> **Updated 2026-06-15:** GA4 + Search Console are now **live** (Organic SEO wired); Salesforce **channel attribution** and **MQL** ingestion fixed. See `WORKFLOWS.md`, `PROGRESS.md`, `DEPENDENCIES.md`.
+
 ---
 
 ## Reality snapshot — what the store actually holds today
@@ -12,21 +14,24 @@
 |---|---|---|---|
 | `fact_channel_daily` | Salesforce + **LinkedIn (snapshot)** | 3,090 + 13 LI | ✅ Populated — leads, MQL, SQL, pipeline, closed-won; **LinkedIn rows add spend/impr/clicks (GBP)** |
 | `fact_marketing_spend` | **Budget tracker (manual)** | **88** | ✅ **NEW** — finance-grained EUR spend lines (Jan–May 2026), net **€98,819.39** |
-| `fact_web_daily` | GA4 | 0 | 🟠 Schema only — empty |
-| `fact_seo_daily` | Google Search Console | 0 | 🟠 Schema only — empty |
-| `fact_seo_page_daily` | GSC (page-level) | 0 | 🟠 Schema only — empty |
-| `dim_date` (2010–2031), `dim_channel`, `dim_region`, `dim_campaign`, `dim_practice_pillar` | — | populated | ✅ |
-| `v_fact_enriched` (+`clicks` added), `v_campaign_current`, **`v_marketing_spend`** | — | join layer | ✅ exposed to anon |
+| `fact_web_daily` | GA4 | ~70 | ✅ **LIVE** — sessions/engaged/key_events; read via `v_web_daily` (junk hosts excluded) |
+| `fact_seo_daily` | Google Search Console | 1,700 | ✅ **LIVE** — backfilled to 2025-04-15; region clicks/impr/ctr/position; read via `v_seo_daily` |
+| `fact_seo_page_daily` | GSC (page-level) | 110,941 | ✅ **LIVE** — backfilled to 2025-04-15; top pages; read via `v_seo_pages` |
+| `fact_outreach_sequence_daily` / `fact_outreach_step_daily` | Outreach.io | 211 / 1,150 | ✅ snapshot; read via `v_outreach_sequence_current` / `v_outreach_step_current` |
+| `dim_date`, `dim_channel` (now incl. **7 Other/Unmapped**), `dim_region`, `dim_campaign`, `dim_practice_pillar` | — | populated | ✅ |
+| `v_fact_enriched`, `v_campaign_current`, `v_marketing_spend`, `v_web_daily`, `v_seo_daily`, `v_seo_pages`, `v_outreach_*` | — | join layer | ✅ exposed to anon |
 | `data_quality_log` | ingestion | populated | ✅ |
 | `kpi_targets` | client | — | ⛔ **Does not exist** — all targets are unsourced |
 
-**Live `fact_channel_daily` aggregates (all-time, all regions):** leads 23,636 · MQL 555 · SQL 688 · pipeline £1.26M · closed-won £7.1M.
+**Live `fact_channel_daily` aggregates (all-time, all regions, post-fix 2026-06-15):** leads **25,240** · MQL **958** · SQL **692** · pipeline £1.26M · closed-won £7.1M.
+- **Channel split (leads):** Email 6,333 · LinkedIn 6,306 · **Other/Unmapped 5,346** · Events 4,215 · **Organic SEO 3,042** (was 8,388 before the channel fix de-polluted it).
 - **Salesforce rows:** spend £0 · impressions 0 · clicks 0 (SF carries none).
-- **LinkedIn rows (NEW, snapshot as of 2026-06-12, GBP):** spend **£9,489.19** · impressions **608,460** · clicks **3,186** · leads 11 across 13 campaigns. Cumulative-to-date — render as current totals, **never a daily trend**.
+- **LinkedIn rows (snapshot as of 2026-06-12, GBP):** spend **£9,489.19** · impressions **608,460** · clicks **3,186** · leads 11 across 13 campaigns. Cumulative-to-date — current totals, **never a daily trend**.
+- ⚠️ **MQL vs SQL:** MQL is a current-status snapshot, SQL a cumulative event → SQL>MQL in 2026 (55 vs 156). Definition issue, not a bug — see `DEPENDENCIES.md` §4.
 
 **Marketing budget (NEW, `fact_marketing_spend`, EUR):** net **€98,819.39** across 88 lines (Q1 €52,995 / Q2 €45,824); 5 negative correction rows (−€24,357.80) that are netted in, never dropped or counted as events; region 4/UNASSIGNED holds €74,911 (54 lines).
 
-**Channels present in data:** Email, Events & Webinars, LinkedIn Paid, Organic SEO. **Absent:** Paid Search, Outreach.io, Referral/Partner.
+**Channels present in `fact_channel_daily`:** Email, Events & Webinars, LinkedIn Paid, Organic SEO, **Other / Unmapped** (NEW — Telemarketing/Partners/Referral/Other/blank, 28 campaigns). **Absent:** Paid Search (no SF type / no Google Ads campaigns — correct). Outreach is in its own `fact_outreach_*` tables, not `fact_channel_daily`.
 
 > **CURRENCY GUARDRAIL:** LinkedIn spend is **GBP** (`fact_channel_daily`); marketing budget is **EUR** (`fact_marketing_spend`). They are two different spend concepts (delivery vs finance budget) and are **never summed** — each surface labels its currency. `fact_marketing_spend` is budget-line grained, **not channel-attributable**.
 
@@ -82,7 +87,7 @@ Distinct-campaign counts by scope (current store):
 | Marketing Budget — Actual Spend (EUR) | net actual + corrections | Budget tracker | `v_marketing_spend` | ✅ | NEW compact tiles; separate currency block from channel spend |
 | Top-line KPI: Influenced Margin YTD | margin on influenced revenue | Salesforce (margin field or applied rate) | not in schema | 🔴 | No margin column. SF Sync panel itself flags this "in progress Q3". Needs a margin field or agreed rate |
 | Top-line KPI: Retained Contracts | renewal/retained opp count | Salesforce (opp type = renewal) | `fact_channel_daily` (no renewal flag) | 🔴 | No "retained/renewal" classification in current model |
-| Lead Conversion Funnel (Leads→MQL→SQL→Opp→Retained) | stage counts + conversion % | Salesforce | `fact_channel_daily` | 🟡 | Leads/SQL live; **MQL mapping broken** (MQL < SQL across channels — impossible in a clean funnel); Opp & Retained stages not modelled |
+| Lead Conversion Funnel (Leads→MQL→SQL→Opp→Retained) | stage counts + conversion % | Salesforce | `fact_channel_daily` | 🟡 | Leads/MQL/SQL live (MQL fix applied — 958 all-time). **MQL is a status snapshot, SQL a cumulative event → SQL>MQL in 2026** (definition issue, needs MQL event-date — DEPENDENCIES §4). Opp & Retained stages not modelled |
 | Pipeline by Channel — Performance vs Spend (tribar) | pipeline, closed-won, **spend**, ROI per channel | Salesforce (pipeline/won) + LinkedIn CSV + Google Ads CSV + spend sheet (spend) | `fact_channel_daily` (pipeline/won only) | 🔴 | Pipeline & closed-won ✅; **spend = £0** so ROI cannot be computed. Blocked on T-3. Paid Search row has no data at all |
 | Events Mix — Webinars / Owned / Earned | pipeline + MQL rate split by event sub-type | Salesforce + event-type classification | `fact_channel_daily` (single "Events & Webinars" channel) | 🔴 | No webinar/owned/earned sub-classification exists; channel is undifferentiated |
 | Quarter Health (traffic lights) | actual vs target per metric | Salesforce (actuals) + `kpi_targets` | partial | ⛔ | Actuals ✅; every status colour needs targets |
@@ -156,9 +161,9 @@ Distinct-campaign counts by scope (current store):
 
 | Panel / Component | Data required | Actual upstream source | Our DB source | Status | Notes |
 |---|---|---|---|---|---|
-| KPI cards (organic traffic, leads, Visitor→MQL, pipeline) | sessions + leads + pipeline | GA4 (traffic) + Salesforce (leads/pipeline) | `fact_web_daily` (empty) + `fact_channel_daily` | 🟠 | Leads/pipeline ✅; **traffic/visitor→MQL blocked on GA4 ingest** (OAuth wired, not returning data — verify Aryamaan's GA4 Viewer access) |
-| Top 5 Keywords per Category | query-level clicks by category | GSC (query dimension) | none | 🔴 | `fact_seo_page_daily` is **page-level, not query-level** — no table holds keywords/queries. Either add a query fact or descope |
-| Top 10 Performing Pages | page sessions + MQLs + conv | GSC pages + GA4 + Salesforce | `fact_seo_page_daily` (empty) | 🟠🔴 | Page table empty; **MQLs-per-page** needs a GA4↔SF join that doesn't exist — partial descope |
+| KPI cards (organic traffic, leads, Visitor→MQL, pipeline) | sessions + leads + pipeline | GA4 (traffic) + Salesforce (leads/pipeline) | `v_web_daily` + `v_fact_enriched` | ✅🟡 | **LIVE** — GA4 sessions/engaged + SF funnel wired on the SEO page. `key_events` (conversions) = 0 → **pending**; Visitor→MQL needs key_events |
+| Top 5 Keywords per Category | query-level clicks by category | GSC (query dimension) | none | 🔴 | `v_seo_pages` is **page-level, not query-level** — no table holds keywords/queries. Either add a query fact or descope |
+| Top Organic Pages | page clicks/impr/CTR/position | GSC pages | `v_seo_pages` | ✅ | **LIVE** — top-15 by clicks. MQLs-per-page (GA4↔SF join) still not modelled |
 
 ---
 
@@ -252,4 +257,4 @@ Distinct-campaign counts by scope (current store):
 
 **Descope candidates (no traceable requirement origin):** Net New vs Retargeting (LinkedIn), MQLs-per-page (SEO), Avg Touchpoints to Conversion (Events). Worth an explicit conversation with Margot/Paul rather than building speculatively.
 
-**Data-quality fixes that gate trust regardless of scope:** MQL status mapping (MQL currently < SQL — visible nonsense in the funnel), and region resolution. Both should land before any of these panels go in front of CWSI.
+**Data-quality fixes that gate trust regardless of scope:** **MQL definition** (MQL is a current-status snapshot so SQL>MQL in 2026 — needs an MQL event-date from SF, DEPENDENCIES §4) and **region resolution** (UNASSIGNED-heavy). Channel attribution + MQL converted-lead fix are **already done** (2026-06-15). These should land before the funnel/board-pack go in front of CWSI.
