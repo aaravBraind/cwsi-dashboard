@@ -5,6 +5,8 @@
 **Grounding:** this reflects the live `supabase-cwsi` store, not the mockup's placeholder numbers. All mockup figures (£290k pipeline, 160 MQL, etc.) are illustrative — they do **not** match the live store and should be treated as design dummy data.
 
 > **Updated 2026-06-15:** GA4 + Search Console are now **live** (Organic SEO wired); Salesforce **channel attribution** and **MQL** ingestion fixed. See `WORKFLOWS.md`, `PROGRESS.md`, `DEPENDENCIES.md`.
+> **Updated 2026-06-16:** Overview funnel completed — `opp_count` (Opportunities) + `closed_won_count` (Closed Won) added to `fact_channel_daily`/`v_fact_enriched` and the SF workflow; terminal stage relabelled Retained→Closed Won. "Retained Contracts" KPI remains client-gated (renewals, needs Paul's definition + source).
+> **Updated 2026-06-16 (data-integrity fix):** Found PostgREST's **1000-row response cap** was silently truncating every read whose scope exceeded 1000 rows — the funnel undercounted (summed only the first 1000 of ~2,100 fact rows) and **SEO top-pages were wrong** (1000 of ~110k page-day rows). Fix: all multi-row reads now page through with `fetchAll()`; SEO top-pages aggregate server-side via the `get_seo_top_pages()` RPC. Affected surfaces: Overview/KPI/Pipeline/Channel funnel, Outreach steps (1,150 rows), SEO daily (1,700) + pages (110k).
 
 ---
 
@@ -12,7 +14,7 @@
 
 | Table / View | Upstream | Rows | Status |
 |---|---|---|---|
-| `fact_channel_daily` | Salesforce + **LinkedIn (snapshot)** | 3,090 + 13 LI | ✅ Populated — leads, MQL, SQL, pipeline, closed-won; **LinkedIn rows add spend/impr/clicks (GBP)** |
+| `fact_channel_daily` | Salesforce + **LinkedIn (snapshot)** | 3,090 + 13 LI | ✅ Populated — leads, MQL, SQL, pipeline, closed-won; **`opp_count` + `closed_won_count` added 2026-06-16 (populate on next SF run)**; **LinkedIn rows add spend/impr/clicks (GBP)** |
 | `fact_marketing_spend` | **Budget tracker (manual)** | **88** | ✅ **NEW** — finance-grained EUR spend lines (Jan–May 2026), net **€98,819.39** |
 | `fact_web_daily` | GA4 | ~70 | ✅ **LIVE** — sessions/engaged/key_events; read via `v_web_daily` (junk hosts excluded) |
 | `fact_seo_daily` | Google Search Console | 1,700 | ✅ **LIVE** — backfilled to 2025-04-15; region clicks/impr/ctr/position; read via `v_seo_daily` |
@@ -23,11 +25,11 @@
 | `data_quality_log` | ingestion | populated | ✅ |
 | `kpi_targets` | client | — | ⛔ **Does not exist** — all targets are unsourced |
 
-**Live `fact_channel_daily` aggregates (all-time, all regions, post-fix 2026-06-15):** leads **25,240** · MQL **958** · SQL **692** · pipeline £1.26M · closed-won £7.1M.
+**Live `fact_channel_daily` aggregates (all-time, all regions, 2026-06-16):** leads **25,231** · MQL **3,945** · SQL **691** · Opportunities **311** (qualified open+won) · Closed Won **245** · closed-won **£7.12M**. (MQL jumped from the old 958 once the definition became "reached MQL or beyond".)
 - **Channel split (leads):** Email 6,333 · LinkedIn 6,306 · **Other/Unmapped 5,346** · Events 4,215 · **Organic SEO 3,042** (was 8,388 before the channel fix de-polluted it).
 - **Salesforce rows:** spend £0 · impressions 0 · clicks 0 (SF carries none).
 - **LinkedIn rows (snapshot as of 2026-06-12, GBP):** spend **£9,489.19** · impressions **608,460** · clicks **3,186** · leads 11 across 13 campaigns. Cumulative-to-date — current totals, **never a daily trend**.
-- ⚠️ **MQL vs SQL:** MQL is a current-status snapshot, SQL a cumulative event → SQL>MQL in 2026 (55 vs 156). Definition issue, not a bug — see `DEPENDENCIES.md` §4.
+- ✅ **MQL vs SQL (resolved 2026-06-16):** MQL is now "reached MQL or beyond", so the funnel no longer inverts (all-time MQL 3,945 > SQL 691; YTD likewise). Was SQL>MQL under the old current-status-snapshot definition — see `DEPENDENCIES.md` §4.
 
 **Marketing budget (NEW, `fact_marketing_spend`, EUR):** net **€98,819.39** across 88 lines (Q1 €52,995 / Q2 €45,824); 5 negative correction rows (−€24,357.80) that are netted in, never dropped or counted as events; region 4/UNASSIGNED holds €74,911 (54 lines).
 
@@ -86,8 +88,8 @@ Distinct-campaign counts by scope (current store):
 | Pipeline by Channel — Spend bar | per-channel delivery spend | LinkedIn snapshot (GBP) | `v_fact_enriched` | 🟡 | LinkedIn spend ✅ (GBP, labelled); other channels still pending. Not summed with EUR budget |
 | Marketing Budget — Actual Spend (EUR) | net actual + corrections | Budget tracker | `v_marketing_spend` | ✅ | NEW compact tiles; separate currency block from channel spend |
 | Top-line KPI: Influenced Margin YTD | margin on influenced revenue | Salesforce (margin field or applied rate) | not in schema | 🔴 | No margin column. SF Sync panel itself flags this "in progress Q3". Needs a margin field or agreed rate |
-| Top-line KPI: Retained Contracts | renewal/retained opp count | Salesforce (opp type = renewal) | `fact_channel_daily` (no renewal flag) | 🔴 | No "retained/renewal" classification in current model |
-| Lead Conversion Funnel (Leads→MQL→SQL→Opp→Retained) | stage counts + conversion % | Salesforce | `fact_channel_daily` | 🟡 | Leads/MQL/SQL live (MQL fix applied — 958 all-time). **MQL is a status snapshot, SQL a cumulative event → SQL>MQL in 2026** (definition issue, needs MQL event-date — DEPENDENCIES §4). Opp & Retained stages not modelled |
+| Top-line KPI: Retained Contracts · YTD | renewal/retention metric (renewed contracts / retained ARR) | Salesforce renewal-type opps or Contract object (NOT pulled) | `fact_channel_daily` (no renewal flag) | 🔴 | **Distinct from Closed-Won** (new business — now wired as a count). True retention is unsourced: needs `Opportunity.Type='Renewal'` / Contract pull **+ Paul's definition** (renewed count vs retention rate vs retained £). Client-gated |
+| Lead Conversion Funnel (Leads→MQL→SQL→Opp→Closed Won) | stage counts + conversion % | Salesforce | `fact_channel_daily` / `v_fact_enriched` | 🟡 | All stages live (2026-06-16). **Conventional order Leads→MQL→SQL→Opportunities→Closed Won, narrows monotonically (SQL ≥ Opp ≥ Won).** `opp_count` = qualified opps that are **open or won** (excludes unqualified + closed-lost) → a subset of `sql_count`; `closed_won_count` = won deals. **Repopulate on SF re-run** (definition changed 2026-06-16 from all-opps to the open+won subset). Terminal stage relabelled Retained→**Closed Won** (Retained = renewals is the separate client-gated KPI above). MQL caveat — DEPENDENCIES §4 |
 | Pipeline by Channel — Performance vs Spend (tribar) | pipeline, closed-won, **spend**, ROI per channel | Salesforce (pipeline/won) + LinkedIn CSV + Google Ads CSV + spend sheet (spend) | `fact_channel_daily` (pipeline/won only) | 🔴 | Pipeline & closed-won ✅; **spend = £0** so ROI cannot be computed. Blocked on T-3. Paid Search row has no data at all |
 | Events Mix — Webinars / Owned / Earned | pipeline + MQL rate split by event sub-type | Salesforce + event-type classification | `fact_channel_daily` (single "Events & Webinars" channel) | 🔴 | No webinar/owned/earned sub-classification exists; channel is undifferentiated |
 | Quarter Health (traffic lights) | actual vs target per metric | Salesforce (actuals) + `kpi_targets` | partial | ⛔ | Actuals ✅; every status colour needs targets |
@@ -163,7 +165,7 @@ Distinct-campaign counts by scope (current store):
 |---|---|---|---|---|---|
 | KPI cards (organic traffic, leads, Visitor→MQL, pipeline) | sessions + leads + pipeline | GA4 (traffic) + Salesforce (leads/pipeline) | `v_web_daily` + `v_fact_enriched` | ✅🟡 | **LIVE** — GA4 sessions/engaged + SF funnel wired on the SEO page. `key_events` (conversions) = 0 → **pending**; Visitor→MQL needs key_events |
 | Top 5 Keywords per Category | query-level clicks by category | GSC (query dimension) | none | 🔴 | `v_seo_pages` is **page-level, not query-level** — no table holds keywords/queries. Either add a query fact or descope |
-| Top Organic Pages | page clicks/impr/CTR/position | GSC pages | `v_seo_pages` | ✅ | **LIVE** — top-15 by clicks. MQLs-per-page (GA4↔SF join) still not modelled |
+| Top Organic Pages | page clicks/impr/CTR/position | GSC pages | `get_seo_top_pages()` RPC over `v_seo_pages` | ✅ | **LIVE** — top-15 by clicks, **aggregated server-side (2026-06-16)**. `v_seo_pages` is ~110k rows; previously pulled raw and **silently truncated at 1000** (wrong top-pages). Now an RPC does GROUP BY + ORDER + LIMIT in Postgres. MQLs-per-page (GA4↔SF join) still not modelled |
 
 ---
 

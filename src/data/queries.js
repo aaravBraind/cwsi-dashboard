@@ -18,7 +18,7 @@ import {
 // absent — it lives on base fact_channel_daily, not on v_fact_enriched, so we
 // never request it (see MAPPING.md).
 const FACT_COLS =
-  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,pillar_name,activity_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,pipeline_value,closed_won_value,margin_value'
+  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,pillar_name,activity_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,opp_count,pipeline_value,closed_won_value,closed_won_count,margin_value'
 
 // Translate the shared filter object into PostgREST predicates. Every active
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
@@ -41,12 +41,33 @@ function applyFilters(q, f = {}) {
   return q
 }
 
-async function fetchFacts(f) {
-  let q = supabase.from('v_fact_enriched').select(FACT_COLS).limit(50000)
-  q = applyFilters(q, f)
-  const { data, error } = await q
-  if (error) throw error
-  return data || []
+// PostgREST caps each response at the project's `max-rows` (default 1000), which
+// `.limit()` cannot exceed. Once a scoped result tops 1000 rows a single fetch
+// would silently return only the first page and undercount every figure. So any
+// read that can exceed 1000 rows goes through fetchAll(), which pages with
+// .range() and concatenates — guaranteeing the full result regardless of the cap.
+//
+// buildQuery: () => a fresh, filtered query builder (table + select + predicates).
+// orderBy: array of column names giving a STABLE total order (unique grain), so
+//   page boundaries never skip or duplicate rows. Must be a unique key per view.
+const PAGE = 1000
+async function fetchAll(buildQuery, orderBy) {
+  const all = []
+  for (let from = 0; ; from += PAGE) {
+    let q = buildQuery()
+    for (const col of orderBy) q = q.order(col, { ascending: true })
+    q = q.range(from, from + PAGE - 1)
+    const { data, error } = await q
+    if (error) throw error
+    all.push(...(data || []))
+    if (!data || data.length < PAGE) break // last (short) page reached
+  }
+  return all
+}
+
+// fact_id is the unique PK exposed by the view → stable paging key.
+function fetchFacts(f) {
+  return fetchAll(() => applyFilters(supabase.from('v_fact_enriched').select(FACT_COLS), f), ['fact_id'])
 }
 
 const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0)
@@ -60,8 +81,15 @@ function funnelOf(rows) {
     leads: sum(rows, 'leads'),
     mql: sum(rows, 'mql_count'),
     sql: sum(rows, 'sql_count'),
+    // Qualified opps that are open or won (excludes unqualified + closed-lost) —
+    // a SUBSET of sql, so the conventional funnel narrows: SQL ≥ Opp ≥ Won.
+    // NA (not 0) until the SF workflow re-runs to populate opp_count.
+    opp: naIfAllZero(rows, 'opp_count'),
     pipeline: sum(rows, 'pipeline_value'),
     closedWon: sum(rows, 'closed_won_value'),
+    // Count of won deals (terminal funnel stage). NA (not 0) until the SF
+    // workflow re-runs to populate closed_won_count.
+    closedWonCount: naIfAllZero(rows, 'closed_won_count'),
     margin: naIfAllZero(rows, 'margin_value'), // influenced margin = won amount − vendor cost
     spend: naIfAllZero(rows, 'spend'),
     impressions: naIfAllZero(rows, 'impressions'),
@@ -147,15 +175,14 @@ export async function getChannel(channelName, filters) {
 // Current-state campaign attributes (SCD2 resolved) — used to populate the
 // campaign picker. Reads v_campaign_current per the rules.
 export async function getCampaignsForChannel(channelId) {
-  let q = supabase
-    .from('v_campaign_current')
-    .select('campaign_key,campaign_name,channel_id,spend_rate,is_current')
-    .eq('is_current', true)
-    .limit(1000)
-  if (channelId) q = q.eq('channel_id', channelId)
-  const { data, error } = await q
-  if (error) throw error
-  return data || []
+  return fetchAll(() => {
+    let q = supabase
+      .from('v_campaign_current')
+      .select('campaign_key,campaign_name,channel_id,spend_rate,is_current')
+      .eq('is_current', true)
+    if (channelId) q = q.eq('channel_id', channelId)
+    return q
+  }, ['campaign_key']) // unique among is_current rows
 }
 
 // ---- LinkedIn delivery SNAPSHOT (GBP) ------------------------------------
@@ -164,15 +191,14 @@ export async function getCampaignsForChannel(channelId) {
 // daily trend. Region scopes it; the QUARTER filter is intentionally ignored
 // (a cumulative snapshot is not a quarter slice) — the as-of date is shown.
 export async function getLinkedInSnapshot(filters = {}) {
-  let q = supabase
-    .from('v_fact_enriched')
-    .select('campaign_key,campaign_name,region_code,activity_date,spend,impressions,clicks,leads')
-    .eq('source', 'linkedin')
-    .limit(5000)
-  if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
-  const { data, error } = await q
-  if (error) throw error
-  const rows = data || []
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_fact_enriched')
+      .select('campaign_key,campaign_name,region_code,activity_date,spend,impressions,clicks,leads')
+      .eq('source', 'linkedin')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['fact_id']) // unique PK
 
   // campaign_name is null through v_fact_enriched for LI_ keys; resolve names
   // from v_campaign_current (LinkedIn channel_id = 2).
@@ -227,18 +253,17 @@ export async function getLinkedInSnapshot(filters = {}) {
 // SQL / pipeline come from Salesforce attribution (not wired) → pending, never
 // fabricated. Rates are computed here, never stored.
 export async function getOutreach(filters = {}) {
-  let q = supabase
-    .from('v_outreach_sequence_current')
-    .select('activity_date,region_code,pillar_name,sequence_name,prospects,opens,clicks,replies,meetings,enabled')
-    .limit(5000)
-  if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
-  if (filters.pillar) {
-    if (filters.pillar === PILLAR_UNMAPPED) q = q.is('pillar_name', null)
-    else q = q.eq('pillar_name', filters.pillar)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = data || []
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_outreach_sequence_current')
+      .select('sequence_id,activity_date,region_code,pillar_name,sequence_name,prospects,opens,clicks,replies,meetings,enabled')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    if (filters.pillar) {
+      if (filters.pillar === PILLAR_UNMAPPED) q = q.is('pillar_name', null)
+      else q = q.eq('pillar_name', filters.pillar)
+    }
+    return q
+  }, ['sequence_id']) // unique per current snapshot
 
   const snapshotDate = rows.reduce((mx, r) => (r.activity_date > mx ? r.activity_date : mx), null)
   const prospects = sum(rows, 'prospects')
@@ -346,18 +371,17 @@ const isEmailStep = (t) => /email/.test(t || '')
 //   linkedin / task → manual touchpoints, no engagement metrics at source (—)
 // Aggregated across all sequences at (step_order, step_type). Region + pillar scope it.
 export async function getOutreachSteps(filters = {}) {
-  let q = supabase
-    .from('v_outreach_step_current')
-    .select('region_code,pillar_name,step_order,step_type,delivered,opens,clicks,replies,calls_completed,calls_no_answer')
-    .limit(5000)
-  if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
-  if (filters.pillar) {
-    if (filters.pillar === PILLAR_UNMAPPED) q = q.is('pillar_name', null)
-    else q = q.eq('pillar_name', filters.pillar)
-  }
-  const { data, error } = await q
-  if (error) throw error
-  const rows = data || []
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_outreach_step_current')
+      .select('region_code,pillar_name,step_order,step_type,delivered,opens,clicks,replies,calls_completed,calls_no_answer')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    if (filters.pillar) {
+      if (filters.pillar === PILLAR_UNMAPPED) q = q.is('pillar_name', null)
+      else q = q.eq('pillar_name', filters.pillar)
+    }
+    return q
+  }, ['id']) // unique PK (1,150 rows — was truncated at 1000 before)
 
   // One entry per (step_order, step_type) — keeps every step type visible.
   const groups = new Map()
@@ -420,14 +444,15 @@ function applyWebFilters(q, f = {}) {
 // region + quarter. key_events is 0 across every row today (GA4 conversions not
 // confirmed) → surfaced as NA ("pending"), never a misleading 0.
 export async function getWebTraffic(filters = {}) {
-  let q = supabase
-    .from('v_web_daily')
-    .select('activity_date,region_code,region_name,hostname,sessions,engaged_sessions,key_events')
-    .limit(50000)
-  q = applyWebFilters(q, filters)
-  const { data, error } = await q
-  if (error) throw error
-  const rows = data || []
+  const rows = await fetchAll(
+    () => applyWebFilters(
+      supabase
+        .from('v_web_daily')
+        .select('activity_date,region_code,region_name,hostname,sessions,engaged_sessions,key_events'),
+      filters,
+    ),
+    ['activity_date', 'region_code', 'hostname'], // grain key (date × region × hostname)
+  )
 
   const sessions = sum(rows, 'sessions')
   const engaged = sum(rows, 'engaged_sessions')
@@ -469,28 +494,31 @@ export async function getWebTraffic(filters = {}) {
 // aggregate) plus the top organic landing pages (page grain has no region, so
 // the pages table is quarter-scoped only — flagged in the UI).
 export async function getSeo(filters = {}) {
-  let dq = supabase
-    .from('v_seo_daily')
-    .select('activity_date,region_code,clicks,impressions,ctr,avg_position')
-    .limit(50000)
-  dq = applyWebFilters(dq, filters)
+  // Daily: region + quarter scoped, paginated (grain = activity_date × region).
+  const dailyP = fetchAll(
+    () => applyWebFilters(
+      supabase.from('v_seo_daily').select('activity_date,region_code,clicks,impressions,ctr,avg_position'),
+      filters,
+    ),
+    ['activity_date', 'region_code'],
+  )
 
-  // Pages: quarter-scoped only (no region_code on the page-grain source).
-  let pq = supabase
-    .from('v_seo_pages')
-    .select('page,clicks,impressions,ctr,avg_position,year,quarter')
-    .limit(50000)
-  if (filters.quarter && filters.quarter !== 'ytd') {
-    pq = pq.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
-  } else {
-    pq = pq.gte('year', HISTORY_START_YEAR)
-  }
+  // Pages: v_seo_pages is ~110k rows (per-page per-day). Aggregate the top-15
+  // server-side via RPC — never pull raw rows (the 1000-row cap silently
+  // truncated them before, giving an arbitrary, wrong "top pages"). Page grain
+  // has no region, so it's quarter/year-scoped only (flagged in the UI).
+  const qn = filters.quarter && filters.quarter !== 'ytd'
+    ? Number(String(filters.quarter).replace('q', ''))
+    : null
+  const pagesP = supabase.rpc('get_seo_top_pages', {
+    p_quarter: qn,
+    p_year: REPORTING_YEAR,
+    p_history_start: HISTORY_START_YEAR,
+    p_limit: 15,
+  })
 
-  const [{ data: dData, error: dErr }, { data: pData, error: pErr }] = await Promise.all([dq, pq])
-  if (dErr) throw dErr
+  const [daily, { data: pData, error: pErr }] = await Promise.all([dailyP, pagesP])
   if (pErr) throw pErr
-  const daily = dData || []
-  const pagesRaw = pData || []
 
   const clicks = sum(daily, 'clicks')
   const impressions = sum(daily, 'impressions')
@@ -503,24 +531,16 @@ export async function getSeo(filters = {}) {
     avgPosition: impressions ? weightedPos / impressions : NA,
   }
 
-  // Aggregate pages across the scoped days (same URL appears once per day).
-  const topPages = [...groupBy(pagesRaw, 'page')]
-    .map(([page, rs]) => {
-      const c = sum(rs, 'clicks')
-      const i = sum(rs, 'impressions')
-      const wp = sum(rs.map((r) => ({ p: Number(r.avg_position) * Number(r.impressions) })), 'p')
-      return {
-        page,
-        clicks: c,
-        impressions: i,
-        ctr: i ? c / i : NA,
-        avgPosition: i ? wp / i : NA,
-      }
-    })
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 15)
+  // RPC returns pre-aggregated top pages; null ctr/avg_position (0 impressions) -> NA.
+  const topPages = (pData || []).map((p) => ({
+    page: p.page,
+    clicks: Number(p.clicks),
+    impressions: Number(p.impressions),
+    ctr: p.ctr == null ? NA : Number(p.ctr),
+    avgPosition: p.avg_position == null ? NA : Number(p.avg_position),
+  }))
 
-  return { totals, topPages, hasData: daily.length > 0 || pagesRaw.length > 0, dayCount: daily.length }
+  return { totals, topPages, hasData: daily.length > 0 || topPages.length > 0, dayCount: daily.length }
 }
 
 // ---- Marketing budget / spend (EUR, finance-grained) ---------------------
@@ -528,16 +548,15 @@ export async function getSeo(filters = {}) {
 // Net spend = SUM(amount): negative correction rows ARE included and never
 // filtered out, but are NOT counted as spend events. Currency is EUR only.
 export async function getMarketingSpend(filters = {}) {
-  let q = supabase
-    .from('v_marketing_spend')
-    .select('amount,currency,region_code,quarter,budget_line,primary_audience,status')
-    .limit(5000)
-  if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
-  const ql = quarterLabel(filters.quarter)
-  if (ql) q = q.eq('quarter', ql)
-  const { data, error } = await q
-  if (error) throw error
-  const rows = data || []
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_marketing_spend')
+      .select('spend_id,amount,currency,region_code,quarter,budget_line,primary_audience,status')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    const ql = quarterLabel(filters.quarter)
+    if (ql) q = q.eq('quarter', ql)
+    return q
+  }, ['spend_id']) // unique PK
 
   const currencies = [...new Set(rows.map((r) => r.currency))]
   const positives = rows.filter((r) => Number(r.amount) > 0)

@@ -3,32 +3,49 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## GoToWebinar -> fact_event_daily\n\nGives Events the ATTENDANCE that Salesforce lacks (SF only has registrations via the event campaign).\n\nAFTER IMPORT:\n1. Create an OAuth2 client at https://developer.goto.com (GoTo Developer Center). Scope: webinar read. Redirect URL = your n8n OAuth callback.\n2. Add an n8n 'OAuth2 API' credential with that client; auth URL https://authentication.logmeininc.com/oauth/authorize , token URL https://authentication.logmeininc.com/oauth/token . Attach it to BOTH HTTP nodes.\n3. Open 'Config' and set organizer_key (your GoToWebinar organizerKey) + lookback_days.\n4. Run once manually; check fact_event_daily + data_quality_log.\n\nVERIFY FIELD PATHS against your account's API response (they can vary):\n- 'Get Webinars' response -> webinars array (may be `_embedded.webinars` or a bare array).\n- registrants count: webinar.numberOfRegistrants (fallback: a /registrants call).\n- 'Get Attendees' -> array of attendee objects; we count distinct registrantKey.\n\nGrain: webinarKey x start-date. Region parsed from the webinar subject (UK/Ireland->UKI, Belgium/Benelux/Lux->BeLux, Netherlands->NL, else UNASSIGNED).",
-        "height": 460,
-        "width": 520
+        "content": "## GoToWebinar -> fact_event_daily\n\nAttendance (+ registrant count) that Salesforce lacks. Native GoToWebinar node for the webinar list (no organizerKey needed). Registrants + Attendees via /registrants and /attendees http calls; counts are aggregated by pairedItem so they're robust to n8n splitting the array response.\n\nAFTER IMPORT:\n1. Select your predefined 'GoToWebinar OAuth2 API' credential on 'Get Webinars' (native), 'Get Registrants' and 'Get Attendees' (http).\n2. Select your Supabase Postgres credential on both DB nodes (the id in the file is from another instance).\n3. (Optional) Config -> lookback_days (default 90).\n4. Run once; check fact_event_daily / v_event_daily / data_quality_log.\n\nRegion: webinar SUBJECT first, then TIMEZONE (Europe/London->UKI, Brussels/Luxembourg->BeLux, Amsterdam->NL), else UNASSIGNED.\nGrain: webinarKey x start-date (uq_event_grain).",
+        "height": 470,
+        "width": 560
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000001",
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-320, -120]
+      "position": [
+        -360,
+        -150
+      ]
     },
     {
       "parameters": {
-        "rule": { "interval": [ { "triggerAtHour": 5, "triggerAtMinute": 30 } ] }
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 5,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000002",
       "name": "Daily 05:30",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
-      "position": [-320, 360]
+      "position": [
+        -360,
+        360
+      ]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "c1", "name": "organizer_key", "value": "REPLACE_WITH_ORGANIZER_KEY", "type": "string" },
-            { "id": "c2", "name": "lookback_days", "value": 90, "type": "number" }
+            {
+              "id": "c2",
+              "name": "lookback_days",
+              "value": 90,
+              "type": "number"
+            }
           ]
         },
         "options": {}
@@ -37,62 +54,121 @@
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-120, 360]
+      "position": [
+        -160,
+        360
+      ]
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "=https://api.getgo.com/G2W/rest/v2/organizers/{{ $('Config').first().json.organizer_key }}/webinars",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "fromTime", "value": "={{ new Date(Date.now() - $('Config').first().json.lookback_days*864e5).toISOString() }}" },
-            { "name": "toTime", "value": "={{ new Date().toISOString() }}" }
-          ]
-        },
-        "options": {}
+        "resource": "webinar",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "times": {
+            "timesProperties": {
+              "fromTime": "={{ new Date(Date.now() - $('Config').first().json.lookback_days*864e5).toISOString() }}",
+              "toTime": "={{ new Date().toISOString() }}"
+            }
+          }
+        }
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000004",
       "name": "Get Webinars",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [100, 360]
+      "type": "n8n-nodes-base.goToWebinar",
+      "typeVersion": 1,
+      "position": [
+        60,
+        360
+      ],
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
     },
     {
       "parameters": {
-        "jsCode": "// Flatten the Get Webinars response into one item per webinar.\n// VERIFY: response may be a bare array, or { _embedded: { webinars: [...] } }, or { webinars: [...] }.\nconst resp = $input.first().json;\nconst list = Array.isArray(resp) ? resp\n  : (resp._embedded && resp._embedded.webinars) ? resp._embedded.webinars\n  : (resp.webinars || []);\n\nfunction regionFromText(t) {\n  const s = String(t || '').toLowerCase();\n  if (/\\b(uk|u\\.k\\.|united kingdom|england|scotland|wales|ireland|irish|dublin)\\b/.test(s)) return 'UKI';\n  if (/\\b(belgium|benelux|luxembourg|brussels)\\b/.test(s)) return 'BeLux';\n  if (/\\b(netherlands|dutch|holland|amsterdam)\\b/.test(s)) return 'NL';\n  return 'UNASSIGNED';\n}\n\nreturn list.map((w) => {\n  // VERIFY field names against your account's payload.\n  const start = (w.times && w.times[0] && w.times[0].startTime) || w.startTime || null;\n  return { json: {\n    event_key: String(w.webinarKey || w.id || ''),\n    event_name: w.subject || w.name || null,\n    activity_date: start ? String(start).slice(0, 10) : null,\n    region_code: regionFromText(w.subject),\n    registrants: Number(w.numberOfRegistrants ?? w.registrantCount ?? 0),\n    campaign_key: null // optional: map to the SF event campaign later\n  }};\n}).filter((i) => i.json.event_key && i.json.activity_date);"
+        "jsCode": "// Native 'Webinar: Get All' returns ONE item per webinar.\n// Pull webinarKey + organizerKey (so attendees/registrants need no manual key) + subject/date/region.\nfunction regionFromText(t) {\n  const s = String(t || '').toLowerCase();\n  if (/\\b(uk|u\\.k\\.|united kingdom|england|scotland|wales|ireland|irish|dublin)\\b/.test(s)) return 'UKI';\n  if (/\\b(belgium|benelux|luxembourg|brussels)\\b/.test(s)) return 'BeLux';\n  if (/\\b(netherlands|dutch|holland|amsterdam)\\b/.test(s)) return 'NL';\n  return null;\n}\nfunction regionFromTZ(tz) {\n  const s = String(tz || '').toLowerCase();\n  if (s.includes('london') || s.includes('dublin')) return 'UKI';\n  if (s.includes('brussels') || s.includes('luxembourg')) return 'BeLux';\n  if (s.includes('amsterdam')) return 'NL';\n  return null;\n}\nreturn $input.all().map((it) => {\n  const w = it.json;\n  const start = (w.times && w.times[0] && w.times[0].startTime) || w.startTime || null;\n  const region = regionFromText(w.subject) || regionFromTZ(w.timeZone) || 'UNASSIGNED';\n  return { json: {\n    event_key: String(w.webinarKey || w.id || ''),\n    organizer_key: String(w.organizerKey || ''),\n    event_name: w.subject || w.name || null,\n    activity_date: start ? String(start).slice(0, 10) : null,\n    region_code: region,\n    campaign_key: null\n  }};\n}).filter((i) => i.json.event_key && i.json.activity_date);"
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000005",
       "name": "Flatten Webinars",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [320, 360]
+      "position": [
+        280,
+        360
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://api.getgo.com/G2W/rest/v2/organizers/{{ $('Config').first().json.organizer_key }}/webinars/{{ $json.event_key }}/attendees",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "options": { "response": { "response": { "neverError": true } } }
+        "url": "=https://api.getgo.com/G2W/rest/v2/organizers/{{ $json.organizer_key }}/webinars/{{ $json.event_key }}/registrants",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "goToWebinarOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000006",
-      "name": "Get Attendees",
+      "name": "Get Registrants",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [540, 360]
+      "position": [
+        500,
+        360
+      ],
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
     },
     {
       "parameters": {
-        "jsCode": "// Pair each webinar (from Flatten Webinars) with its attendees response (this node's input),\n// aligned by index. Attendees count = distinct registrantKey (someone may join multiple sessions).\nconst webinars = $('Flatten Webinars').all();\nconst attResp = $input.all();\n\nreturn webinars.map((wItem, i) => {\n  const w = wItem.json;\n  const resp = (attResp[i] && attResp[i].json) || [];\n  const list = Array.isArray(resp) ? resp\n    : (resp._embedded && resp._embedded.attendees) ? resp._embedded.attendees\n    : (resp.attendees || []);\n  const distinct = new Set(list.map((a) => a.registrantKey || a.attendeeKey || a.email).filter(Boolean));\n  return { json: {\n    event_key: w.event_key,\n    event_name: w.event_name,\n    activity_date: w.activity_date,\n    region_code: w.region_code,\n    campaign_key: w.campaign_key,\n    registrants: w.registrants,\n    attendees: distinct.size,\n    source: 'gotowebinar'\n  }};\n});"
+        "jsCode": "// Count distinct registrants per webinar using pairedItem lineage\n// (works whether n8n splits the array response into items or returns it as one).\nconst base = $('Flatten Webinars').all();\nconst sets = base.map(() => new Set());\nfor (const it of $input.all()) {\n  let idx = 0;\n  const pi = it.pairedItem;\n  if (typeof pi === 'number') idx = pi;\n  else if (pi && typeof pi.item === 'number') idx = pi.item;\n  else if (Array.isArray(pi) && pi[0] && typeof pi[0].item === 'number') idx = pi[0].item;\n  const b = it.json;\n  const list = Array.isArray(b) ? b\n    : (b && Array.isArray(b.registrants)) ? b.registrants : (b && Array.isArray(b.data)) ? b.data\n    : (b && (b.registrantKey || b.attendeeKey || b.email)) ? [b]\n    : [];\n  for (const a of list) { const k = a.registrantKey || a.email; if (k && sets[idx]) sets[idx].add(k); }\n}\nreturn base.map((w, i) => ({ json: { ...w.json, registrants: sets[i].size } }));"
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000007",
+      "name": "Add Registrants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.getgo.com/G2W/rest/v2/organizers/{{ $json.organizer_key }}/webinars/{{ $json.event_key }}/attendees",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "goToWebinarOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0000-0000-0000-000000000008",
+      "name": "Get Attendees",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        360
+      ],
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final rows: attendees counted from this node's input (Get Attendees) via pairedItem,\n// joined onto the webinar base (which already carries registrants).\nconst base = $('Add Registrants').all();\nconst sets = base.map(() => new Set());\nfor (const it of $input.all()) {\n  let idx = 0;\n  const pi = it.pairedItem;\n  if (typeof pi === 'number') idx = pi;\n  else if (pi && typeof pi.item === 'number') idx = pi.item;\n  else if (Array.isArray(pi) && pi[0] && typeof pi[0].item === 'number') idx = pi[0].item;\n  const b = it.json;\n  const list = Array.isArray(b) ? b\n    : (b && Array.isArray(b.attendees)) ? b.attendees\n    : (b && b._embedded && Array.isArray(b._embedded.attendees)) ? b._embedded.attendees\n    : (b && (b.registrantKey || b.attendeeKey || b.email)) ? [b]\n    : [];\n  for (const a of list) { const k = a.registrantKey || a.attendeeKey || a.email; if (k && sets[idx]) sets[idx].add(k); }\n}\nreturn base.map((w, i) => ({ json: {\n  event_key: w.json.event_key,\n  event_name: w.json.event_name,\n  activity_date: w.json.activity_date,\n  region_code: w.json.region_code,\n  campaign_key: w.json.campaign_key,\n  registrants: w.json.registrants,\n  attendees: sets[i].size,\n  source: 'gotowebinar'\n}}));"
+      },
+      "id": "a1b2c3d4-0000-0000-0000-000000000009",
       "name": "Build Event Rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [760, 360]
+      "position": [
+        1160,
+        360
+      ]
     },
     {
       "parameters": {
@@ -100,15 +176,23 @@
         "query": "INSERT INTO fact_event_daily\n  (event_key, event_name, activity_date, region_id, campaign_key, registrants, attendees, source)\nVALUES (\n  $1, $2, $3,\n  (SELECT region_id FROM dim_region WHERE region_code = $4),\n  $5, $6, $7, $8)\nON CONFLICT ON CONSTRAINT uq_event_grain DO UPDATE SET\n  event_name = EXCLUDED.event_name,\n  region_id = EXCLUDED.region_id,\n  campaign_key = COALESCE(EXCLUDED.campaign_key, fact_event_daily.campaign_key),\n  registrants = EXCLUDED.registrants,\n  attendees = EXCLUDED.attendees,\n  loaded_at = now();",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ $json.event_key }},{{ $json.event_name }},{{ $json.activity_date }},{{ $json.region_code }},{{ $json.campaign_key }},{{ $json.registrants }},{{ $json.attendees }},{{ $json.source }}"
+          "queryReplacement": "={{ [$json.event_key, $json.event_name, $json.activity_date, $json.region_code, $json.campaign_key, $json.registrants, $json.attendees, $json.source] }}"
         }
       },
-      "id": "a1b2c3d4-0000-0000-0000-000000000008",
+      "id": "a1b2c3d4-0000-0000-0000-00000000000a",
       "name": "Upsert fact_event_daily",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [980, 360],
-      "credentials": { "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" } }
+      "position": [
+        1380,
+        360
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
     },
     {
       "parameters": {
@@ -116,26 +200,128 @@
         "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('gotowebinar', CURRENT_DATE, $1, $2, 0, 0);",
         "options": {
           "queryBatching": "single",
-          "queryReplacement": "={{ $('Flatten Webinars').all().length }},{{ $('Build Event Rows').all().length }}"
+          "queryReplacement": "={{ [$('Flatten Webinars').all().length, $('Build Event Rows').all().length] }}"
         }
       },
-      "id": "a1b2c3d4-0000-0000-0000-000000000009",
+      "id": "a1b2c3d4-0000-0000-0000-00000000000b",
       "name": "Write data_quality_log",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1200, 360],
+      "position": [
+        1600,
+        360
+      ],
       "executeOnce": true,
-      "credentials": { "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" } }
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
     }
   ],
   "connections": {
-    "Daily 05:30": { "main": [ [ { "node": "Config", "type": "main", "index": 0 } ] ] },
-    "Config": { "main": [ [ { "node": "Get Webinars", "type": "main", "index": 0 } ] ] },
-    "Get Webinars": { "main": [ [ { "node": "Flatten Webinars", "type": "main", "index": 0 } ] ] },
-    "Flatten Webinars": { "main": [ [ { "node": "Get Attendees", "type": "main", "index": 0 } ] ] },
-    "Get Attendees": { "main": [ [ { "node": "Build Event Rows", "type": "main", "index": 0 } ] ] },
-    "Build Event Rows": { "main": [ [ { "node": "Upsert fact_event_daily", "type": "main", "index": 0 } ] ] },
-    "Upsert fact_event_daily": { "main": [ [ { "node": "Write data_quality_log", "type": "main", "index": 0 } ] ] }
+    "Daily 05:30": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Webinars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Webinars": {
+      "main": [
+        [
+          {
+            "node": "Flatten Webinars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Webinars": {
+      "main": [
+        [
+          {
+            "node": "Get Registrants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Registrants": {
+      "main": [
+        [
+          {
+            "node": "Add Registrants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Registrants": {
+      "main": [
+        [
+          {
+            "node": "Get Attendees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Attendees": {
+      "main": [
+        [
+          {
+            "node": "Build Event Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Event Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_event_daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert fact_event_daily": {
+      "main": [
+        [
+          {
+            "node": "Write data_quality_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

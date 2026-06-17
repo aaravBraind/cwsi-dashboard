@@ -6,6 +6,8 @@
 **Status key:** 🟢 live · 🟡 partial · 🔴 blocked on build · ⛔ blocked on client/external · ⚪ N/A
 
 > **Where we are:** Foundation + surface are largely live on real data (shell, filters, funnel/pipeline, LinkedIn, EUR budget, Outreach engagement, and now **Organic SEO via GA4 + Search Console**). The Salesforce **channel attribution** and **MQL** ingestion bugs are fixed. What remains before **T-7 (AI board pack)** is a short list of **client decisions + two ingestion items** — itemised below by who owns each.
+>
+> **Update 2026-06-16:** Overview funnel completed — **Opportunities** (`opp_count`) + **Closed Won** (`closed_won_count`) added to the SF workflow + store and re-run (245 won / £7.12M reconciled). Influenced **margin re-run is done** (no longer pending). Fixed a systemic **PostgREST 1000-row cap** that was silently truncating reads (funnel undercounted; SEO top-pages wrong) — all multi-row reads now paginate and SEO pages aggregate via an RPC (§4). Loading states restyled. **Architecture decision recorded: warehouse, not live source-fetching — see §8** (5 reasons + examples for the meeting).
 
 ---
 
@@ -17,7 +19,7 @@ Everything through T-6 is done **except** these. Each is tagged with its owner. 
 |---|---|---|---|
 | A | **KPI targets + traffic-light thresholds** (full register) | ⛔ Paul + Claire | decision |
 | B | ~~MQL definition (SQL > MQL)~~ ✅ **FIXED & LIVE (15 Jun)** — "reached MQL or beyond"; all-time MQL 3,945 > SQL 691, YTD 272 > 155. Only open: Margot's nod on the status buckets (1-line tweak). | 🟢 Margot (confirm only) | done |
-| C | ~~Influenced-margin / COGS basis~~ ✅ **RESOLVED in workflow (15 Jun), pending re-run** — `Opportunity.Vendor_Cost_Price__c` cost rollup is real (£4.19M cost on £7.20M won → **~£3.0M influenced margin**). Computed as Amount − vendor cost. | 🟡 Aarav (re-run) | done |
+| C | ~~Influenced-margin / COGS basis~~ ✅ **LIVE (re-run done 2026-06-16)** — `Opportunity.Vendor_Cost_Price__c` cost rollup (£4.19M cost on £7.20M won → **~£3.0M influenced margin**), computed as Amount − vendor cost. Only open item: Paul to confirm the cost-rollup basis is acceptable. | 🟢 (Paul confirm) | done |
 | D | **Per-channel spend** for CPL/ROI (only LinkedIn has spend) | 🟡 Aarav + Margot | build + data |
 | E | **GoToWebinar attendance** — workflow + `fact_event_daily` built (15 Jun); pending OAuth client + run. **In-person SF field** still ⛔ Margot. | 🟡 Aarav + Margot | build (in progress) |
 | ~~F~~ | ~~Outreach step-ingestion workflow~~ | ✅ Aarav | **DONE 15 Jun** — authored, live (1,150 rows) |
@@ -72,8 +74,8 @@ Each blocker below: **what's needed → why it matters → what we build once un
 | Item | Detail | Status | Blocks |
 |---|---|---|---|
 | ~~Outreach step-ingestion workflow~~ | ✅ **DONE 15 Jun** — `outreach_sequence_steps_ingestion.json` authored (daily, `/sequenceSteps` → `fact_outreach_step_daily`, 1,150 rows). | ✅ | — |
-| **Re-import fixed Salesforce workflow into n8n** | Channel-map + `channel_id` upsert fixes are in the **file**; n8n still runs an older copy. Re-import + re-run to make the file the source of truth. Data is already correct (re-synced manually). | 🟡 | Future SF runs staying correct |
-| **Delete stale n8n stub** | MCP-visible `rtigmdeHcI6NAjRQ` "CWSI - Salesforce Ingestion (T-2)" is a 10-Jun stub (opps-only, hardcoded channel). Remove to avoid running the wrong one. | 🟡 | Operational hygiene |
+| ~~Re-import fixed Salesforce workflow into n8n~~ | ✅ **DONE 2026-06-16** — corrected workflow (channel map, converted-lead MQL, margin, **`opp_count` + `closed_won_count`**) imported and re-run; store reconciles (245 won / £7.12M, all-time leads 25,231). | 🟢 | — |
+| **Delete stale n8n stub** | MCP-visible `rtigmdeHcI6NAjRQ` "CWSI - Salesforce Ingestion (T-2)" is a 10-Jun stub (opps-only, hardcoded channel, no Leads/Members). Still present — remove so the hourly schedule can't run the wrong one. | 🟡 | Operational hygiene |
 | **Per-channel spend join** | Wire spend→channel so CPL/CPC/ROI compute beyond LinkedIn (depends on Margot's merged spend mapping, item in §2). | 🔴 | CPL/ROI on every channel, Board CPL |
 | **Opportunity-stage distribution** | Pipeline page stage breakdown needs an opp-level pull (fact is channel-daily today). | 🔴 | Pipeline Stage Distribution panel |
 | **GA4 key-events** | Confirm whether GA4 conversions exist; if so map them (currently 0 → "pending"). | 🟡 | Organic conversion KPI |
@@ -108,6 +110,7 @@ Each blocker below: **what's needed → why it matters → what we build once un
 | ~~SQL > MQL in current year~~ | ✅ **RESOLVED (15 Jun)** — switched MQL to "reached MQL or beyond" (no MQL-date field exists). All-time MQL 3,945 > SQL 691; YTD 272 > 155. Status buckets pending Margot's confirm (1-line tweak). | 🟢 |
 | ~~Region = UNASSIGNED is large~~ | ✅ **RESOLVED (15 Jun)** — moved off dirty `Lead.Country` to `Lead_Region__c`/`Account.Region__c`. UNASSIGNED ~70% → ~4%. | 🟢 |
 | **Lead/Contact misclassification** | Per 4-May call: a colleague from an *existing customer* org who signs up is created as a **Lead** (not Contact); leads are converted to contacts manually by sales. So lead/MQL counts can include people from customer orgs. Inherent SF hygiene, affects funnel counts — note, not fixable in ingest. | 🟡 |
+| **PostgREST 1000-row response cap silently truncating reads** | FIXED 2026-06-16 — `.limit()` can't exceed the server `max-rows` (1000), so any scope >1000 rows undercounted. Funnel summed only 1,000 of ~2,100 fact rows (showed 11,590 leads vs 17,031); SEO top-pages used 1,000 of ~110k rows. Now all multi-row reads paginate via `fetchAll()`; SEO pages aggregate via the `get_seo_top_pages()` RPC. | 🟢 |
 | **Channel attribution** | FIXED 15 Jun — unmapped SF Campaign.Type no longer dumped into Organic SEO; 43 strays → "Other / Unmapped". Organic SEO 8,388→3,042 leads. | 🟢 |
 | **Fact channel_id frozen on re-run** | FIXED 15 Jun — `Upsert fact_channel_daily` now sets `channel_id`; one-time re-sync applied. | 🟢 |
 | **Campaign names** | FIXED — `v_fact_enriched` now resolves current names, not IDs. | 🟢 |
@@ -166,3 +169,40 @@ Each blocker below: **what's needed → why it matters → what we build once un
 - Currencies never summed raw (GBP vs EUR; pinned ECB rate, labelled for board reproducibility).
 - Snapshots ≠ trends (LinkedIn, Outreach are lifetime snapshots with an "as of" date).
 - No fabricated numbers — missing sources render "pending"/"not available yet", never a zero that reads as real.
+
+## 8. Architecture decision — warehouse, not live source-fetching
+
+**Decision (2026-06-16):** the dashboard reads a **warehouse** — sources are ingested into Supabase (`sources → n8n → Supabase → dashboard`) and the app queries that store. We evaluated **fetching live from the source systems** on each page load (e.g. an edge function that calls Salesforce per request) and **rejected it.**
+
+**This is what was scoped, not a new opinion.** The Vision Document (Component 1) commits to *"one unified, region-tagged marketing data store that every downstream component reads from,"* refreshed **daily**, and is explicit that the source systems *"stay as the systems of record; the dashboard reads from them."* Live-per-request fetching would contradict the signed vision. Five reasons, each grounded in the calls / vision and this build:
+
+1. **Half the channels cannot be live-fetched at all** *(4 May process-mapping call).* The call walked every channel's data source and established that several have **no queryable API**: LinkedIn has *"no LinkedIn API — manual export needed"* (Fluoro CSV); **spend** is Margot's spreadsheet; **GoToWebinar** attendance is an export; **in-person** attendance has *no Salesforce field at all*. You cannot "live fetch" a manual CSV or a spreadsheet on page load — only a store can hold them next to the API sources. The vision even files *"LinkedIn API automation"* under **future enhancements** ("if/when the API economics make sense"), so a live LinkedIn feed isn't on the table. **A warehouse is the only model that unifies manual-export + spreadsheet + API sources.**
+
+2. **Trace-to-data needs a stable, point-in-time source** *(Vision C4 — the board pack is "trace-to-data enforced"; every numeric claim "must trace back to a value in the data").* A warehouse row is fixed and reproducible for audit; a live query returns whatever the source says at that millisecond.
+   - *Example:* the pack narrates "**£7.12M closed-won across 245 deals**." From the warehouse that's reproducible next week for the board. With live fetch, re-opening the pack after 3 deals close shows £7.4M / 248 — narrative and number silently diverge, and trace-to-data breaks.
+
+3. **One blended number only exists in one store** *(Vision C1: "join everything on campaign, region, and date").* Unifying Salesforce + LinkedIn + Outreach + GA4 + Search Console + spend into one figure needs them co-located; live-per-source can't produce a blended number.
+   - *Example:* "Influenced pipeline by channel" joins SF pipeline + LinkedIn delivery spend (GBP) + GA4 sessions — three APIs, three schemas. Only `v_fact_enriched` expresses that as one query.
+
+4. **The dashboard must never disagree with Salesforce** *(Vision C3: "if the dashboard and Salesforce ever disagree on stage definitions, Paul stops trusting the dashboard").* One warehouse load captures every funnel stage at the same instant, so Leads→MQL→SQL→Opp→Won reconciles. Live per-call data captured at different instants doesn't.
+   - *Example:* pulling leads at 10:00 and opportunities at 10:05 during active selling can show more SQLs than the leads they descend from — an unexplainable funnel in front of the board.
+
+5. **Reliability + API-limit safety at the moment that matters.** The pack is generated live for a meeting. Live fetch re-pulls + re-transforms on every page load and filter change, multiplying latency and API calls; if Salesforce is slow or the daily API cap is hit at that instant, the funnel goes blank mid-presentation. The warehouse does the heavy work once per sync and never touches the source at read-time. (See the API-call math below.)
+
+### The API-call math (Salesforce funnel)
+
+The funnel is built from **4 SOQL queries** — Campaigns, Opportunities, Leads, CampaignMembers.
+
+| | Warehouse (current) | Live source-fetch |
+|---|---|---|
+| When SF is queried | once per **hourly sync** | on **every page load + filter change** |
+| Calls/day to Salesforce | **4 × 24 = ~96, fixed** | scales with usage — see below |
+| Effect of more users / clicking filters | **none** (reads hit Postgres) | **multiplies** every call |
+
+- *Warehouse:* **~96 Salesforce calls/day, flat** — independent of how many people open the dashboard or how many region/quarter filters they click.
+- *Live fetch:* one analyst comparing 3 regions × quarters across Overview + KPI + Pipeline easily triggers ~15 scope changes in a few minutes = **15 × 4 = 60 calls**. On a board-prep day — say 5 users × ~10 sessions × ~20 scope changes — that's ~1,000 loads × 4 = **~4,000 Salesforce calls/day, and that's just the SF funnel** (before LinkedIn/GA4/GSC/Outreach). It peaks exactly when the board is watching, and Salesforce enforces a per-org daily API cap — so the funnel can simply stop returning data mid-meeting.
+- *Same pattern, bigger:* the SEO page aggregates **~110,000** Search Console rows; once server-side (the `get_seo_top_pages` RPC) it's instant — re-pulling that live per view is untenable.
+
+**Bottom line:** ~96 calls/day that never moves, vs thousands that grow with every click and spike on board day.
+
+**If the real driver is freshness or dropping n8n:** the answer is a *scheduled* Supabase job (pg_cron + edge function) that still **writes to the warehouse** — keep ELT-into-store, never read-through to the source. That preserves all of the above while removing the n8n dependency.

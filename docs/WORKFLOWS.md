@@ -2,7 +2,7 @@
 
 **Purpose:** one row of truth per ingestion workflow — what it pulls, how it transforms, which Supabase table it writes, the grain, the schedule, and its known caveats. Files live in `dashboard/workflows/`.
 
-**Last verified:** 2026-06-15 against the live `supabase-cwsi` store and the workflow JSON on disk.
+**Last verified:** 2026-06-16 against the live `supabase-cwsi` store and the workflow JSON on disk.
 
 > ⚠️ **n8n runs its own stored copy of each workflow, not these files.** Editing a file here changes nothing until it is **re-imported into n8n**. Always confirm the node code in n8n matches the file before relying on a run. (This bit us on the Salesforce channel fix — see `DEPENDENCIES.md`.)
 
@@ -32,20 +32,19 @@ All workflows also write a row to `data_quality_log` (source, run_date, rows_in,
 
 - **Pulls (SOQL):**
   - `SF: Get Campaigns` — `Id, Name, Type, Status`
-  - `SF: Get Opportunities` — `Id, StageName, IsClosed, IsWon, Amount, CloseDate, CreatedDate, CampaignId, Account.BillingCountry WHERE CampaignId != null`
-  - `SF: Get Leads` — `Id, Status, CreatedDate, Country, IsConverted, ConvertedContactId`
+  - `SF: Get Opportunities` — `Id, StageName, IsClosed, IsWon, Amount, Vendor_Cost_Price__c, CloseDate, CreatedDate, CampaignId, Account.BillingCountry, Account.Region__c WHERE CampaignId != null`
+  - `SF: Get Leads` — `Id, Status, CreatedDate, Country, Lead_Region__c, IsConverted, ConvertedContactId`
   - `SF: Get CampaignMembers` — `Id, CampaignId, LeadId, ContactId, Status, CreatedDate`
 - **Transforms (`Build Fact Rows`):**
-  - **Channel** ← `CHANNEL_BY_TYPE[Campaign.Type]`; unmapped/non-channel types → **`Other / Unmapped`** (never Organic SEO). Paid Search has no SF type. *(Map fixed 15 Jun — see DEPENDENCIES.)*
-  - **Region** ← `Account.BillingCountry` (opps) / `Lead.Country` (leads) → UKI / BeLux / NL / UNASSIGNED.
-  - **Leads + MQL** ← CampaignMember joined to Lead **by `LeadId` OR `ConvertedContactId`** (the MQL fix — converted leads were being dropped). MQL = lead's current `Status == 'Marketing Qualified Lead'`.
-  - **SQL / pipeline / closed-won** ← Opportunities. Every qualified opp (`StageName != 'Unqualified opp'`) = 1 SQL; `IsWon` → closed-won £; open qualified → pipeline £.
+  - **Channel** ← `CHANNEL_BY_TYPE[Campaign.Type]`; unmapped/non-channel types → **`Other / Unmapped`** (never Organic SEO). Paid Search has no SF type. *(Map fixed 15 Jun.)*
+  - **Region** ← `Lead.Lead_Region__c` (leads, fallback `Country`) / `Account.Region__c` (opps, fallback `BillingCountry`) → UKI / BeLux / NL / UNASSIGNED. *(Region fix 15 Jun — UNASSIGNED dropped ~70%→~4%.)*
+  - **Leads + MQL** ← CampaignMember joined to Lead **by `LeadId` OR `ConvertedContactId`** (converted leads were being dropped). MQL = **"reached MQL or beyond"** — any status NOT in the pre-MQL/disqualified set (no MQL-date field exists, so progression doesn't shrink the count). *(Definition fix 15 Jun.)*
+  - **SQL / Opportunities / pipeline / closed-won / margin** ← Opportunities. Every qualified opp (`StageName != 'Unqualified opp'`) = 1 SQL; **`opp_count`** = qualified opps that are open OR won (subset of SQL); **`closed_won_count`** = `IsWon` deals; `IsWon` → closed-won £ + **`margin_value`** = Amount − `Vendor_Cost_Price__c`; open qualified → pipeline £. *(opp_count / closed_won_count / margin added 2026-06-16.)*
   - spend / impressions = 0 (SF carries none; filled by LinkedIn + budget feeds).
-- **Writes:** `dim_campaign` (SCD `is_current`), `fact_channel_daily` (upsert on `uq_fact_grain = campaign_key, region_id, activity_date, source`).
+- **Writes:** `dim_campaign` (SCD `is_current`), `fact_channel_daily` (upsert on `uq_fact_grain = campaign_key, region_id, activity_date, source`) incl. `opp_count`, `closed_won_count`, `margin_value`.
 - **Caveats:**
-  - 🔴 **MQL is a status snapshot, SQL is a cumulative event** → SQL > MQL in the current year. Not a code bug — needs an MQL event-date from SF. See DEPENDENCIES §data-quality.
-  - The upsert `DO UPDATE SET` now includes `channel_id` (was frozen). `region_id`/`pillar_id` re-maps still need care (region_id is part of the grain).
-  - Region is heavily UNASSIGNED because `Lead.Country` is largely blank/dirty.
+  - MQL definition resolved to "reached MQL or beyond" (status buckets pending Margot's 1-line nod). Funnel no longer inverts (all-time MQL 3,945 > SQL 691).
+  - The upsert `DO UPDATE SET` includes `channel_id`, `opp_count`, `closed_won_count`, `margin_value`. `region_id` is part of the grain, so a region re-map inserts a new grain row (old row persists) — re-syncs should be full, not incremental, when region logic changes.
 
 ## 2. `GA4_ingest.json` — website traffic
 

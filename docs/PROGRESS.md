@@ -1,7 +1,9 @@
 # CWSI Marketing Dashboard — Build Progress
 
-**Target delivery:** 2026-06-23 · **Owner:** BrainD (Aarav) · **Last updated:** 2026-06-15
-**Overall build ≈ 60–65%.** Foundation (T-1/2/3) and surface (T-4/5/6) are largely done; the differentiator + close-out (T-7/8/9/10) are not started.
+**Target delivery:** 2026-06-23 · **Owner:** BrainD (Aarav) · **Last updated:** 2026-06-16
+**Overall build ≈ 65–70%.** Foundation (T-1/2/3) and surface (T-4/5/6) are largely done; the differentiator + close-out (T-7/8/9/10) are not started.
+
+> **2026-06-16:** Overview funnel completed end-to-end — **Opportunities** (`opp_count`) + **Closed Won** (`closed_won_count`) added to the SF workflow + store and re-run (245 won / £7.12M reconciled). Fixed a systemic **PostgREST 1000-row cap** that was silently undercounting reads (funnel + SEO top-pages); all reads now paginate / aggregate server-side. Loading states restyled. Architecture decision recorded (warehouse vs live fetch) — `DEPENDENCIES.md` §8.
 
 **Legend:** ✅ done · 🟡 partial (works, gated/incomplete) · 🔴 blocked · ⬜ not started · ⚪ N/A by exception
 
@@ -16,7 +18,7 @@
 | **T-3** Manual ingestion | LinkedIn, spend sheet, GoToWebinar, in-person | 🟡 | ~55 | **GoToWebinar attendance** + **in-person SF field** not built |
 | **T-4** Shell + Overview + KPI Tracker | filters, funnel, 28-KPI register, gaps-to-close | 🟡 | ~95 | Targets/thresholds config-gated (client) |
 | **T-5** Six channel pages | per-channel totals + drill-down | 🟡 | ~80 | Email/Events engagement metrics; rest live |
-| **T-6** Pipeline / funnel / attribution | SF-mirrored funnel, by-source, vs target | 🟡 | ~90 | MQL definition caveat; opp-stage distribution not modelled |
+| **T-6** Pipeline / funnel / attribution | SF-mirrored funnel, by-source, vs target | 🟡 | ~92 | Funnel now complete (Leads→MQL→SQL→**Opp**→**Closed Won**); opp-level stage distribution (per SF stage) still not modelled |
 | **T-7** AI board pack | Claude narrative, trace-to-data | ⬜ | 0 | Not started — **gated, see below** |
 | **T-8** Export CSV/PDF/PPTX | board pack + KPI/pipeline export | ⬜ | 0 | Stubs only |
 | **T-9** aitp-qa gate | adversarial QA, ship/no-ship | ⬜ | 0 | Not started |
@@ -52,8 +54,8 @@ Live shell, region/quarter filters re-scope every figure, funnel, pipeline-by-ch
 - 🟡 Email — pipeline live; CTR/unsub/opens not sourced (ESP/SF email engagement).
 - 🟡 Events — pipeline live; attendance + event sub-types missing.
 
-### T-6 Pipeline / funnel / attribution 🟡 ~90%
-Funnel, pipeline-by-source, channel split all live and now correctly attributed (channel fix). **Caveats:** (1) MQL definition causes SQL>MQL in current year (see below); (2) opportunity-stage distribution not modelled (fact is channel-daily, not opp-level); (3) influenced margin has no cost basis.
+### T-6 Pipeline / funnel / attribution 🟡 ~92%
+Funnel, pipeline-by-source, channel split all live and correctly attributed. Funnel is now **complete** — Leads→MQL→SQL→**Opportunities**→**Closed Won**, all real counts (`opp_count` = qualified open+won opps, a subset of SQL so the funnel narrows; `closed_won_count` = won deals). **Caveats:** (1) MQL definition (resolved to "reached MQL or beyond" — see §4); (2) opportunity-**stage** distribution (per SF StageName) still not modelled (fact is channel-daily, not opp-level); (3) influenced margin now live (vendor-cost basis — Paul to confirm).
 
 ### T-7–T-10 ⬜
 Not started. T-8 export buttons are visual stubs.
@@ -66,12 +68,12 @@ T-7 can be *built* against live data, but the board narrative leads on **MQL, SQ
 
 | Board metric | Ready? | Blocker | Owner |
 |---|---|---|---|
-| Closed opps, Influenced pipeline | ✅ actuals live | targets only | client |
-| MQL, SQL, MQL→SQL | 🔴 | **MQL definition** — SQL>MQL in current year; needs MQL event-date from SF | Margot / SF |
-| Influenced margin | 🔴 | no cost/COGS basis defined | Paul |
+| Closed opps, Opportunities, Influenced pipeline, Closed-Won | ✅ actuals live | targets only | client |
+| MQL, SQL, MQL→SQL | 🟢 | **RESOLVED** — MQL = "reached MQL or beyond"; funnel no longer inverts. Only Margot's nod on status buckets | Margot (confirm) |
+| Influenced margin | 🟢 | **RESOLVED & LIVE** — vendor-cost basis (~£3.0M); Paul to confirm basis | Paul (confirm) |
 | CPL | 🔴 | spend per channel — only LinkedIn has spend | T-3 / Margot |
 | Every "vs target" / status | 🔴 | `kpi_targets` register absent | Paul + Claire |
 
-**Conclusion:** T-7 should not ship a board pack that narrates a broken MQL→SQL funnel or fabricates targets. The four blockers above are tracked in `DEPENDENCIES.md`. Either resolve them, or T-7 launches with those metrics explicitly **"pending"** (trace-to-data enforced) — a product decision to confirm with Paul/Margot.
+**Conclusion:** the funnel + margin blockers are now resolved, so T-7 can narrate a coherent funnel. Only **two** gate items remain: **per-channel spend → CPL** (T-3 / Margot) and the **`kpi_targets` register** (Paul + Claire). Either resolve them, or T-7 launches with those two metrics explicitly **"pending"** (trace-to-data enforced) — a product decision to confirm with Paul/Margot.
 
 See `DEPENDENCIES.md` for owners and `WORKFLOWS.md` for the ingestion detail behind each row.

@@ -1,15 +1,58 @@
-// Shared loading / error / empty / not-available states. They reuse the
-// artifact's existing classes (callout, info-pill) so styling is unchanged.
+// Shared loading / error / empty / not-available states.
 
+// Default page-level loader: a centered, branded spinner with a soft-pulsing
+// label. role=status + aria-live so screen readers announce the loading state.
 export function Loading({ label = 'Loading…' }) {
   return (
-    <div className="callout">
-      <div className="callout-icn">
-        <svg className="icon icon-lg" viewBox="0 0 24 24">
-          <path d="M3 12a9 9 0 1 0 9-9" />
-        </svg>
+    <div className="loading-state" role="status" aria-live="polite">
+      <div className="spinner" />
+      <div className="loading-label">{label}</div>
+    </div>
+  )
+}
+
+// Shimmer-skeleton building blocks for layout-matched loading (feels faster than
+// a spinner because the page keeps its shape). Use LoadingSkeleton for the common
+// "KPI row + panel" pages, or compose Skeleton / SkeletonPanel directly.
+export function Skeleton({ className = '', style }) {
+  return <div className={`skeleton ${className}`} style={style} />
+}
+
+export function SkeletonKpis({ count = 3 }) {
+  return (
+    <div className="skel-kpis">
+      {Array.from({ length: count }).map((_, i) => (
+        <div className="skel-kpi" key={i}>
+          <Skeleton className="skel-line sm" style={{ width: '45%' }} />
+          <Skeleton className="skel-line lg" style={{ width: '70%' }} />
+          <Skeleton className="skel-line sm" style={{ width: '35%' }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function SkeletonPanel({ rows = 5 }) {
+  return (
+    <div className="skel-panel">
+      <div className="skel-panel-head">
+        <Skeleton className="skel-line" style={{ width: '30%' }} />
       </div>
-      <div className="callout-body">{label}</div>
+      <div className="skel-panel-body">
+        {Array.from({ length: rows }).map((_, i) => (
+          <Skeleton className="skel-line" key={i} style={{ width: `${90 - i * 9}%` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Common page shape: a KPI row above a panel. Drop-in alternative to <Loading/>.
+export function LoadingSkeleton({ kpis = 3, rows = 5 }) {
+  return (
+    <div role="status" aria-live="polite" style={{ animation: 'fadeIn .3s ease' }}>
+      <SkeletonKpis count={kpis} />
+      <SkeletonPanel rows={rows} />
     </div>
   )
 }

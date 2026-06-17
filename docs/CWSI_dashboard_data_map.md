@@ -2,6 +2,9 @@
 
 **As of:** 14 June 2026 · **Warehouse:** Supabase (`supabase-cwsi`) · **Pipelines:** n8n → Postgres
 
+> **⚠️ Canonical mapping is now `CWSI_Dashboard_DataSource_Mapping.md`** (kept current). This file remains useful for the glossary/definitions; for panel→source status see the canonical doc.
+> **Update 2026-06-16:** Overview funnel completed (Leads→MQL→SQL→**Opportunities**→**Closed Won**; `opp_count` + `closed_won_count` live, 245 won / £7.12M). MQL resolved to "reached MQL or beyond" (no longer inverts). Fixed a PostgREST **1000-row cap** that silently truncated reads (funnel + SEO top-pages) — reads now paginate / aggregate server-side. Architecture: **warehouse, not live source-fetching** (`DEPENDENCIES.md` §8).
+
 This doc maps every dashboard surface to the data behind it: **what feeds it → which DB table → which original source → status**, then explains exactly **how region and pillar are derived**, what's missing, and what each term means.
 
 Legend: ✅ live · 🟡 partial / loaded but caveat · 🔴 not started / empty · ⛔ blocked on client/external

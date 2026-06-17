@@ -1,5 +1,5 @@
 import QuarterPills from '../QuarterPills'
-import { Loading, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
+import { LoadingSkeleton, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
 import { useOverview } from '../../hooks/useDashboardData'
 import { gbp, num, pct, ratio, isNA } from '../../data/format'
 import { FY_TARGETS, light } from '../../data/thresholds'
@@ -23,7 +23,7 @@ export default function Overview() {
         <QuarterPills />
       </div>
 
-      {q.isLoading && <Loading />}
+      {q.isLoading && <LoadingSkeleton />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState />}
 
@@ -97,14 +97,14 @@ function Body({ data }) {
             <Stage name="Leads" val={num(funnel.leads)} extra="all sources" />
             <Stage name="MQLs" val={num(funnel.mql)} extra={`${pct(funnel.mql, funnel.leads)} of leads`} />
             <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} />
-            <Stage name="Opportunities" val="—" extra="not available yet" />
-            <Stage name="Retained" val="—" extra="not available yet" />
+            <Stage name="Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} />
+            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
-            <span className="conv">▶ SQL → Opp n/a</span>
-            <span className="conv">▶ Opp → Closed n/a</span>
+            <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Opp n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Opp`}</span>
+            <span className="conv">▶ {isNA(funnel.closedWonCount) || isNA(funnel.opp) ? 'Opp → Closed n/a' : `${pct(funnel.closedWonCount, funnel.opp)} Opp → Won`}</span>
           </div>
         </div>
       </div>
