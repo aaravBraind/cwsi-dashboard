@@ -128,7 +128,7 @@
         "query": "INSERT INTO fact_seo_daily\n  (activity_date, region_id, clicks, impressions, ctr, avg_position, source)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  $3, $4, $5, $6, $7)\nON CONFLICT ON CONSTRAINT uq_fact_seo_grain DO UPDATE SET\n  clicks = EXCLUDED.clicks,\n  impressions = EXCLUDED.impressions,\n  ctr = EXCLUDED.ctr,\n  avg_position = EXCLUDED.avg_position,\n  loaded_at = now();",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ $json.activity_date }},{{ $json.region_code }},{{ $json.clicks }},{{ $json.impressions }},{{ $json.ctr }},{{ $json.avg_position }},{{ $json.source }}"
+          "queryReplacement": "={{ [$json.activity_date, $json.region_code, $json.clicks, $json.impressions, $json.ctr, $json.avg_position, $json.source] }}"
         }
       },
       "id": "8941b682-6770-4807-80c5-7154105df7b9",
@@ -212,7 +212,7 @@
         "query": "INSERT INTO fact_seo_page_daily\n  (activity_date, page, clicks, impressions, ctr, avg_position, source)\nVALUES ($1, $2, $3, $4, $5, $6, $7)\nON CONFLICT ON CONSTRAINT uq_fact_seo_page_grain DO UPDATE SET\n  clicks = EXCLUDED.clicks,\n  impressions = EXCLUDED.impressions,\n  ctr = EXCLUDED.ctr,\n  avg_position = EXCLUDED.avg_position,\n  loaded_at = now();",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ $json.activity_date }},{{ $json.page }},{{ $json.clicks }},{{ $json.impressions }},{{ $json.ctr }},{{ $json.avg_position }},{{ $json.source }}"
+          "queryReplacement": "={{ [$json.activity_date, $json.page, $json.clicks, $json.impressions, $json.ctr, $json.avg_position, $json.source] }}"
         }
       },
       "id": "8be89a77-2b84-4ee8-b1e1-104c1107f715",

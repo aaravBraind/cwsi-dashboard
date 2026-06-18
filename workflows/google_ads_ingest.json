@@ -152,7 +152,7 @@
           "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  channel_id = EXCLUDED.channel_id;",
           "options": {
             "queryBatching": "independently",
-            "queryReplacement": "={{ $json.campaign_key }},{{ $json.channel_name }},{{ $json.campaign_name }},{{ $json.source_system }}"
+            "queryReplacement": "={{ [$json.campaign_key, $json.channel_name, $json.campaign_name, $json.source_system] }}"
           }
         },
         "id": "a0a7ea71-7e58-4d43-b36d-5df4732dec4b",

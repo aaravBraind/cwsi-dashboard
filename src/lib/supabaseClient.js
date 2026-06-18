@@ -10,8 +10,15 @@ if (!url || !anonKey) {
   )
 }
 
-// Single read-only client. RLS is assumed ON with the anon role granted
-// SELECT on the canonical views only. This app never writes.
+// Single client. The dashboard is gated behind Supabase Auth: every data read
+// runs as the signed-in `authenticated` user (RLS grants SELECT on the canonical
+// views/tables to `authenticated` only — `anon` has no read access). The session
+// is persisted and auto-refreshed so a reload keeps the user signed in. This app
+// only ever reads data; the only writes are auth self-service (password / name).
 export const supabase = createClient(url, anonKey, {
-  auth: { persistSession: false },
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
 })

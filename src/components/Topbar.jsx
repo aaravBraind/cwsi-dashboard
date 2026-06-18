@@ -1,14 +1,17 @@
+import { useEffect, useRef, useState } from 'react'
 import { REGIONS } from '../data/constants'
 import { useFilters } from '../filters/FilterContext'
+import { useAuth, displayName } from '../auth/AuthContext'
 
 const CRUMB = {
   overview: 'Overview', kpi: 'KPI Tracker', pipeline: 'Pipeline Report',
   'ch-linkedin': 'LinkedIn Paid', 'ch-search': 'Paid Search', 'ch-seo': 'Organic SEO',
   'ch-email': 'Email', 'ch-outreach': 'Outreach.io', 'ch-events': 'Events',
   board: 'Board Pack', salesforce: 'Salesforce Sync', export: 'Export',
+  settings: 'Account Settings',
 }
 
-export default function Topbar({ active }) {
+export default function Topbar({ active, onNavigate }) {
   const { filters, setRegion } = useFilters()
   return (
     <header className="topbar">
@@ -45,8 +48,75 @@ export default function Topbar({ active }) {
           </svg>{' '}
           Export
         </button>
-        <div className="avatar">M</div>
+        <UserMenu onNavigate={onNavigate} />
       </div>
     </header>
+  )
+}
+
+// Avatar button with a dropdown for account settings + sign out. Closes on
+// outside-click and on Escape.
+function UserMenu({ onNavigate }) {
+  const { user, signOut } = useAuth()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    const onKey = (e) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const name = displayName(user)
+  const initial = name.charAt(0).toUpperCase()
+
+  return (
+    <div className="user-menu" ref={ref}>
+      <button
+        className="avatar"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={user?.email}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div className="user-dropdown" role="menu">
+          <div className="user-dropdown-head">
+            <div className="user-dropdown-name">{name}</div>
+            <div className="user-dropdown-email">{user?.email}</div>
+          </div>
+          <button
+            className="user-dropdown-item"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onNavigate('settings')
+            }}
+          >
+            Account settings
+          </button>
+          <button
+            className="user-dropdown-item danger"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              signOut()
+            }}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

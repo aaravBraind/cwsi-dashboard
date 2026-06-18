@@ -108,7 +108,7 @@
           "query": "INSERT INTO fact_web_daily\n  (activity_date, region_id, hostname, sessions, key_events, engaged_sessions, source)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  $3, $4, $5, $6, $7)\nON CONFLICT ON CONSTRAINT uq_fact_web_grain DO UPDATE SET\n  sessions = EXCLUDED.sessions,\n  key_events = EXCLUDED.key_events,\n  engaged_sessions = EXCLUDED.engaged_sessions,\n  loaded_at = now();",
           "options": {
             "queryBatching": "independently",
-            "queryReplacement": "={{ $json.activity_date }},{{ $json.region_code }},{{ $json.hostname }},{{ $json.sessions }},{{ $json.key_events }},{{ $json.engaged_sessions }},{{ $json.source }}"
+            "queryReplacement": "={{ [$json.activity_date, $json.region_code, $json.hostname, $json.sessions, $json.key_events, $json.engaged_sessions, $json.source] }}"
           }
         },
         "id": "76ba90e7-f2f2-4ee3-909c-4db971fe8053",

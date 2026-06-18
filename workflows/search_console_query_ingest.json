@@ -1,0 +1,143 @@
+  {
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## GSC query/keyword -> fact_seo_query_daily (PAGINATED)\n\nSelf-serve SEO keyword feed (added 2026-06-17). Fills the 'Top keywords per category' panel that was previously unsourced (we only had page-level data).\n\nPROPERTY: URL-prefix  https://cwsisecurity.com/  (same as search_console_ingest).\nGSC retains ~16 months. Dimension = [date, query]; NO region dim (query+country gets sparse + GSC anonymises low-volume queries).\n\nDAILY: lookback_days = 7.\nONE-TIME BACKFILL: set lookback_days = 490, run once, confirm rows, then RESET to 7.\n\nAFTER IMPORT:\n1. 'Config' gsc_site_url already = https://cwsisecurity.com/ .\n2. Select the Google OAuth2 cred (webmasters.readonly) on the GSC HTTP node.\n3. GSC lags ~2 days; window ends today-2.\n4. NOTE: GSC withholds (anonymises) queries below a volume threshold, so summed query clicks will be < total clicks in fact_seo_daily. This is expected, not a bug.",
+          "height": 460,
+          "width": 480
+        },
+        "id": "qn-sticky-1",
+        "name": "Sticky Note",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [32, 32]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 5,
+                "triggerAtMinute": 20
+              }
+            ]
+          }
+        },
+        "id": "qn-trigger",
+        "name": "Daily 05:20",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [0, 528]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              { "id": "a1", "name": "gsc_site_url", "value": "https://cwsisecurity.com/", "type": "string" },
+              { "id": "a2", "name": "lookback_days", "value": 7, "type": "number" }
+            ]
+          },
+          "options": {}
+        },
+        "id": "qn-config",
+        "name": "Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [192, 528]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://www.googleapis.com/webmasters/v3/sites/{{ encodeURIComponent($('Config').first().json.gsc_site_url) }}/searchAnalytics/query",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleOAuth2Api",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"startDate\": \"{{ $now.minus({ days: Number($('Config').first().json.lookback_days) + 2 }).toFormat('yyyy-MM-dd') }}\",\n  \"endDate\": \"{{ $now.minus({ days: 2 }).toFormat('yyyy-MM-dd') }}\",\n  \"dimensions\": [\"date\", \"query\"],\n  \"rowLimit\": 25000\n}",
+          "options": {
+            "pagination": {
+              "pagination": {
+                "paginationMode": "updateAParameterInEachRequest",
+                "parameters": {
+                  "parameters": [
+                    { "type": "body", "name": "startRow", "value": "={{ $pageCount * 25000 }}" }
+                  ]
+                },
+                "paginationCompleteWhen": "other",
+                "completeExpression": "={{ ($response.body.rows || []).length < 25000 }}",
+                "limitPagesFetched": true,
+                "maxRequests": 80,
+                "requestInterval": 300
+              }
+            }
+          }
+        },
+        "id": "qn-http",
+        "name": "GSC: Query by Keyword",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [384, 528],
+        "credentials": {
+          "googleOAuth2Api": { "id": "aGp39YlpqVwDaBTl", "name": "CWSI Oauth" }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// GSC date x query (ALL pages) -> fact_seo_query_daily rows.\nconst items = $input.all();\nlet rows = [];\nfor (const it of items) { rows = rows.concat((it.json && it.json.rows) || []); }\nconst out = [];\nlet issues = 0;\nfor (const r of rows) {\n  const keys = r.keys || [];\n  const date = String(keys[0] || '');\n  const query = String(keys[1] || '');\n  if (date.length !== 10 || !query) { issues++; continue; }\n  out.push({\n    activity_date: date,\n    query: query,\n    clicks: Number(r.clicks) || 0,\n    impressions: Number(r.impressions) || 0,\n    ctr: Number(r.ctr) || 0,\n    avg_position: Number((Number(r.position) || 0).toFixed(2)),\n    source: 'gsc'\n  });\n}\nif (out.length === 0) {\n  throw new Error('GSC query feed returned 0 usable rows - check site URL format and webmasters.readonly access');\n}\nconst meta = { rows_in: rows.length, issues: issues, pages: items.length };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
+        },
+        "id": "qn-build",
+        "name": "Build Query Rows",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [576, 528]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO fact_seo_query_daily\n  (activity_date, query, clicks, impressions, ctr, avg_position, source)\nVALUES ($1, $2, $3, $4, $5, $6, $7)\nON CONFLICT ON CONSTRAINT uq_fact_seo_query_grain DO UPDATE SET\n  clicks = EXCLUDED.clicks,\n  impressions = EXCLUDED.impressions,\n  ctr = EXCLUDED.ctr,\n  avg_position = EXCLUDED.avg_position,\n  loaded_at = now();",
+          "options": {
+            "queryBatching": "independently",
+            "queryReplacement": "={{ [$json.activity_date, $json.query, $json.clicks, $json.impressions, $json.ctr, $json.avg_position, $json.source] }}"
+          }
+        },
+        "id": "qn-upsert",
+        "name": "Upsert fact_seo_query_daily",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [768, 528],
+        "credentials": {
+          "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('gsc_query', CURRENT_DATE, $1, $2, $3, $4);",
+          "options": {
+            "queryBatching": "single",
+            "queryReplacement": "={{ $(\"Build Query Rows\").first().json._meta.rows_in }},{{ $(\"Build Query Rows\").all().length }},{{ $(\"Build Query Rows\").first().json._meta.issues }},{{ (function(){ const ri = $(\"Build Query Rows\").first().json._meta.rows_in; const is = $(\"Build Query Rows\").first().json._meta.issues; return ri ? Number((is / ri * 100).toFixed(2)) : 0; })() }}"
+          }
+        },
+        "id": "qn-dqlog",
+        "name": "Write data_quality_log",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [960, 528],
+        "executeOnce": true,
+        "credentials": {
+          "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" }
+        }
+      }
+    ],
+    "connections": {
+      "Daily 05:20": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+      "Config": { "main": [[{ "node": "GSC: Query by Keyword", "type": "main", "index": 0 }]] },
+      "GSC: Query by Keyword": { "main": [[{ "node": "Build Query Rows", "type": "main", "index": 0 }]] },
+      "Build Query Rows": { "main": [[{ "node": "Upsert fact_seo_query_daily", "type": "main", "index": 0 }]] },
+      "Upsert fact_seo_query_daily": { "main": [[{ "node": "Write data_quality_log", "type": "main", "index": 0 }]] }
+    },
+    "pinData": {},
+    "meta": {
+      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    }
+  }
