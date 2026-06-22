@@ -1,10 +1,27 @@
 import QuarterPills from '../QuarterPills'
 import { LoadingSkeleton, Loading, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
 import { useOverview, useEvents } from '../../hooks/useDashboardData'
+import { useFilters } from '../../filters/FilterContext'
 import { gbp, num, pct, ratio, isNA } from '../../data/format'
-import { FY_TARGETS, light } from '../../data/thresholds'
+import { targetFor, kpiLight, pctOfTarget } from '../../data/thresholds'
 import { I } from '../icons'
 import MarketingBudget from '../MarketingBudget'
+
+// Status lights + %-of-target follow the ACTIVE quarter pill (Q1..Q4 → that
+// quarter's placeholder target; YTD → the FY target), mirroring the KPI Tracker
+// via the same helpers. Targets are PROVISIONAL placeholders (client kpi_targets
+// register pending) and flagged as such; actuals are live/real.
+const scopeLabel = (q) => (!q || q === 'ytd' ? 'FY' : String(q).toUpperCase())
+// "% of <scope>" for a KPI vs its quarter-scoped placeholder target.
+const pctOf = (v, key, q) => {
+  const f = pctOfTarget(v, key, q)
+  return f == null ? 'n/a' : `${(f * 100).toFixed(0)}% of ${scopeLabel(q)}`
+}
+// "<scope> tgt: <value> · provisional" for the tile sub-line.
+const tgtSub = (key, q, fmt) => {
+  const t = targetFor(key, q)
+  return t == null ? 'target pending (provisional)' : `${scopeLabel(q)} tgt: ${fmt(t)} · provisional`
+}
 
 export default function Overview() {
   const q = useOverview()
@@ -36,47 +53,54 @@ export default function Overview() {
 
 function Body({ data }) {
   const { funnel, byChannel, retention = {} } = data
+  const { filters } = useFilters()
+  const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
   // Webinar attendance (real, scoped) — drives the Events panel + the health row.
   const ev = useEvents()
   const evt = ev.data?.hasData ? ev.data.totals : null
+  // Rate actuals (fractions) for status vs rate targets.
+  const mqlToSqlV = funnel.mql ? funnel.sql / funnel.mql : null
+  const attendanceV = evt && evt.registrants ? evt.attendees / evt.registrants : null
 
   return (
     <>
-      {/* 1. Top-line summary */}
+      {/* 1. Top-line summary — target + light follow the active quarter pill */}
       <div className="kpis cols-3">
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.pound}</svg></div>
-            <span className={`tl ${light(funnel.pipeline, FY_TARGETS.influencedPipeline)}`}>
-              <span className="tl-dot" />{pct(funnel.pipeline, FY_TARGETS.influencedPipeline, 0)} of FY
+            <span className={`tl ${kpiLight(funnel.pipeline, 'influencedPipeline', qtr)}`}>
+              <span className="tl-dot" />{pctOf(funnel.pipeline, 'influencedPipeline', qtr)}
             </span>
           </div>
           <div className="kpi-label">Influenced Pipeline · scoped</div>
           <div className="kpi-val">{gbp(funnel.pipeline)}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">FY: {gbp(FY_TARGETS.influencedPipeline)}</span>
+            <span className="kpi-target">{tgtSub('influencedPipeline', qtr, gbp)}</span>
           </div>
         </div>
 
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn green"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.trend}</svg></div>
-            <span className={`tl ${light(funnel.closedWon, FY_TARGETS.influencedMargin)}`}>
-              <span className="tl-dot" />{pct(funnel.closedWon, FY_TARGETS.influencedMargin, 0)} of FY
+            <span className={`tl ${kpiLight(funnel.closedWon, 'influencedMargin', qtr)}`}>
+              <span className="tl-dot" />{pctOf(funnel.closedWon, 'influencedMargin', qtr)}
             </span>
           </div>
           <div className="kpi-label">Closed-Won Value · scoped</div>
           <div className="kpi-val">{gbp(funnel.closedWon)}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">FY margin target: {gbp(FY_TARGETS.influencedMargin)}</span>
+            <span className="kpi-target">{tgtSub('influencedMargin', qtr, gbp)}</span>
           </div>
         </div>
 
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn amber"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.users}</svg></div>
-            <span className="tl neu"><span className="tl-dot" />{retention.hasData ? 'won renewals' : 'n/a'}</span>
+            <span className={`tl ${retention.hasData ? kpiLight(retention.retainedCount, 'retainedContracts', qtr) : 'neu'}`}>
+              <span className="tl-dot" />{retention.hasData ? pctOf(retention.retainedCount, 'retainedContracts', qtr) : 'n/a'}
+            </span>
           </div>
           <div className="kpi-label">Retained Contracts · scoped</div>
           <div className="kpi-val">{retention.hasData ? num(retention.retainedCount) : '—'}</div>
@@ -90,7 +114,7 @@ function Body({ data }) {
                   </span>
                 )}
                 <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  Boundary: Renewal only — Paul confirms if Upsell/Cross-Sell count as retained
+                  {tgtSub('retainedContracts', qtr, num)} · whole-book scale; scope (Paul) pending
                 </span>
               </>
             ) : (
@@ -202,17 +226,17 @@ function Body({ data }) {
           <div className="panel-head">
             <div className="left">
               <div className="panel-title">Quarter Health</div>
-              <div className="panel-sub">Traffic-light thresholds are configurable (client-gated)</div>
+              <div className="panel-sub">Status vs the active-quarter target · provisional placeholders (client-gated)</div>
             </div>
           </div>
           <div className="panel-body">
             <div className="def-grid" style={{ gridTemplateColumns: '1fr', gap: 0 }}>
-              <HealthRow label="Influenced pipeline" cls={light(funnel.pipeline, FY_TARGETS.influencedPipeline)} val={pct(funnel.pipeline, FY_TARGETS.influencedPipeline, 0)} />
-              <HealthRow label="Closed-won value" cls={light(funnel.closedWon, FY_TARGETS.influencedMargin)} val={gbp(funnel.closedWon)} />
+              <HealthRow label="Influenced pipeline" cls={kpiLight(funnel.pipeline, 'influencedPipeline', qtr)} val={pctOf(funnel.pipeline, 'influencedPipeline', qtr)} />
+              <HealthRow label="Closed-won value" cls={kpiLight(funnel.closedWon, 'influencedMargin', qtr)} val={gbp(funnel.closedWon)} />
               <HealthRow label="Lead → MQL rate" cls="neu" val={pct(funnel.mql, funnel.leads)} />
-              <HealthRow label="MQL → SQL rate" cls="neu" val={pct(funnel.sql, funnel.mql)} />
+              <HealthRow label="MQL → SQL rate" cls={kpiLight(mqlToSqlV, 'mqlToSql', qtr)} val={pct(funnel.sql, funnel.mql)} />
               <HealthRow label="CPL average" cls="neu" val="n/a" />
-              <HealthRow label="Event attendance" cls="neu" val={evt ? pct(evt.attendees, evt.registrants, 0) : 'n/a'} />
+              <HealthRow label="Event attendance" cls={evt ? kpiLight(attendanceV, 'attendanceRate', qtr) : 'neu'} val={evt ? pct(evt.attendees, evt.registrants, 0) : 'n/a'} />
             </div>
           </div>
         </div>

@@ -196,6 +196,34 @@ export async function getKpiTracker(filters) {
   }
 }
 
+// ---- KPI target register (editable; KPI Tracker only) ---------------------
+// PROVISIONAL placeholder targets live in the `kpi_targets` table (seeded from
+// thresholds.js KPI_QUARTERLY_TARGETS). The KPI Tracker reads them here and edits
+// write straight back, so the client owns their targets without a code change.
+// ACTUALS are never stored here — only targets. RLS: authenticated read+write.
+export async function getKpiTargets() {
+  const { data, error } = await supabase.from('kpi_targets').select('*')
+  if (error) throw error
+  const byKey = {}
+  for (const r of data || []) byKey[r.kpi_key] = r
+  return byKey
+}
+
+// Update one period's target for a KPI. period ∈ 'q1'|'q2'|'q3'|'q4'|'fy';
+// value is a number or null (clears it). Returns the updated row.
+export async function updateKpiTarget(kpiKey, period, value) {
+  if (!['q1', 'q2', 'q3', 'q4', 'fy'].includes(period)) throw new Error(`bad period: ${period}`)
+  const v = value == null || value === '' || Number.isNaN(Number(value)) ? null : Number(value)
+  const { data, error } = await supabase
+    .from('kpi_targets')
+    .update({ [period]: v })
+    .eq('kpi_key', kpiKey)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function getPipeline(filters) {
   const rows = await fetchFacts(filters)
   const bySource = [...groupBy(rows, 'channel_name')]
@@ -710,7 +738,7 @@ export async function getOutreachSteps(filters = {}) {
   // One entry per (step_order, step_type) — keeps every step type visible.
   const groups = new Map()
   for (const r of rows) {
-    const key = `${r.step_order} ${r.step_type}`
+    const key = `${r.step_order}\u0000${r.step_type}`
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(r)
   }

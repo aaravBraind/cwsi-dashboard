@@ -33,7 +33,7 @@ export const KPI_QUARTERLY_TARGETS = {
   closedWonCount:       { q1: 2,       q2: 1,       q3: 2,       q4: 2,       fy: 7,        unit: 'count' },
   influencedPipeline:   { q1: 140_000, q2: 150_000, q3: 245_000, q4: 245_000, fy: 800_000,  unit: 'gbp' },
   influencedMargin:     { q1: 44_000,  q2: 47_000,  q3: 77_000,  q4: 84_000,  fy: 252_000,  unit: 'gbp' },
-  retainedContracts:    { q1: null,    q2: null,    q3: null,    q4: null,    fy: 3,        unit: 'count', note: 'scope unconfirmed — actual whole-book ~186; see §6' },
+  retainedContracts:    { q1: 110,     q2: 75,      q3: 95,      q4: 90,      fy: 370,      unit: 'count', note: 'PROVISIONAL at WHOLE-BOOK scale — v_retention is account-based (won Renewals: 180 YTD / 73 Q2 live). Scope marketing-influenced(~3) vs whole-book(~370) UNCONFIRMED — Paul; see KPI_REGISTER §3.1' },
   costPerLead:          { q1: 195,     q2: 180,     q3: 140,     q4: 140,     fy: 150,      unit: 'gbp', lowerIsBetter: true },
   returnOnSpend:        { q1: 2.1,     q2: 2.4,     q3: 3.0,     q4: 3.2,     fy: 3.0,      unit: 'x' },
   // Paid & Digital Acquisition
@@ -58,6 +58,7 @@ export const KPI_QUARTERLY_TARGETS = {
   totalLeads:           { q1: 182,     q2: 218,     q3: 270,     q4: 300,     fy: 970,      unit: 'count' },
   totalMqls:            { q1: null,    q2: null,    q3: null,    q4: null,    fy: 400,      unit: 'count', note: 'FY-only (no mockup quarterly split)' },
   totalSqls:            { q1: null,    q2: null,    q3: null,    q4: null,    fy: 80,       unit: 'count', note: 'FY-only (no mockup quarterly split)' },
+  opportunities:        { q1: 6,       q2: 7,       q3: 7,       q4: 8,       fy: 28,       unit: 'count' },
   // Events Performance
   registrations:        { q1: 450,     q2: 520,     q3: 700,     q4: 800,     fy: 2_470,    unit: 'count' },
   attendanceRate:       { q1: 0.62,    q2: 0.64,    q3: 0.70,    q4: 0.72,    fy: 0.68,     unit: 'rate' },
@@ -114,5 +115,43 @@ export function light(value, target, { greenAt = 0.95, amberAt = 0.8 } = {}) {
   const r = value / target
   if (r >= greenAt) return 'green'
   if (r >= amberAt) return 'amber'
+  return 'red'
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Placeholder-target resolution for the KPI register (KPI_QUARTERLY_TARGETS).
+// These wire the PROVISIONAL targets into the dashboard's status column /
+// %-of-target so the scoreboard "functions" before the client's real
+// kpi_targets register lands. Every value they surface is a placeholder and
+// MUST be flagged provisional by the caller. Actuals are untouched.
+
+// Resolve a KPI's target at the active scope. quarter ∈ 'q1'..'q4' | 'ytd' |
+// null. Falls back to the FY target outside a specific quarter. Returns the
+// numeric target, or null when there is no placeholder for that scope.
+export function targetFor(key, quarter = 'ytd') {
+  const row = KPI_QUARTERLY_TARGETS[key]
+  if (!row) return null
+  const t = !quarter || quarter === 'ytd' ? row.fy : row[quarter]
+  return t == null ? null : t
+}
+
+const lowerIsBetter = (key) => !!(KPI_QUARTERLY_TARGETS[key] && KPI_QUARTERLY_TARGETS[key].lowerIsBetter)
+
+// Achievement fraction vs the placeholder target (1.0 = on target). For
+// lower-is-better metrics (CPL/CPC/CPM/unsub/cost-per-conv) the ratio inverts so
+// "under the ceiling" reads as ≥ 1. null when there's no target or no actual.
+export function pctOfTarget(value, key, quarter = 'ytd') {
+  const target = targetFor(key, quarter)
+  if (target == null || isNA(value) || value == null || !Number.isFinite(Number(value))) return null
+  const v = Number(value)
+  return lowerIsBetter(key) ? (v === 0 ? null : target / v) : v / target
+}
+
+// Traffic light for a KPI vs its placeholder target, honouring lowerIsBetter.
+export function kpiLight(value, key, quarter = 'ytd', { green = 0.95, amber = 0.8 } = {}) {
+  const r = pctOfTarget(value, key, quarter)
+  if (r == null) return 'neu'
+  if (r >= green) return 'green'
+  if (r >= amber) return 'amber'
   return 'red'
 }

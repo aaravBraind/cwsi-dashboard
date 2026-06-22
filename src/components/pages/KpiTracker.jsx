@@ -1,29 +1,54 @@
+import { useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useKpiTracker, useWebTraffic, useEventTypeFunnel } from '../../hooks/useDashboardData'
-import { gbp, num, pct, isNA } from '../../data/format'
-import { FY_TARGETS } from '../../data/thresholds'
+import {
+  useKpiTracker,
+  useWebTraffic,
+  useEventTypeFunnel,
+  useEvents,
+  useKpiTargets,
+  useUpdateKpiTarget,
+} from '../../hooks/useDashboardData'
+import { useFilters } from '../../filters/FilterContext'
+import { gbp, num } from '../../data/format'
+import { buildKpiRegisterRows, periodOf, scopeLabel, achievement } from '../../data/kpiRegister'
+import { I } from '../icons'
 import MarketingBudget from '../MarketingBudget'
 
 // The KPI register, in the agreed category order. `live` rows are computed from
-// v_fact_enriched (funnel) + GA4 web traffic; every other KPI depends on a
+// v_fact_enriched (funnel) + GA4 + GoToWebinar; every other KPI depends on a
 // measure not in the store yet and renders an explicit n/a (never a fabricated
-// number). Refreshed 19 Jun: closed-won count, opportunities, influenced margin,
-// organic traffic + organic conversions (GA4 key events) are now live.
-// 21 Jun: added Visitor→MQL (GA4 conv ÷ sessions, same source as the SEO tile) and
-// MQL→SQL (events) (event-campaign funnel rollup, same source as the Events page) —
-// both computed from data already in the warehouse, just surfaced as register rows.
+// number).
+// 22 Jun: TARGETS moved to the editable `kpi_targets` DB table (seeded from the
+// thresholds.js placeholders). The Target column is inline-editable per active
+// quarter; on save the %-of-target + status light recompute. Actuals stay live;
+// only the target side is a (provisional) placeholder until the client edits it.
+
+const rate = (x) => `${(Number(x) * 100).toFixed(1)}%`
+
+// Format a target value by its declared unit.
+function fmtByUnit(unit, t) {
+  if (t == null) return null
+  if (unit === 'gbp') return gbp(t)
+  if (unit === 'rate') return rate(t)
+  if (unit === 'x') return `${Number(t).toFixed(1)}×`
+  return num(t)
+}
+
 export default function KpiTracker() {
   const q = useKpiTracker()
   const web = useWebTraffic()
   const events = useEventTypeFunnel()
+  const att = useEvents() // GoToWebinar attendance — webinar actual is real
+  const targetsQ = useKpiTargets()
+  const { filters } = useFilters()
 
   return (
     <>
       <div className="page-head">
         <div>
           <div className="page-title">KPI <span className="accent">Tracker</span></div>
-          <div className="page-sub">Quarterly KPIs · live actuals where available · FY2026</div>
+          <div className="page-sub">Quarterly KPIs · live actuals where available · targets editable &amp; provisional · FY2026</div>
         </div>
         <QuarterPills />
       </div>
@@ -36,140 +61,153 @@ export default function KpiTracker() {
       {q.isLoading && <Loading />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState />}
-      {q.data && q.data.hasData && <Register f={q.data.funnel} web={web.data?.totals} events={events.data} retention={q.data.retention} />}
+      {q.data && q.data.hasData && (
+        <Register
+          f={q.data.funnel}
+          web={web.data?.totals}
+          events={events.data}
+          attendance={att.data?.hasData ? att.data.totals : null}
+          retention={q.data.retention}
+          quarter={filters.quarter}
+          targets={targetsQ.data || {}}
+        />
+      )}
     </>
   )
 }
 
-function Register({ f, web, events, retention }) {
-  const w = web || {}
-  const has = (x) => x != null && !isNA(x) // a measure that has actually landed
-  const convCtx = has(w.keyEvents) && w.sessions ? `${pct(w.keyEvents, w.sessions)} of sessions` : 'GA4 conversions'
+// Inline-editable target cell. Reads/writes the active-quarter column of the
+// kpi_targets row. Click → input (rates entered as %, money as a plain number);
+// Enter/blur saves, Esc cancels. KPIs with no placeholder row show "—".
+function TargetCell({ kpiKey, row, period, scope }) {
+  const upd = useUpdateKpiTarget()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
 
-  // Retained contracts: won renewals only (the honest headline); Expansion (won
-  // Upsell + Cross-Sell) is folded into context, never blended into the count.
-  const ret = retention || {}
-  const retCtx = ret.expansionCount > 0
-    ? `${gbp(ret.retainedValue)} won · Renewal only · +Exp ${num(ret.expansionCount)} (${gbp(ret.expansionValue)})`
-    : `${gbp(ret.retainedValue)} won · Renewal only`
+  if (!kpiKey || !row) return <span className="tgt-none">—</span>
 
-  // Events MQL→SQL: roll up the per-type event funnel (v_fact_enriched, Events &
-  // Webinars channel) to the channel total. Same real data the Events page uses.
-  const evTypes = events?.byType || []
-  const evLeads = evTypes.reduce((s, t) => s + (Number(t.leads) || 0), 0)
-  const evMql = evTypes.reduce((s, t) => s + (Number(t.mql) || 0), 0)
-  const evSql = evTypes.reduce((s, t) => s + (Number(t.sql) || 0), 0)
+  const unit = row.unit
+  const t = row[period]
 
-  const rows = [
-    ['cat', 'Overall Commercial Outcomes'],
-    has(f.closedWonCount)
-      ? ['live', 'Closed-won opportunities', num(f.closedWonCount), 'won deals']
-      : ['na', 'Closed-won opportunities', 'closed-won count pending SF re-run'],
-    ['live', 'Influenced pipeline', gbp(f.pipeline), `FY ${gbp(FY_TARGETS.influencedPipeline)}`],
-    ['live', 'Closed-won value', gbp(f.closedWon), `FY ${gbp(FY_TARGETS.influencedMargin)}`],
-    has(f.margin)
-      ? ['live', 'Influenced margin', gbp(f.margin), 'Amount − vendor cost']
-      : ['na', 'Influenced margin', 'margin pending SF re-run'],
-    ret.hasData
-      ? ['live', 'Retained contracts', num(ret.retainedCount), retCtx]
-      : ['na', 'Retained contracts', 'won renewals (v_retention) — none in scope'],
-    ['na', 'Cost per lead (blended)', 'per-channel spend pending (Margot merged sheet)'],
-    ['na', 'Return on spend (blended)', 'mixed currency; per-channel spend pending'],
+  const begin = () => {
+    setDraft(t == null ? '' : unit === 'rate' ? String(+(Number(t) * 100).toFixed(2)) : String(t))
+    setEditing(true)
+  }
+  const commit = () => {
+    setEditing(false)
+    const raw = draft.trim().replace(/[,£×%\s]/g, '')
+    let value = raw === '' ? null : Number(raw)
+    if (raw !== '' && Number.isNaN(value)) return // ignore garbage, keep old
+    if (value != null && unit === 'rate') value = value / 100
+    const same = (t == null && value == null) || (t != null && value != null && Math.abs(Number(t) - value) < 1e-9)
+    if (!same) upd.mutate({ kpiKey, period, value })
+  }
 
-    ['cat', 'Paid & Digital Acquisition'],
-    ['na', 'Impressions (non-LinkedIn)', 'LinkedIn impressions live on LinkedIn page'],
-    ['na', 'Cost per click (CPC)', 'LinkedIn CTR/clicks on LinkedIn page (GBP)'],
-    ['na', 'Cost per thousand (CPM)', 'LinkedIn-only; on LinkedIn page'],
-    has(w.keyEvents)
-      ? ['live', 'Conversions from organic (GA4)', num(w.keyEvents), convCtx]
-      : ['na', 'Conversions from organic', 'GA4 key events'],
-    has(w.keyEvents) && Number(w.sessions) > 0
-      ? ['live', 'Visitor → MQL conversion', pct(w.keyEvents, w.sessions, 2), 'GA4 conv ÷ sessions']
-      : ['na', 'Visitor → MQL conversion', 'GA4 key events ÷ sessions'],
-    ['live', 'Lead → MQL conversion', pct(f.mql, f.leads), 'derived'],
-    ['live', 'MQL → SQL conversion', pct(f.sql, f.mql), 'derived'],
-    has(f.closedWonCount)
-      ? ['live', 'SQL → Closed/Won', pct(f.closedWonCount, f.sql), 'derived']
-      : ['na', 'SQL → Closed/Won', 'closed-count pending SF re-run'],
+  if (editing)
+    return (
+      <span className="tgt-edit">
+        {unit === 'gbp' && <span className="aff">£</span>}
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        />
+        {unit === 'rate' && <span className="aff">%</span>}
+        {unit === 'x' && <span className="aff">×</span>}
+      </span>
+    )
 
-    ['cat', 'Pipeline Volumes'],
-    ['live', 'Total leads', num(f.leads), `FY ${num(FY_TARGETS.totalLeads)}`],
-    ['live', 'Total MQLs', num(f.mql), `FY ${num(FY_TARGETS.mqls)}`],
-    ['live', 'Total SQLs', num(f.sql), `FY ${num(FY_TARGETS.sqls)}`],
-    has(f.opp)
-      ? ['live', 'Opportunities (open + won)', num(f.opp), 'qualified subset of SQL']
-      : ['na', 'Opportunities (open + won)', 'opp-count pending SF re-run'],
+  const empty = t == null
+  return (
+    <button
+      type="button"
+      onClick={begin}
+      className={`tgt-btn${empty ? ' empty' : ''}${upd.isPending ? ' saving' : ''}`}
+      title="Edit target — provisional placeholder, saved to kpi_targets"
+    >
+      <span>{empty ? 'Set target' : fmtByUnit(unit, t)}</span>
+      <svg className="icon tgt-pen" viewBox="0 0 24 24">{I.pencil}</svg>
+    </button>
+  )
+}
 
-    ['cat', 'Email Performance'],
-    ['na', 'Click-through rate', 'Pardot engagement — not in Salesforce SOQL'],
-    ['na', 'Unsubscribe rate', 'Pardot engagement — not in Salesforce SOQL'],
-    ['na', 'Conversions from email', 'email engagement pending (Pardot)'],
+function Register({ f, web, events, attendance, retention, quarter, targets }) {
+  const rows = buildKpiRegisterRows({ funnel: f, retention, web, events, attendance })
 
-    ['cat', 'Website Performance'],
-    has(w.sessions) && Number(w.sessions) > 0
-      ? ['live', 'Total organic traffic (sessions)', num(w.sessions), 'GA4']
-      : ['na', 'Total organic traffic', 'GA4 sessions'],
-    has(w.socialSessions)
-      ? ['live', 'Traffic from organic social (sessions)', num(w.socialSessions), 'GA4 channel = Organic Social']
-      : ['na', 'Traffic from organic social', 'GA4 Organic Social channel'],
+  const liveCount = rows.filter((r) => r.t === 'live').length
+  const kpiCount = rows.filter((r) => r.t !== 'cat').length
+  const scope = scopeLabel(quarter)
+  const period = periodOf(quarter)
 
-    ['cat', 'Events Performance'],
-    evLeads > 0
-      ? ['live', 'Registrations (leads)', num(evLeads), 'SF CampaignMembers · event campaigns']
-      : ['na', 'Registrations (leads)', 'event-campaign members (pending SF re-run)'],
-    ['na', 'Attendance rate', 'GoToWebinar attendance match pending'],
-    evMql > 0
-      ? ['live', 'MQL → SQL conversion (events)', pct(evSql, evMql), 'event-campaign funnel']
-      : ['na', 'MQL → SQL conversion (events)', 'event-campaign funnel (pending SF re-run)'],
-    ['na', 'Cost per conversion', 'event spend pending'],
-  ]
-
-  const liveCount = rows.filter((r) => r[0] === 'live').length
-  const kpiCount = rows.filter((r) => r[0] !== 'cat').length
+  // Status pill (dot + %-of-target) for a row.
+  const statusCell = (r) => {
+    const row = targets[r.key]
+    const a = r.t === 'live' && r.key ? achievement(row, period, r.num) : null
+    const cls = a == null ? 'neu' : a >= 0.95 ? 'green' : a >= 0.8 ? 'amber' : 'red'
+    return (
+      <span className={`tl ${cls}`}>
+        <span className="tl-dot" />{a == null ? '—' : `${(a * 100).toFixed(0)}%`}
+      </span>
+    )
+  }
 
   return (
     <div className="panel">
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Full KPI Register · FY2026</div>
-          <div className="panel-sub">{liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = measure not sourced yet</div>
+          <div className="panel-sub">{liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = not sourced yet · targets editable &amp; provisional</div>
         </div>
-        <span className="chip blue">scoped</span>
+        <span className="chip blue">{scope} scope</span>
+      </div>
+      <div className="kpi-banner">
+        <svg className="icon b-icn" viewBox="0 0 24 24">{I.pencil}</svg>
+        <div>
+          <strong>Targets are provisional &amp; editable.</strong> Actuals are live from the warehouse; each
+          <strong> Target</strong> is a placeholder — click it to set the real number (saves to <code>kpi_targets</code>,
+          and %-of-target + status recompute). Edits apply to the <strong>active quarter</strong> ({scope}); switch the
+          quarter pills to set the others.
+        </div>
       </div>
       <div className="panel-body no-pad">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th className="r">Actual (scoped)</th>
-              <th className="r">Context</th>
-              <th className="c">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => {
-              if (row[0] === 'cat')
-                return <tr className="cat" key={i}><td colSpan={4}>{row[1]}</td></tr>
-              if (row[0] === 'na')
+        <div className="tbl-scroll">
+          <table className="kpi-reg">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th className="r">Actual · {scope}</th>
+                <th className="r">Target · {scope}</th>
+                <th className="c">vs Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                if (r.t === 'cat')
+                  return <tr className="cat" key={i}><td colSpan={4}>{r.label}</td></tr>
                 return (
-                  <tr key={i}>
-                    <td>{row[1]}</td>
-                    <td className="r mono mono-d">not available yet</td>
-                    <td className="r mono mono-d">{row[2]}</td>
-                    <td className="c"><span className="tl-bare" style={{ background: 'var(--neutral)' }} /></td>
+                  <tr className="kpi-row" key={i}>
+                    <td>
+                      <div className="metric-name">{r.label}</div>
+                      {r.ctx && <div className="metric-ctx">{r.ctx}</div>}
+                    </td>
+                    <td className="r">
+                      <span className={`metric-actual${r.t === 'na' ? ' na' : ''}`}>
+                        {r.t === 'na' ? 'not available yet' : r.val}
+                      </span>
+                    </td>
+                    <td className="r"><TargetCell kpiKey={r.key} row={targets[r.key]} period={period} scope={scope} /></td>
+                    <td className="c">{statusCell(r)}</td>
                   </tr>
                 )
-              return (
-                <tr key={i}>
-                  <td>{row[1]}</td>
-                  <td className="r mono">{row[2]}</td>
-                  <td className="r mono mono-d">{row[3]}</td>
-                  <td className="c"><span className="tl-bare g" /></td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

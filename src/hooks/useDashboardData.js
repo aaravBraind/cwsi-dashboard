@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useFilters } from '../filters/FilterContext'
 import { getFxEurToGbp } from '../data/fx'
 import { getBoardPack } from '../data/boardPack'
@@ -6,6 +6,8 @@ import { generateBoardNarrative } from '../data/boardPackClient'
 import {
   getOverview,
   getKpiTracker,
+  getKpiTargets,
+  updateKpiTarget,
   getPipeline,
   getOpportunityStage,
   getChannel,
@@ -33,6 +35,23 @@ export function useOverview() {
 export function useKpiTracker() {
   const { filters } = useFilters()
   return useQuery({ queryKey: ['kpi', filters], queryFn: () => getKpiTracker(filters) })
+}
+
+// Editable KPI target register (kpi_targets table). Filter-independent — one set
+// of targets for the whole dashboard; the KPI Tracker picks the active-quarter
+// column at render. staleTime keeps it cached across quarter switches.
+export function useKpiTargets() {
+  return useQuery({ queryKey: ['kpi-targets'], queryFn: getKpiTargets, staleTime: 5 * 60 * 1000 })
+}
+
+// Save one period's target, then refresh the register so %-of-target + status
+// lights recompute immediately.
+export function useUpdateKpiTarget() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ kpiKey, period, value }) => updateKpiTarget(kpiKey, period, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpi-targets'] }),
+  })
 }
 
 export function usePipeline() {
