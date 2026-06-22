@@ -114,7 +114,12 @@ export async function getBoardPack(filters = {}) {
       key: 'margin', order: 6, label: 'Influenced Margin', unit: 'gbp',
       value: margin, valueDisplay: real(margin) ? gbp(margin) : 'n/a',
       target: TGT.margin, targetDisplay: `FY ${gbp(TGT.margin)}`,
-      trace: 'Σ v_fact_enriched.margin_value (won amount − vendor cost, scoped)',
+      trace: 'Σ v_fact_enriched.margin_value (won Amount − vendor cost, scoped; blank/invalid cost → NULL, excluded — never counted as full revenue)',
+      note: real(margin)
+        ? (funnel.marginPendingDeals > 0
+            ? `${funnel.marginKnownDeals}/${funnel.marginKnownDeals + funnel.marginPendingDeals} won deals costed; rest pending cost input`
+            : null)
+        : 'vendor cost pending on all won deals',
     },
     {
       key: 'cpl', order: 7, label: 'Cost per Lead', unit: 'gbp',

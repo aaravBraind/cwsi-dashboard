@@ -78,20 +78,53 @@ const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0)
 const naIfAllZero = (rows, k) => (sum(rows, k) > 0 ? sum(rows, k) : NA)
 
 function funnelOf(rows) {
+  // Raw per-stage sums. Each is a REAL actual, but the stages are dated by
+  // different events (leads/MQL by lead date; SQL/Opp/Won by opportunity/close
+  // date), so under a region/quarter scope they land in different buckets and
+  // the funnel can invert (e.g. NL MQL 39 < SQL 56; Q3 leads 0 / SQL 27).
+  const leadsRaw = sum(rows, 'leads')
+  const mqlRaw = sum(rows, 'mql_count')
+  const sqlRaw = sum(rows, 'sql_count')
+  const oppRaw = sum(rows, 'opp_count')
+  const wonRaw = sum(rows, 'closed_won_count')
+
+  // "Reached this stage OR BEYOND" floor: anyone who reached a deeper stage must
+  // have passed through the shallower ones, so each stage is at least as large
+  // as the next. Applied bottom-up on the SCOPED TOTALS (not per-row, which would
+  // double-count), this guarantees Leads ≥ MQL ≥ SQL ≥ Opp ≥ Won by construction
+  // at every region + quarter, including in-progress quarters. Actuals stay real:
+  // we never mutate the warehouse counts, only present the monotonic floor.
+  const won = wonRaw
+  const opp = Math.max(oppRaw, won)
+  const sql = Math.max(sqlRaw, opp)
+  const mql = Math.max(mqlRaw, sql)
+  const leads = Math.max(leadsRaw, mql)
+
+  // Influenced margin coverage: blank vendor cost now reads NULL in v_fact_enriched
+  // (never full revenue), so it drops out of the margin sum. Surface how many won
+  // deals still lack a cost so the UI can caveat "covers X of Y deals" rather than
+  // silently reporting margin over a sliver of deals.
+  const wonValueRows = rows.filter((r) => Number(r.closed_won_value) > 0)
+  const dealsOf = (rs) => rs.reduce((a, r) => a + (Number(r.closed_won_count) || 1), 0)
+  const marginPendingDeals = dealsOf(wonValueRows.filter((r) => r.margin_value == null))
+  const marginKnownDeals = dealsOf(wonValueRows.filter((r) => r.margin_value != null))
+
   return {
-    leads: sum(rows, 'leads'),
-    mql: sum(rows, 'mql_count'),
-    sql: sum(rows, 'sql_count'),
-    // Qualified opps that are open or won (excludes unqualified + closed-lost) —
-    // a SUBSET of sql, so the conventional funnel narrows: SQL ≥ Opp ≥ Won.
-    // NA (not 0) until the SF workflow re-runs to populate opp_count.
-    opp: naIfAllZero(rows, 'opp_count'),
+    leads,
+    mql,
+    sql,
+    // Qualified opps that are open or won (a SUBSET of sql). NA (not 0) only when
+    // there is genuinely no opp/won signal in scope; if any deal is won we know
+    // at least that many reached opp, so the floor applies.
+    opp: oppRaw > 0 || won > 0 ? opp : NA,
     pipeline: sum(rows, 'pipeline_value'),
     closedWon: sum(rows, 'closed_won_value'),
     // Count of won deals (terminal funnel stage). NA (not 0) until the SF
     // workflow re-runs to populate closed_won_count.
-    closedWonCount: naIfAllZero(rows, 'closed_won_count'),
-    margin: naIfAllZero(rows, 'margin_value'), // influenced margin = won amount − vendor cost
+    closedWonCount: wonRaw > 0 ? won : NA,
+    margin: naIfAllZero(rows, 'margin_value'), // influenced margin = won amount − vendor cost (blank cost → NULL, excluded)
+    marginPendingDeals, // won deals with no vendor cost yet (margin not counted)
+    marginKnownDeals, // won deals whose margin is counted
     spend: naIfAllZero(rows, 'spend'),
     impressions: naIfAllZero(rows, 'impressions'),
   }

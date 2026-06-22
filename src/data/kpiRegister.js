@@ -45,8 +45,15 @@ export function buildKpiRegisterRows({ funnel, retention, web, events, attendanc
     { t: 'live', label: 'Influenced pipeline', val: gbp(f.pipeline), ctx: 'open qualified opp value', key: 'influencedPipeline', num: f.pipeline },
     { t: 'live', label: 'Closed-won value', val: gbp(f.closedWon), ctx: 'won Amount', key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
-      ? { t: 'live', label: 'Influenced margin', val: gbp(f.margin), ctx: 'Amount − vendor cost', key: 'influencedMargin', num: f.margin }
-      : { t: 'na', label: 'Influenced margin', ctx: 'margin pending SF re-run', key: 'influencedMargin' },
+      ? {
+          t: 'live', label: 'Influenced margin',
+          val: gbp(f.margin),
+          ctx: f.marginPendingDeals > 0
+            ? `Amount − vendor cost · ${num(f.marginKnownDeals)}/${num(f.marginKnownDeals + f.marginPendingDeals)} won deals costed (rest pending cost input)`
+            : 'Amount − vendor cost',
+          key: 'influencedMargin', num: f.margin,
+        }
+      : { t: 'na', label: 'Influenced margin', ctx: 'vendor cost blank on all won deals — pending cost input (not shown as revenue)', key: 'influencedMargin' },
     ret.hasData
       ? { t: 'live', label: 'Retained contracts', val: num(ret.retainedCount), ctx: retCtx, key: 'retainedContracts', num: ret.retainedCount }
       : { t: 'na', label: 'Retained contracts', ctx: 'won renewals (v_retention) — none in scope', key: 'retainedContracts' },

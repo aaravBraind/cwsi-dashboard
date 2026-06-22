@@ -87,14 +87,28 @@ function Body({ data }) {
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn green"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.trend}</svg></div>
-            <span className={`tl ${lightFor(funnel.closedWon, 'influencedMargin')}`}>
-              <span className="tl-dot" />{pctOf(funnel.closedWon, 'influencedMargin')}
+            <span className={`tl ${isNA(funnel.margin) ? 'neu' : lightFor(funnel.margin, 'influencedMargin')}`}>
+              <span className="tl-dot" />{isNA(funnel.margin) ? 'n/a' : pctOf(funnel.margin, 'influencedMargin')}
             </span>
           </div>
-          <div className="kpi-label">Closed-Won Value · scoped</div>
-          <div className="kpi-val">{gbp(funnel.closedWon)}</div>
+          <div className="kpi-label">Influenced Margin · scoped</div>
+          <div className="kpi-val">{isNA(funnel.margin) ? '—' : gbp(funnel.margin)}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">{tgtSub('influencedMargin')}</span>
+            {isNA(funnel.margin) ? (
+              <NotAvailable
+                what="Influenced margin"
+                why={`vendor cost pending${funnel.marginPendingDeals ? ` for ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'}` : ''}`}
+              />
+            ) : (
+              <>
+                <span className="kpi-target">{tgtSub('influencedMargin')}</span>
+                <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
+                  of {gbp(funnel.closedWon)} closed-won
+                  {funnel.marginPendingDeals > 0 &&
+                    ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals costed · rest pending cost input`}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
