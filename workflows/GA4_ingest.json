@@ -2,7 +2,7 @@
     "nodes": [
       {
         "parameters": {
-          "content": "## GA4 -> fact_web_daily\n\nAFTER IMPORT:\n1. Open 'Config' and set ga4_property_id (GA4 Admin -> Property -> Property details -> Property ID, numeric).\n2. Open 'GA4: Run Report' and select your Google Analytics OAuth2 credential (aarav@braind.io).\n3. Run once manually after Aryamaan grants Viewer access; check fact_web_daily + data_quality_log.\n\nGrain: date x region x hostname (hostname kept so insights.cwsisecurity.com coverage is visible).\nRegion from GA4 countryId (alpha-2). Metric 'keyEvents' = GA4 conversions.",
+          "content": "## GA4 -> fact_web_daily\n\nPREREQ (run ONCE before re-running): apply migration add_channel_group_to_fact_web_daily (adds channel_group col + swaps uq_fact_web_grain + updates v_web_daily). Then DELETE FROM fact_web_daily WHERE source='ga4'; and run once with Config.lookback_days = 200 to backfill the new grain, then revert to 7.\n\nAFTER IMPORT:\n1. Open 'Config' and set ga4_property_id (GA4 Admin -> Property -> Property details -> Property ID, numeric).\n2. Open 'GA4: Run Report' and select your Google Analytics OAuth2 credential (aarav@braind.io).\n3. Run once manually after Aryamaan grants Viewer access; check fact_web_daily + data_quality_log.\n\nGrain: date x region x hostname x channel_group (sessionDefaultChannelGroup; 'Organic Social' powers the social-referred-sessions KPI). hostname kept so insights.cwsisecurity.com coverage is visible.\nRegion from GA4 countryId (alpha-2). Metric 'keyEvents' = GA4 conversions.",
           "height": 320,
           "width": 420
         },
@@ -41,13 +41,13 @@
               {
                 "id": "a1",
                 "name": "ga4_property_id",
-                "value": "REPLACE_WITH_GA4_PROPERTY_ID",
+                "value": "378408350",
                 "type": "string"
               },
               {
                 "id": "a2",
                 "name": "lookback_days",
-                "value": 7,
+                "value": 200,
                 "type": "number"
               }
             ]
@@ -71,7 +71,7 @@
           "nodeCredentialType": "googleAnalyticsOAuth2",
           "sendBody": true,
           "specifyBody": "json",
-          "jsonBody": "={\n  \"dateRanges\": [{ \"startDate\": \"{{ $('Config').first().json.lookback_days }}daysAgo\", \"endDate\": \"today\" }],\n  \"dimensions\": [{ \"name\": \"date\" }, { \"name\": \"countryId\" }, { \"name\": \"hostName\" }],\n  \"metrics\": [{ \"name\": \"sessions\" }, { \"name\": \"keyEvents\" }, { \"name\": \"engagedSessions\" }],\n  \"limit\": 100000\n}",
+          "jsonBody": "={\n  \"dateRanges\": [{ \"startDate\": \"{{ $('Config').first().json.lookback_days }}daysAgo\", \"endDate\": \"today\" }],\n  \"dimensions\": [{ \"name\": \"date\" }, { \"name\": \"countryId\" }, { \"name\": \"hostName\" }, { \"name\": \"sessionDefaultChannelGroup\" }],\n  \"metrics\": [{ \"name\": \"sessions\" }, { \"name\": \"keyEvents\" }, { \"name\": \"engagedSessions\" }],\n  \"limit\": 100000\n}",
           "options": {}
         },
         "id": "dd493256-1985-4442-b6ac-aeab2ace4ccc",
@@ -91,7 +91,7 @@
       },
       {
         "parameters": {
-          "jsCode": "// GA4 runReport response -> fact_web_daily rows at date x region x hostname grain.\nconst resp = $input.first().json;\nconst rows = resp.rows || [];\n\n// countryId is ISO 3166-1 alpha-2\nfunction regionFromAlpha2(cc) {\n  const c = String(cc || '').toUpperCase();\n  if (['GB', 'IE', 'IM', 'GG', 'JE'].includes(c)) return 'UKI';\n  if (['BE', 'LU'].includes(c)) return 'BeLux';\n  if (c === 'NL') return 'NL';\n  return 'UNASSIGNED';\n}\n\nconst agg = {};\nlet issues = 0;\nfor (const r of rows) {\n  const d = (r.dimensionValues || []).map((v) => v.value);\n  const m = (r.metricValues || []).map((v) => Number(v.value) || 0);\n  const raw = String(d[0] || '');\n  if (raw.length !== 8 || isNaN(Number(raw))) { issues++; continue; }\n  const date = raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);\n  const region = regionFromAlpha2(d[1]);\n  const host = String(d[2] || '');\n  const key = date + '|' + region + '|' + host;\n  if (!agg[key]) {\n    agg[key] = { activity_date: date, region_code: region, hostname: host,\n      sessions: 0, key_events: 0, engaged_sessions: 0, source: 'ga4' };\n  }\n  agg[key].sessions += m[0] || 0;\n  agg[key].key_events += m[1] || 0;\n  agg[key].engaged_sessions += m[2] || 0;\n}\n\nconst out = Object.values(agg);\nif (out.length === 0) {\n  throw new Error('GA4 returned 0 usable rows - check property ID, access grant (aarav@braind.io as Viewer) and date range');\n}\nconst rowsIn = rows.length;\nconst meta = { rows_in: rowsIn, issues: issues, issue_pct: rowsIn ? Number(((issues / rowsIn) * 100).toFixed(2)) : 0 };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
+          "jsCode": "// GA4 runReport response -> fact_web_daily rows at date x region x hostname x channel_group grain.\nconst resp = $input.first().json;\nconst rows = resp.rows || [];\n\n// countryId is ISO 3166-1 alpha-2\nfunction regionFromAlpha2(cc) {\n  const c = String(cc || '').toUpperCase();\n  if (['GB', 'IE', 'IM', 'GG', 'JE'].includes(c)) return 'UKI';\n  if (['BE', 'LU'].includes(c)) return 'BeLux';\n  if (c === 'NL') return 'NL';\n  return 'UNASSIGNED';\n}\n\nconst agg = {};\nlet issues = 0;\nfor (const r of rows) {\n  const d = (r.dimensionValues || []).map((v) => v.value);\n  const m = (r.metricValues || []).map((v) => Number(v.value) || 0);\n  const raw = String(d[0] || '');\n  if (raw.length !== 8 || isNaN(Number(raw))) { issues++; continue; }\n  const date = raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);\n  const region = regionFromAlpha2(d[1]);\n  const host = String(d[2] || '');\n  // GA4 sessionDefaultChannelGroup; '(not set)' / blank -> 'Unassigned' to match the column default.\n  const channelRaw = String(d[3] || '').trim();\n  const channel = (!channelRaw || channelRaw === '(not set)') ? 'Unassigned' : channelRaw;\n  const key = date + '|' + region + '|' + host + '|' + channel;\n  if (!agg[key]) {\n    agg[key] = { activity_date: date, region_code: region, hostname: host, channel_group: channel,\n      sessions: 0, key_events: 0, engaged_sessions: 0, source: 'ga4' };\n  }\n  agg[key].sessions += m[0] || 0;\n  agg[key].key_events += m[1] || 0;\n  agg[key].engaged_sessions += m[2] || 0;\n}\n\nconst out = Object.values(agg);\nif (out.length === 0) {\n  throw new Error('GA4 returned 0 usable rows - check property ID, access grant (aarav@braind.io as Viewer) and date range');\n}\nconst rowsIn = rows.length;\nconst meta = { rows_in: rowsIn, issues: issues, issue_pct: rowsIn ? Number(((issues / rowsIn) * 100).toFixed(2)) : 0 };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
         },
         "id": "1e9287aa-66a1-4fb3-916c-41d739287003",
         "name": "Build Web Rows",
@@ -105,10 +105,10 @@
       {
         "parameters": {
           "operation": "executeQuery",
-          "query": "INSERT INTO fact_web_daily\n  (activity_date, region_id, hostname, sessions, key_events, engaged_sessions, source)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  $3, $4, $5, $6, $7)\nON CONFLICT ON CONSTRAINT uq_fact_web_grain DO UPDATE SET\n  sessions = EXCLUDED.sessions,\n  key_events = EXCLUDED.key_events,\n  engaged_sessions = EXCLUDED.engaged_sessions,\n  loaded_at = now();",
+          "query": "INSERT INTO fact_web_daily\n  (activity_date, region_id, hostname, channel_group, sessions, key_events, engaged_sessions, source)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  $3, $4, $5, $6, $7, $8)\nON CONFLICT ON CONSTRAINT uq_fact_web_grain DO UPDATE SET\n  sessions = EXCLUDED.sessions,\n  key_events = EXCLUDED.key_events,\n  engaged_sessions = EXCLUDED.engaged_sessions,\n  loaded_at = now();",
           "options": {
             "queryBatching": "independently",
-            "queryReplacement": "={{ [$json.activity_date, $json.region_code, $json.hostname, $json.sessions, $json.key_events, $json.engaged_sessions, $json.source] }}"
+            "queryReplacement": "={{ [$json.activity_date, $json.region_code, $json.hostname, $json.channel_group, $json.sessions, $json.key_events, $json.engaged_sessions, $json.source] }}"
           }
         },
         "id": "76ba90e7-f2f2-4ee3-909c-4db971fe8053",

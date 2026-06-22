@@ -42,7 +42,7 @@ export default function Seo() {
           <strong>Sessions &amp; engagement</strong> come from GA4 (owned properties only — dev,
           staging, translate-proxy and form-preview hosts are excluded). <strong>Clicks,
           impressions, CTR and position</strong> come from Search Console. <strong>Key events</strong>{' '}
-          (GA4 conversions) are <strong>pending</strong> — none are recorded yet. Region &amp; quarter scope every figure.
+          (GA4 conversions) feed the <strong>Visitor → MQL</strong> tile. Region &amp; quarter scope every figure.
         </div>
       </div>
 
@@ -75,7 +75,11 @@ function WebBody({ data }) {
         <Kpi label="Sessions · scoped" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} />
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
         <Kpi label="Engagement rate" val={ratePct(totals.engagementRate)} />
-        <Kpi label="Key events (conv.)" val={isNA(totals.keyEvents) ? '—' : num(totals.keyEvents)} sub={isNA(totals.keyEvents) ? 'pending — GA4 conversions' : ''} />
+        <Kpi
+          label="Visitor → MQL · GA4 conv."
+          val={isNA(totals.keyEvents) ? '—' : num(totals.keyEvents)}
+          sub={isNA(totals.keyEvents) || !totals.sessions ? '' : `${((totals.keyEvents / totals.sessions) * 100).toFixed(2)}% of sessions`}
+        />
       </div>
 
       <div className="panel">
@@ -122,7 +126,7 @@ function WebBody({ data }) {
 }
 
 function SeoBody({ data }) {
-  const { totals, topPages } = data
+  const { totals, topPages, topQueries = [] } = data
   return (
     <>
       <div className="kpis cols-4">
@@ -159,6 +163,36 @@ function SeoBody({ data }) {
           </table>
         </div>
       </div>
+
+      {topQueries.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <div className="left">
+              <div className="panel-title">Top Keywords</div>
+              <div className="panel-sub">By clicks · Search Console query data · quarter-scoped (query grain has no region)</div>
+            </div>
+            <span className="chip blue">top {topQueries.length}</span>
+          </div>
+          <div className="panel-body no-pad">
+            <table className="tbl">
+              <thead>
+                <tr><th>Keyword</th><th className="r">Clicks</th><th className="r">Impr.</th><th className="r">CTR</th><th className="r">Avg. pos.</th></tr>
+              </thead>
+              <tbody>
+                {topQueries.map((q) => (
+                  <tr key={q.query}>
+                    <td>{q.query}</td>
+                    <td className="r mono">{num(q.clicks)}</td>
+                    <td className="r mono">{num(q.impressions)}</td>
+                    <td className="r mono">{ratePct(q.ctr, 2)}</td>
+                    <td className="r mono">{pos(q.avgPosition)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   )
 }

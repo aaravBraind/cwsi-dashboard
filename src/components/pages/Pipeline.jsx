@@ -1,6 +1,6 @@
 import QuarterPills from '../QuarterPills'
-import { Loading, ErrorState, EmptyState } from '../States'
-import { usePipeline } from '../../hooks/useDashboardData'
+import { Loading, ErrorState, EmptyState, NotAvailablePanel } from '../States'
+import { usePipeline, useOpportunityStage } from '../../hooks/useDashboardData'
 import { gbp, num, pct } from '../../data/format'
 
 export default function Pipeline() {
@@ -41,7 +41,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Lead → MQL → SQL → Pipeline → Closed-Won</div>
-            <div className="panel-sub">Opportunity stage counts are not available yet</div>
+            <div className="panel-sub">Per-stage opportunity counts are in the Pipeline Stage Distribution below</div>
           </div>
           <span className="chip blue">scoped</span>
         </div>
@@ -55,6 +55,9 @@ function Body({ data }) {
           </div>
         </div>
       </div>
+
+      {/* Pipeline stage distribution — open-pipeline snapshot (B7-adjacent, 20 Jun) */}
+      <StageDistribution />
 
       {/* Pipeline by Source / Channel */}
       <div className="panel">
@@ -104,6 +107,53 @@ function Body({ data }) {
         </div>
       </div>
     </>
+  )
+}
+
+// Open-pipeline stage distribution. Region-scoped snapshot (not quarter-sliced), so
+// it has its own hook + loading/empty handling, independent of the funnel above.
+function StageDistribution() {
+  const q = useOpportunityStage()
+  if (q.isLoading) return null
+  if (q.isError || !q.data?.hasData) {
+    return (
+      <NotAvailablePanel
+        title="Pipeline Stage Distribution"
+        what="Open-pipeline stage counts"
+        why="No open-opportunity snapshot yet — re-import & run the SF workflow (the SF: Get Open Opps branch)."
+      />
+    )
+  }
+  const { stages, snapshotDate } = q.data
+  const maxVal = Math.max(1, ...stages.map((s) => s.value))
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Pipeline Stage Distribution</div>
+          <div className="panel-sub">
+            Open opportunities by stage · count &amp; value{snapshotDate ? ` · snapshot ${snapshotDate}` : ''}
+          </div>
+        </div>
+        <span className="chip blue">open pipeline</span>
+      </div>
+      <div className="panel-body">
+        <div className="bar-list">
+          {stages.map((s) => (
+            <div className="bar-row" key={s.stage}>
+              <div className="bar-label">
+                {s.stage}{s.probability != null ? ` · ${num(s.probability)}%` : ''}
+              </div>
+              <div className="bar-track">
+                <div className="bar-fill bf-blue" style={{ width: `${(s.value / maxVal) * 100}%` }} />
+              </div>
+              <div className="bar-val">{gbp(s.value)}</div>
+              <div className="bar-pct">{num(s.count)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 

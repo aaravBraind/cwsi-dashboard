@@ -10,6 +10,7 @@ import KpiTracker from './components/pages/KpiTracker'
 import Pipeline from './components/pages/Pipeline'
 import Channel from './components/pages/Channel'
 import Seo from './components/pages/Seo'
+import Events from './components/pages/Events'
 import Outreach from './components/pages/Outreach'
 import Board from './components/pages/Board'
 import Salesforce from './components/pages/Salesforce'
@@ -33,6 +34,7 @@ export default function App() {
       case 'pipeline': return <Pipeline />
       case 'ch-outreach': return <Outreach />
       case 'ch-seo': return <Seo />
+      case 'ch-events': return <Events />
       case 'board': return <Board />
       case 'salesforce': return <Salesforce />
       case 'export': return <Export />

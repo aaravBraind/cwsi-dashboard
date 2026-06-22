@@ -1,6 +1,6 @@
 import QuarterPills from '../QuarterPills'
-import { LoadingSkeleton, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
-import { useOverview } from '../../hooks/useDashboardData'
+import { LoadingSkeleton, Loading, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
+import { useOverview, useEvents } from '../../hooks/useDashboardData'
 import { gbp, num, pct, ratio, isNA } from '../../data/format'
 import { FY_TARGETS, light } from '../../data/thresholds'
 import { I } from '../icons'
@@ -35,8 +35,11 @@ export default function Overview() {
 }
 
 function Body({ data }) {
-  const { funnel, byChannel } = data
+  const { funnel, byChannel, retention = {} } = data
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
+  // Webinar attendance (real, scoped) — drives the Events panel + the health row.
+  const ev = useEvents()
+  const evt = ev.data?.hasData ? ev.data.totals : null
 
   return (
     <>
@@ -73,12 +76,26 @@ function Body({ data }) {
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn amber"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.users}</svg></div>
-            <span className="tl neu"><span className="tl-dot" />n/a</span>
+            <span className="tl neu"><span className="tl-dot" />{retention.hasData ? 'won renewals' : 'n/a'}</span>
           </div>
-          <div className="kpi-label">Retained Contracts · YTD</div>
-          <div className="kpi-val">—</div>
+          <div className="kpi-label">Retained Contracts · scoped</div>
+          <div className="kpi-val">{retention.hasData ? num(retention.retainedCount) : '—'}</div>
           <div className="kpi-sub">
-            <NotAvailable what="Retained contracts" why="No retained-contract measure in the schema" />
+            {retention.hasData ? (
+              <>
+                <span className="kpi-target">{gbp(retention.retainedValue)} won · {num(retention.openCount)} open</span>
+                {retention.expansionCount > 0 && (
+                  <span className="kpi-target" style={{ display: 'block' }}>
+                    + Expansion {num(retention.expansionCount)} ({gbp(retention.expansionValue)}) · Upsell / Cross-Sell
+                  </span>
+                )}
+                <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
+                  Boundary: Renewal only — Paul confirms if Upsell/Cross-Sell count as retained
+                </span>
+              </>
+            ) : (
+              <NotAvailable what="Retained contracts" why="No won-renewal opportunities in this scope" />
+            )}
           </div>
         </div>
       </div>
@@ -178,13 +195,9 @@ function Body({ data }) {
         </div>
       </div>
 
-      {/* 4. Events mix — depends on event-type dimension not in the view */}
+      {/* 4. Webinar attendance (real, GTW → fact_event_daily) + quarter health */}
       <div className="cols-2-3">
-        <NotAvailablePanel
-          title="Events Mix — Webinars / Owned / Earned"
-          what="Event-type split"
-          why="v_fact_enriched has no event-type dimension (webinar / owned / earned) yet."
-        />
+        <WebinarAttendance ev={ev} />
         <div className="panel" style={{ marginBottom: 0 }}>
           <div className="panel-head">
             <div className="left">
@@ -199,7 +212,7 @@ function Body({ data }) {
               <HealthRow label="Lead → MQL rate" cls="neu" val={pct(funnel.mql, funnel.leads)} />
               <HealthRow label="MQL → SQL rate" cls="neu" val={pct(funnel.sql, funnel.mql)} />
               <HealthRow label="CPL average" cls="neu" val="n/a" />
-              <HealthRow label="Event attendance" cls="neu" val="n/a" />
+              <HealthRow label="Event attendance" cls="neu" val={evt ? pct(evt.attendees, evt.registrants, 0) : 'n/a'} />
             </div>
           </div>
         </div>
@@ -212,6 +225,66 @@ function Body({ data }) {
         why="This panel is produced by the AI layer (not yet wired); left intact so it can slot in."
       />
     </>
+  )
+}
+
+// Webinar attendance — real GTW data (fact_event_daily), styled like the mockup's
+// Events Mix panel (seg-bar + legend + per-item bar-list). Owned/earned events +
+// per-type pipeline aren't tracked, so this shows webinar registration→attendance
+// only, and links out to the Events page for the per-webinar detail + SF funnel.
+function WebinarAttendance({ ev }) {
+  if (ev.isLoading)
+    return <div className="panel" style={{ marginBottom: 0 }}><div className="panel-body"><Loading label="Loading webinar attendance…" /></div></div>
+  if (ev.isError || !ev.data?.hasData)
+    return (
+      <NotAvailablePanel
+        title="Webinar Attendance"
+        what="Webinar registrations & attendance"
+        why="No webinar attendance for this region / quarter yet — run the GoToWebinar ingestion."
+      />
+    )
+  const { totals, webinars } = ev.data
+  const noShow = Math.max(0, totals.registrants - totals.attendees)
+  const attPct = pct(totals.attendees, totals.registrants, 0)
+  const maxRate = Math.max(0.01, ...webinars.map((w) => (isNA(w.attendanceRate) ? 0 : w.attendanceRate)))
+  return (
+    <div className="panel" style={{ marginBottom: 0 }}>
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Webinar Attendance</div>
+          <div className="panel-sub">Registrations → attendance · GoToWebinar · scoped</div>
+        </div>
+        <span className="chip blue">{totals.webinars} webinars</span>
+      </div>
+      <div className="panel-body">
+        <div className="seg-bar">
+          <div className="web" style={{ flex: Math.max(1, totals.attendees) }}>{attPct}</div>
+          <div className="own" style={{ flex: Math.max(1, noShow) }}>{noShow ? 'no-show' : ''}</div>
+        </div>
+        <div className="seg-legend">
+          <div className="leg"><span className="dot" style={{ background: 'var(--cwsi-blue)' }} />Attended · {num(totals.attendees)}</div>
+          <div className="leg"><span className="dot" style={{ background: '#5fa1ff' }} />Registered · {num(totals.registrants)}</div>
+        </div>
+        <div className="bar-list" style={{ marginTop: 18 }}>
+          {webinars.map((w) => (
+            <div className="bar-row" key={w.eventKey}>
+              <div className="bar-label" title={w.eventName}>{w.eventName}</div>
+              <div className="bar-track">
+                <div className="bar-fill bf-blue" style={{ width: `${(isNA(w.attendanceRate) ? 0 : w.attendanceRate / maxRate) * 100}%` }} />
+              </div>
+              <div className="bar-val">{isNA(w.attendanceRate) ? 'n/a' : `${(w.attendanceRate * 100).toFixed(0)}%`}</div>
+            </div>
+          ))}
+        </div>
+        <div className="callout" style={{ marginTop: 16, marginBottom: 0 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            Webinars only (GoToWebinar, campaign-linked). Owned / earned in-person events and
+            per-event pipeline aren’t tracked yet — see the <strong>Events</strong> page for per-webinar detail + the SF funnel.
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

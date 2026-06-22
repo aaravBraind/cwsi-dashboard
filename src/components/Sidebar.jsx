@@ -3,7 +3,7 @@ import { I } from './icons'
 const NAV = [
   { group: 'Performance' },
   { page: 'overview', label: 'Overview', icon: I.grid, badge: { kind: 'live', text: 'Live' } },
-  { page: 'kpi', label: 'KPI Tracker', icon: I.chart, badge: { kind: 'num', text: '28' } },
+  { page: 'kpi', label: 'KPI Tracker', icon: I.chart, badge: { kind: 'num', text: '24' } },
   { page: 'pipeline', label: 'Pipeline Report', icon: I.target },
   { divider: true },
   { group: 'Channels' },
@@ -12,7 +12,7 @@ const NAV = [
   { page: 'ch-seo', label: 'Organic SEO', icon: I.globe },
   { page: 'ch-email', label: 'Email', icon: I.mail },
   { page: 'ch-outreach', label: 'Outreach.io', icon: I.eye, badge: { kind: 'live', text: 'New' } },
-  { page: 'ch-events', label: 'Events', icon: I.calendar },
+  { page: 'ch-events', label: 'Events', icon: I.calendar, badge: { kind: 'live', text: 'Live' } },
   { divider: true },
   { group: 'Reporting' },
   { page: 'board', label: 'Board Pack', icon: I.board },

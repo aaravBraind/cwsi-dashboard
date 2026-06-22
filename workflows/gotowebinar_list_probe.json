@@ -1,0 +1,61 @@
+{
+  "name": "CWSI - GoToWebinar List (probe)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## GoToWebinar List probe (2026)\n\nFetches all GoToWebinar webinars starting in 2026, flattened to the fields we need to match against Salesforce webinar campaigns (key, subject, start date/time, timezone).\n\nAFTER IMPORT:\n1. Select your 'GoToWebinar OAuth2 API' credential on 'Get Webinars'.\n2. Hit 'Execute workflow'.\n3. Open the 'Flatten' node output and copy the JSON — that's the data to share.\n\nNo DB writes, no registrants/attendees calls — just the webinar list + start dates so we can confirm the SF<->GTW date match. (Attendance counts come later in the real ingest.)\n\nMatch plan: GTW start-date == SF Campaign.StartDate (Aarav confirmed they're equal); region token disambiguates same-day UK/IE / BeLux / NL variants.",
+        "height": 380,
+        "width": 520
+      },
+      "id": "gw-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "gw-trigger",
+      "name": "Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 480]
+    },
+    {
+      "parameters": {
+        "resource": "webinar",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "times": {
+            "timesProperties": {
+              "fromTime": "2026-01-01T00:00:00Z",
+              "toTime": "={{ new Date().toISOString() }}"
+            }
+          }
+        }
+      },
+      "id": "gw-getwebinars",
+      "name": "Get Webinars",
+      "type": "n8n-nodes-base.goToWebinar",
+      "typeVersion": 1,
+      "position": [240, 480],
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten each webinar to the match fields. Keep the raw 'times' array too so we can\n// see recurring sessions. Native 'Webinar: Get All' returns one item per webinar.\nreturn $input.all().map((it) => {\n  const w = it.json;\n  const t0 = (w.times && w.times[0]) || {};\n  const start = t0.startTime || w.startTime || null;\n  return { json: {\n    webinar_key: String(w.webinarKey || w.id || ''),\n    organizer_key: String(w.organizerKey || ''),\n    subject: w.subject || w.name || null,\n    description: w.description || null,\n    time_zone: w.timeZone || null,\n    start_time: start,\n    start_date: start ? String(start).slice(0, 10) : null,\n    session_count: Array.isArray(w.times) ? w.times.length : null,\n    times: w.times || null\n  }};\n});"
+      },
+      "id": "gw-flatten",
+      "name": "Flatten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 480]
+    }
+  ],
+  "connections": {
+    "Execute workflow": { "main": [[{ "node": "Get Webinars", "type": "main", "index": 0 }]] },
+    "Get Webinars": { "main": [[{ "node": "Flatten", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

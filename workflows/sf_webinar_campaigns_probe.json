@@ -1,0 +1,57 @@
+{
+  "name": "CWSI - SF Webinar Campaigns (probe)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## SF Webinar Campaigns probe (2026)\n\nFetches Salesforce campaigns of Type='Webinar' starting in 2026, with their StartDate — the SF side of the GoToWebinar match.\n\nAFTER IMPORT:\n1. Select the 'Salesforce account 2' OAuth credential on 'SF: Get Webinar Campaigns'.\n2. Hit 'Execute workflow'.\n3. Open the 'Slim' node output (or 'SF: Get Webinar Campaigns') and copy the JSON — that's the data to share.\n\nNo DB writes. Read-only probe. We match these (name + start_date) to GoToWebinar events by start date (+ region token when several share a date).",
+        "height": 360,
+        "width": 480
+      },
+      "id": "sfw-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "sfw-trigger",
+      "name": "Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 460]
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, Name, Type, Status, StartDate, EndDate FROM Campaign WHERE Type = 'Webinar' AND StartDate >= 2026-01-01 ORDER BY StartDate"
+      },
+      "id": "sfw-query",
+      "name": "SF: Get Webinar Campaigns",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [240, 460],
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keep just the fields we need for the GoToWebinar match, clean and copy-ready.\nreturn $input.all().map((it) => {\n  const c = it.json;\n  return { json: {\n    campaign_key: c.Id,\n    name: c.Name || null,\n    type: c.Type || null,\n    status: c.Status || null,\n    start_date: c.StartDate || null,\n    end_date: c.EndDate || null\n  }};\n});"
+      },
+      "id": "sfw-slim",
+      "name": "Slim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 460]
+    }
+  ],
+  "connections": {
+    "Execute workflow": { "main": [[{ "node": "SF: Get Webinar Campaigns", "type": "main", "index": 0 }]] },
+    "SF: Get Webinar Campaigns": { "main": [[{ "node": "Slim", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

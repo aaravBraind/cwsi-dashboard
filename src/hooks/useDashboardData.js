@@ -1,16 +1,23 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { useFilters } from '../filters/FilterContext'
 import { getFxEurToGbp } from '../data/fx'
+import { getBoardPack } from '../data/boardPack'
+import { generateBoardNarrative } from '../data/boardPackClient'
 import {
   getOverview,
   getKpiTracker,
   getPipeline,
+  getOpportunityStage,
   getChannel,
   getCampaignsForChannel,
   getLinkedInSnapshot,
+  getEmailEngagement,
   getMarketingSpend,
   getOutreach,
   getOutreachSteps,
+  getEvents,
+  getEventTypeFunnel,
+  getEventsDetail,
   getWebTraffic,
   getSeo,
 } from '../data/queries'
@@ -31,6 +38,16 @@ export function useKpiTracker() {
 export function usePipeline() {
   const { filters } = useFilters()
   return useQuery({ queryKey: ['pipeline', filters], queryFn: () => getPipeline(filters) })
+}
+
+// Pipeline stage distribution — open-pipeline snapshot, region-scoped only (quarter
+// intentionally excluded; it's a current-state snapshot, not a quarter slice).
+export function useOpportunityStage() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['opportunity-stage', filters.region],
+    queryFn: () => getOpportunityStage({ region: filters.region }),
+  })
 }
 
 export function useChannel(channelName) {
@@ -57,6 +74,16 @@ export function useLinkedInSnapshot() {
   return useQuery({
     queryKey: ['linkedin-snapshot', filters.region],
     queryFn: () => getLinkedInSnapshot({ region: filters.region }),
+  })
+}
+
+// Email engagement snapshot — region-scoped; quarter intentionally excluded
+// (lifetime per-campaign snapshot, not a quarter slice), mirroring LinkedIn.
+export function useEmailEngagement() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['email-engagement', filters.region],
+    queryFn: () => getEmailEngagement({ region: filters.region }),
   })
 }
 
@@ -116,5 +143,54 @@ export function useSeo() {
   return useQuery({
     queryKey: ['seo', filters.region, filters.quarter],
     queryFn: () => getSeo({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// Webinar events (GoToWebinar attendance) — region + quarter scoped.
+export function useEvents() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['events', filters.region, filters.quarter],
+    queryFn: () => getEvents({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// MQL rate by event type (Events & Webinars channel split by Campaign.Type).
+export function useEventTypeFunnel() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['event-type-funnel', filters.region, filters.quarter],
+    queryFn: () => getEventTypeFunnel({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// Event-campaign detail (per-campaign SF funnel + types + by-type) — region + quarter scoped.
+export function useEventsDetail() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['events-detail', filters.region, filters.quarter],
+    queryFn: () => getEventsDetail({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// ---- Board Pack (T-7) ----------------------------------------------------
+// The figure set: every board number the app computes from the warehouse, in the
+// agreed metric order, with gaps-to-close + ranked levers. Region + quarter scoped.
+export function useBoardPack() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['board-pack', filters.region, filters.quarter],
+    queryFn: () => getBoardPack({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// Generate the AI narrative + recommendations. mutate(figureSet) POSTs the
+// computed figures to the n8n→Claude webhook, then validates every returned
+// number against the figure set (trace-to-data). Manual trigger — exec generation
+// is never automatic on page load.
+export function useGenerateBoardPack() {
+  return useMutation({
+    mutationKey: ['board-pack-generate'],
+    mutationFn: (figureSet) => generateBoardNarrative(figureSet),
   })
 }

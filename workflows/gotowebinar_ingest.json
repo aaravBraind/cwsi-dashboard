@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## GoToWebinar -> fact_event_daily\n\nAttendance (+ registrant count) that Salesforce lacks. Native GoToWebinar node for the webinar list (no organizerKey needed). Registrants + Attendees via /registrants and /attendees http calls; counts are aggregated by pairedItem so they're robust to n8n splitting the array response.\n\nAFTER IMPORT:\n1. Select your predefined 'GoToWebinar OAuth2 API' credential on 'Get Webinars' (native), 'Get Registrants' and 'Get Attendees' (http).\n2. Select your Supabase Postgres credential on both DB nodes (the id in the file is from another instance).\n3. (Optional) Config -> lookback_days (default 90).\n4. Run once; check fact_event_daily / v_event_daily / data_quality_log.\n\nRegion: webinar SUBJECT first, then TIMEZONE (Europe/London->UKI, Brussels/Luxembourg->BeLux, Amsterdam->NL), else UNASSIGNED.\nGrain: webinarKey x start-date (uq_event_grain).",
+        "content": "## GoToWebinar -> fact_event_daily\n\nAttendance (+ registrant count) that Salesforce lacks, NOW with SF webinar campaign_key attached. Native GoToWebinar node for the webinar list; Registrants + Attendees via http; counts aggregated by pairedItem (robust to n8n splitting the array response).\n\nSF MATCH (20 Jun): 'SF: Get Webinar Campaigns' (executeOnce) fetches Type='Webinar' 2026 campaigns; 'Build Event Rows' matches each GTW webinar -> campaign_key via name-date (dd.mm.yyyy in Campaign.Name == GTW date), else title-overlap + GTW date in [StartDate,EndDate]. NOT Campaign.StartDate (0/4 match). Dry-runs never match (campaign_key null). Reproduces 4/4 on live data.\n\nAFTER IMPORT:\n1. Select your 'GoToWebinar OAuth2 API' credential on 'Get Webinars' (native), 'Get Registrants' and 'Get Attendees' (http).\n2. SF cred preset on 'SF: Get Webinar Campaigns' (Salesforce account 2).\n3. Select your Supabase Postgres credential on both DB nodes (the id in the file is from another instance).\n4. (Optional) Config -> from_date (default 2026-01-01) = start of the GTW fetch window; toTime is now. Covers all 2026 webinars. (Was lookback_days=90, which dropped the Feb webinars.)\n5. Run once; check fact_event_daily (campaign_key now populated) / v_event_daily / data_quality_log.\n\nRegion: webinar SUBJECT first, then TIMEZONE (Europe/London->UKI, Brussels/Luxembourg->BeLux, Amsterdam->NL), else UNASSIGNED.\nGrain: webinarKey x start-date (uq_event_grain).",
         "height": 470,
         "width": 560
       },
@@ -42,9 +42,9 @@
           "assignments": [
             {
               "id": "c2",
-              "name": "lookback_days",
-              "value": 90,
-              "type": "number"
+              "name": "from_date",
+              "value": "2026-01-01",
+              "type": "string"
             }
           ]
         },
@@ -67,7 +67,7 @@
         "additionalFields": {
           "times": {
             "timesProperties": {
-              "fromTime": "={{ new Date(Date.now() - $('Config').first().json.lookback_days*864e5).toISOString() }}",
+              "fromTime": "={{ new Date($('Config').first().json.from_date + 'T00:00:00Z').toISOString() }}",
               "toTime": "={{ new Date().toISOString() }}"
             }
           }
@@ -78,10 +78,33 @@
       "type": "n8n-nodes-base.goToWebinar",
       "typeVersion": 1,
       "position": [
+        280,
+        360
+      ],
+      "executeOnce": true,
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential. executeOnce: fed 4 SF campaign items but must run the getAll once."
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, Name, Type, Status, StartDate, EndDate FROM Campaign WHERE Type = 'Webinar' AND StartDate >= 2026-01-01 ORDER BY StartDate"
+      },
+      "id": "a1b2c3d4-0000-0000-0000-00000000000c",
+      "name": "SF: Get Webinar Campaigns",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
         60,
         360
       ],
-      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      },
+      "notes": "SF webinar campaigns — matched to GTW webinars in 'Build Event Rows' to set campaign_key."
     },
     {
       "parameters": {
@@ -122,7 +145,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Count distinct registrants per webinar using pairedItem lineage\n// (works whether n8n splits the array response into items or returns it as one).\nconst base = $('Flatten Webinars').all();\nconst sets = base.map(() => new Set());\nfor (const it of $input.all()) {\n  let idx = 0;\n  const pi = it.pairedItem;\n  if (typeof pi === 'number') idx = pi;\n  else if (pi && typeof pi.item === 'number') idx = pi.item;\n  else if (Array.isArray(pi) && pi[0] && typeof pi[0].item === 'number') idx = pi[0].item;\n  const b = it.json;\n  const list = Array.isArray(b) ? b\n    : (b && Array.isArray(b.registrants)) ? b.registrants : (b && Array.isArray(b.data)) ? b.data\n    : (b && (b.registrantKey || b.attendeeKey || b.email)) ? [b]\n    : [];\n  for (const a of list) { const k = a.registrantKey || a.email; if (k && sets[idx]) sets[idx].add(k); }\n}\nreturn base.map((w, i) => ({ json: { ...w.json, registrants: sets[i].size } }));"
+        "jsCode": "// Count registrants per webinar. /registrants returns a bare array which n8n SPLITS into\n// one item per registrant — and on split n8n's pairedItem becomes a GLOBAL index, not the\n// webinar index, which collapsed every webinar to 1. So we key each registrant to its webinar\n// via the webinarKey embedded in joinUrl (/join/<webinarKey>/...), independent of pairedItem.\n// Dedup by email (clean string; registrantKey arrives as a precision-damaged number).\nconst base = $('Flatten Webinars').all();\nconst byKey = {};\nfor (const w of base) byKey[w.json.event_key] = new Set();\nfor (const it of $input.all()) {\n  const b = it.json || {};\n  const rows = Array.isArray(b) ? b\n    : Array.isArray(b.registrants) ? b.registrants\n    : (b.registrantKey || b.email || b.joinUrl) ? [b] : [];\n  for (const r of rows) {\n    const m = String(r.joinUrl || '').match(/\\/join\\/(\\d+)/);\n    const ek = m ? m[1] : null;\n    const id = r.email || r.registrantKey;\n    if (ek && byKey[ek] && id != null) byKey[ek].add(id);\n  }\n}\nreturn base.map((w) => ({ json: { ...w.json, registrants: byKey[w.json.event_key] ? byKey[w.json.event_key].size : 0 } }));"
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000007",
       "name": "Add Registrants",
@@ -159,7 +182,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Final rows: attendees counted from this node's input (Get Attendees) via pairedItem,\n// joined onto the webinar base (which already carries registrants).\nconst base = $('Add Registrants').all();\nconst sets = base.map(() => new Set());\nfor (const it of $input.all()) {\n  let idx = 0;\n  const pi = it.pairedItem;\n  if (typeof pi === 'number') idx = pi;\n  else if (pi && typeof pi.item === 'number') idx = pi.item;\n  else if (Array.isArray(pi) && pi[0] && typeof pi[0].item === 'number') idx = pi[0].item;\n  const b = it.json;\n  const list = Array.isArray(b) ? b\n    : (b && Array.isArray(b.attendees)) ? b.attendees\n    : (b && b._embedded && Array.isArray(b._embedded.attendees)) ? b._embedded.attendees\n    : (b && (b.registrantKey || b.attendeeKey || b.email)) ? [b]\n    : [];\n  for (const a of list) { const k = a.registrantKey || a.attendeeKey || a.email; if (k && sets[idx]) sets[idx].add(k); }\n}\nreturn base.map((w, i) => ({ json: {\n  event_key: w.json.event_key,\n  event_name: w.json.event_name,\n  activity_date: w.json.activity_date,\n  region_code: w.json.region_code,\n  campaign_key: w.json.campaign_key,\n  registrants: w.json.registrants,\n  attendees: sets[i].size,\n  source: 'gotowebinar'\n}}));"
+        "jsCode": "// Attendee counts from Get Attendees (paginated HAL: _embedded.attendeeParticipationResponses\n// + page.totalElements) joined onto the webinar base (carries registrants). count =\n// max(totalElements, distinct keys) -> pagination-proof. Then attach SF campaign_key\n// (name-date / title+window; dry-runs excluded) and DROP dry-runs from the output.\nconst base = $('Add Registrants').all();\nconst acc = base.map(() => ({ keys: new Set(), total: 0 }));\nfor (const it of $input.all()) {\n  let idx = 0;\n  const pi = it.pairedItem;\n  if (typeof pi === 'number') idx = pi;\n  else if (pi && typeof pi.item === 'number') idx = pi.item;\n  else if (Array.isArray(pi) && pi[0] && typeof pi[0].item === 'number') idx = pi[0].item;\n  const b = it.json || {};\n  if (b.page && typeof b.page.totalElements === 'number' && acc[idx]) acc[idx].total = Math.max(acc[idx].total, b.page.totalElements);\n  const list = Array.isArray(b) ? b\n    : Array.isArray(b.attendees) ? b.attendees\n    : (b._embedded && Array.isArray(b._embedded.attendeeParticipationResponses)) ? b._embedded.attendeeParticipationResponses\n    : (b._embedded && Array.isArray(b._embedded.attendees)) ? b._embedded.attendees\n    : (b.registrantKey || b.attendeeKey || b.email) ? [b] : [];\n  for (const a of list) { const k = a.registrantKey || a.attendeeKey || a.email; if (k && acc[idx]) acc[idx].keys.add(k); }\n}\nconst attBy = {};\nbase.forEach((w, i) => { attBy[w.json.event_key] = Math.max(acc[i].total, acc[i].keys.size); });\n\n// --- SF webinar-campaign matcher (mirrors gotowebinar_sf_match.json) ---\nconst sf = $('SF: Get Webinar Campaigns').all().map((i) => i.json);\nfunction nameDate(name) { const m = String(name || '').match(/(\\d{1,2})[.\\/-](\\d{1,2})[.\\/-](\\d{4})/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null; }\nfunction toks(s) { return new Set(String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\\s+/).filter((x) => x.length > 3)); }\nfunction overlap(a, b) { const A = toks(a), B = toks(b); if (!A.size || !B.size) return 0; let n = 0; for (const t of A) if (B.has(t)) n++; return n / Math.min(A.size, B.size); }\nconst DRY = /\\b(dry[\\s-]?run|run[\\s-]?through|rehearsal|\\btest\\b)\\b/i;\nconst campaigns = sf.map((c) => ({ campaign_key: c.Id, name: c.Name, name_date: nameDate(c.Name), start: c.StartDate || null, end: c.EndDate || null }));\nconst usedCampaign = new Set();\nfunction matchCampaign(subject, gtwDate) {\n  if (!subject || DRY.test(subject) || !gtwDate) return null;\n  let cands = campaigns.filter((c) => c.name_date === gtwDate && !usedCampaign.has(c.campaign_key));\n  if (cands.length === 1) return cands[0];\n  if (cands.length > 1) return cands.slice().sort((a, b) => overlap(b.name, subject) - overlap(a.name, subject))[0];\n  const inWin = campaigns.filter((c) => !usedCampaign.has(c.campaign_key) && c.start && c.end && gtwDate >= c.start && gtwDate <= c.end);\n  const ranked = inWin.map((c) => ({ c, score: overlap(c.name, subject) })).sort((a, b) => b.score - a.score);\n  return (ranked.length && ranked[0].score >= 0.34) ? ranked[0].c : null;\n}\n\nreturn base.filter((w) => !DRY.test(w.json.event_name || '')).map((w) => {\n  const j = w.json;\n  const m = matchCampaign(j.event_name, j.activity_date);\n  if (m) usedCampaign.add(m.campaign_key);\n  return { json: {\n    event_key: j.event_key,\n    event_name: j.event_name,\n    activity_date: j.activity_date,\n    region_code: j.region_code,\n    campaign_key: m ? m.campaign_key : null,\n    registrants: j.registrants,\n    attendees: attBy[j.event_key] || 0,\n    source: 'gotowebinar'\n  }};\n});"
       },
       "id": "a1b2c3d4-0000-0000-0000-000000000009",
       "name": "Build Event Rows",
@@ -233,6 +256,17 @@
       ]
     },
     "Config": {
+      "main": [
+        [
+          {
+            "node": "SF: Get Webinar Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Webinar Campaigns": {
       "main": [
         [
           {

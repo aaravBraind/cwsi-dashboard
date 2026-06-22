@@ -1,0 +1,174 @@
+{
+  "name": "CWSI - Board Pack Generate (T-7, Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Board Pack generator (T-7) — n8n -> Claude (trace-to-data)\n\nWHAT: the dashboard POSTs the app-computed figure set to this webhook; we build a\ntrace-to-data prompt, call Claude (claude-opus-4-8, adaptive thinking, JSON schema\noutput), and return { narrative, recommendations, model }. The APP validates every\nreturned number against the figure set and blocks publish on any untraceable figure.\n\nSETUP (one-time):\n1. Import this workflow, then open the \"Anthropic: Messages\" HTTP node and select your\n   Anthropic credential (key stays here, never in the browser).\n   - Easiest: create an \"Anthropic\" credential (apiKey) and it injects x-api-key.\n   - The node already sends the anthropic-version + content-type headers.\n2. Activate the workflow. Copy the PRODUCTION webhook URL from the Webhook node.\n3. In the dashboard .env set:  VITE_BOARDPACK_WEBHOOK_URL=<that production URL>\n   (restart vite). The webhook allows CORS from any origin so the SPA can call it.\n\nNOTES:\n- Only does board-pack generation (not a generic Claude proxy): the prompt is built\n  from the figureSet shape, and model + max_tokens are pinned here.\n- If you'd rather not expose it openly, add a header-auth check on the Webhook node\n  and send the same header from boardPackClient.js.\n- The app re-validates every number, so a mis-paste or model slip is caught, not shipped.",
+        "height": 520,
+        "width": 460
+      },
+      "id": "bp-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "board-pack-generate",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "bp-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        520,
+        320
+      ],
+      "webhookId": "cwsi-board-pack-generate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Board Pack: build the Anthropic Messages request from the app-computed figure set.\n// The app sends ONLY the figures; this node turns them into a trace-to-data prompt.\nconst NL = String.fromCharCode(10);\nconst inp = $input.first().json;\nconst b = inp.body || inp;\nconst fs = (b && b.figureSet) || {};\nconst M = fs.metrics || [];\nconst L = fs.levers || [];\nconst T = fs.traceTable || [];\nconst meta = fs.meta || {};\nconst order = (meta.metricOrder || M.map(function (m) { return m.label; })).join(' -> ');\n\nconst mLines = M.map(function (m) {\n  return m.order + '. ' + m.label + ': ' + m.valueDisplay +\n    ' (target ' + m.targetDisplay + ', PROVISIONAL; status ' + m.status +\n    (m.note ? '; ' + m.note : '') + ')';\n}).join(NL);\n\nconst lLines = L.length\n  ? L.map(function (l, i) {\n      return (i + 1) + '. ' + l.title + ' - gap ' + l.gapDisplay +\n        '; estimated pipeline impact ' + l.impactDisplay + ' (' + l.basis + ')';\n    }).join(NL)\n  : '(no open gaps in this scope)';\n\nconst allowed = T.map(function (t) { return '- ' + t.label + ': ' + t.display; }).join(NL);\n\nconst system = [\n  'You write the executive board pack for CWSI, a B2B cybersecurity firm, from its marketing-intelligence dashboard.',\n  'TRACE-TO-DATA RULES (absolute, non-negotiable):',\n  '1) Use ONLY numbers that appear in FIGURES or ALLOWED NUMBERS below. Never invent, estimate, extrapolate, round to a new value, or calculate a new number. If a figure you want is not supplied, describe it qualitatively with no number.',\n  '2) Quote every number in its exact displayed form (for example \"GBP 612k\" as shown, \"17.5%\").',\n  '3) Targets are PROVISIONAL placeholders - say a target is provisional whenever you cite one. If a metric actual is pending, say it is pending; never fabricate it.',\n  '4) Follow the agreed metric order: ' + order + '.',\n  'Audience: the board and the CCO. Be concise, direct and decision-oriented. Return JSON only, matching the required schema.'\n].join(NL);\n\nconst user = [\n  'Scope: ' + (meta.regionLabel || 'All Regions') + ' | ' + (meta.quarterLabel || 'YTD') + ' | FY2026.',\n  '',\n  'FIGURES (metric: actual (target; status)):',\n  mLines,\n  '',\n  'GAPS TO CLOSE (ranked by estimated pipeline impact):',\n  lLines,\n  '',\n  'ALLOWED NUMBERS (the only numbers you may state, with their exact display form):',\n  allowed,\n  '',\n  'Produce:',\n  '- narrative.onTrack: what is on or above (provisional) target, in the agreed metric order.',\n  '- narrative.behindAddressable: what is behind but addressable, citing the ranked levers and their estimated pipeline impact.',\n  '- narrative.h2Plan: the H2 plan to close the gaps, highest-impact levers first.',\n  '- recommendations[]: prioritised actions; each {title, rationale, estimatedImpact (use a lever impact figure where applicable, else \"target pending\"), metric (the board metric it moves)}.'\n].join(NL);\n\nconst schema = {\n  type: 'object',\n  additionalProperties: false,\n  properties: {\n    narrative: {\n      type: 'object',\n      additionalProperties: false,\n      properties: {\n        onTrack: { type: 'string' },\n        behindAddressable: { type: 'string' },\n        h2Plan: { type: 'string' }\n      },\n      required: ['onTrack', 'behindAddressable', 'h2Plan']\n    },\n    recommendations: {\n      type: 'array',\n      items: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          title: { type: 'string' },\n          rationale: { type: 'string' },\n          estimatedImpact: { type: 'string' },\n          metric: { type: 'string' }\n        },\n        required: ['title', 'rationale', 'estimatedImpact', 'metric']\n      }\n    }\n  },\n  required: ['narrative', 'recommendations']\n};\n\nreturn [{ json: { anthropicBody: {\n  model: 'claude-opus-4-8',\n  max_tokens: 8000,\n  thinking: { type: 'adaptive' },\n  system: system,\n  messages: [{ role: 'user', content: user }],\n  output_config: { format: { type: 'json_schema', schema: schema } }\n} } }];"
+      },
+      "id": "bp-build",
+      "name": "Build Anthropic Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.anthropicBody) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "bp-anthropic",
+      "name": "Anthropic: Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the Anthropic response. With adaptive thinking the content array may hold\n// a thinking block before the text block, so pick the text block explicitly.\nconst res = $input.first().json;\nconst content = res.content || [];\nlet text = '';\nfor (const blk of content) { if (blk.type === 'text') { text = blk.text; break; } }\nlet parsed = {};\ntry { parsed = JSON.parse(text); } catch (e) { parsed = { _parseError: String(e), raw: text }; }\nreturn [{ json: {\n  narrative: parsed.narrative || {},\n  recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],\n  model: res.model || 'claude-opus-4-8'\n} }];"
+      },
+      "id": "bp-parse",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bp-respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Anthropic Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Anthropic Request": {
+      "main": [
+        [
+          {
+            "node": "Anthropic: Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic: Messages": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -4,9 +4,10 @@
 
 export const REPORTING_YEAR = 2026
 
-// YTD spans this year → now (2024–2026). Earlier years (2019–2023) are excluded —
-// they carry little/no pipeline and aren't relevant to current reporting.
-export const HISTORY_START_YEAR = 2024
+// Reporting is scoped to 2026 only (client decision, 19 Jun). YTD = 2026-to-now;
+// all earlier years (2019–2025) are excluded from every figure. Equal to
+// REPORTING_YEAR so YTD and the quarter tabs cover the same single year.
+export const HISTORY_START_YEAR = 2026
 
 // Region tabs -> region_code on the views. "all" applies no predicate, so it
 // INCLUDES Unassigned (UNASSIGNED) — documented in MAPPING.md. region_id is the

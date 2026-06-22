@@ -4,6 +4,7 @@ import {
   HISTORY_START_YEAR,
   PILLAR_UNMAPPED,
   NA,
+  isNA,
   quarterLabel,
   PILLARS,
   REGION_ORDER,
@@ -24,12 +25,12 @@ const FACT_COLS =
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
 // QUARTER SCOPE:
 //   q1..q4 → that quarter of REPORTING_YEAR (2026).
-//   ytd    → HISTORY_START_YEAR (2024) → now; earlier years are excluded.
+//   ytd    → HISTORY_START_YEAR (2026) → now; all earlier years excluded.
 function applyFilters(q, f = {}) {
   if (f.quarter && f.quarter !== 'ytd') {
     q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(f.quarter).replace('q', '')))
   } else {
-    q = q.gte('year', HISTORY_START_YEAR) // ytd: 2024 onward
+    q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward
   }
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   if (f.channel) q = q.eq('channel_name', f.channel)
@@ -108,8 +109,69 @@ function groupBy(rows, key) {
 
 // ---- Surface query functions (each returns view-ready, aggregated data) ----
 
+// Retention / Retained Contracts (B3, 19 Jun). Renewals (Opportunity.Type=
+// 'Renewal') are account-based, NOT campaign-attributed, so they live in their
+// own fact (v_retention), never fact_channel_daily. "Retained" = WON renewals in
+// the scoped period; expansion = won Upsell + Cross-Sell (reported separately).
+// Region + quarter scope it (v_retention exposes region_code/year/quarter).
+export async function getRetention(filters = {}) {
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_retention')
+      .select('fact_id,region_code,year,quarter,opp_type,won_count,won_value,open_count,open_value')
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+    } else {
+      q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward (matches applyFilters)
+    }
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['fact_id'])
+
+  const renewal = rows.filter((r) => r.opp_type === 'Renewal')
+  const expansion = rows.filter((r) => r.opp_type === 'Upsell' || r.opp_type === 'Cross-Sell')
+  return {
+    retainedCount: sum(renewal, 'won_count'),
+    retainedValue: sum(renewal, 'won_value'),
+    openCount: sum(renewal, 'open_count'),
+    openValue: sum(renewal, 'open_value'),
+    expansionCount: sum(expansion, 'won_count'),
+    expansionValue: sum(expansion, 'won_value'),
+    hasData: rows.length > 0,
+  }
+}
+
+// Total sales meetings (B7, 20 Jun). SF Event (Type='Meeting') deduped to one row
+// per (Subject, day, Who, What) in ingestion, account/opp/lead region-attributed,
+// into its own fact (v_meetings) — never campaign-attributed, mirroring v_retention.
+// This is ALL sales meetings (Event has no Outreach-source field — Probe C). It is
+// NOT Paul's "100 meetings" target: per the 24 Apr call that target is Outreach-
+// SEQUENCE-generated additional meetings, sourced from Outreach.io /meetings on the
+// Outreach page — never scored against this all-meetings count. Accessor kept for a
+// future target-free "total sales meetings" view; not wired to Overview (reverted
+// 20 Jun). Region + quarter scope it like retention.
+export async function getMeetings(filters = {}) {
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_meetings')
+      .select('fact_id,region_code,year,quarter,meeting_count')
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+    } else {
+      q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward (matches applyFilters)
+    }
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['fact_id'])
+
+  return {
+    meetingsBooked: sum(rows, 'meeting_count'),
+    hasData: rows.length > 0,
+  }
+}
+
 export async function getOverview(filters) {
-  const rows = await fetchFacts(filters)
+  const [rows, retention] = await Promise.all([fetchFacts(filters), getRetention(filters)])
   const funnel = funnelOf(rows)
   const byChannel = [...groupBy(rows, 'channel_name')]
     .map(([channel, rs]) => ({
@@ -121,13 +183,14 @@ export async function getOverview(filters) {
       spendCurrency: 'GBP',
     }))
     .sort((a, b) => b.pipeline - a.pipeline)
-  return { funnel, byChannel, hasData: rows.length > 0, rowCount: rows.length }
+  return { funnel, byChannel, retention, hasData: rows.length > 0, rowCount: rows.length }
 }
 
 export async function getKpiTracker(filters) {
-  const rows = await fetchFacts(filters)
+  const [rows, retention] = await Promise.all([fetchFacts(filters), getRetention(filters)])
   return {
     funnel: funnelOf(rows),
+    retention, // Retained contracts (won renewals) + Expansion split — v_retention
     hasData: rows.length > 0,
     rowCount: rows.length,
   }
@@ -146,6 +209,34 @@ export async function getPipeline(filters) {
     }))
     .sort((a, b) => b.pipeline - a.pipeline)
   return { funnel: funnelOf(rows), bySource, hasData: rows.length > 0, rowCount: rows.length }
+}
+
+// Pipeline stage distribution (B, 20 Jun, Option 1). Open-pipeline snapshot: count
+// + £ of OPEN opps by StageName × region, latest snapshot only (read via
+// v_opportunity_stage_current). Region-scoped only — it's a current-state snapshot,
+// not a quarter slice (mirrors the LinkedIn/email snapshots). Stages ordered by the
+// stage probability (5 → 20 → 50 → 70 → 90), so the ladder reads in order.
+export async function getOpportunityStage(filters = {}) {
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_opportunity_stage_current')
+      .select('fact_id,region_code,snapshot_date,stage_name,probability,opp_count,opp_value')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['fact_id'])
+
+  // Collapse region splits into one row per stage (so region='all' sums the regions).
+  const stages = [...groupBy(rows, 'stage_name')]
+    .map(([stage, rs]) => ({
+      stage,
+      probability: rs[0]?.probability ?? null,
+      count: sum(rs, 'opp_count'),
+      value: sum(rs, 'opp_value'),
+    }))
+    .sort((a, b) => (a.probability ?? 0) - (b.probability ?? 0))
+
+  const snapshotDate = rows.reduce((mx, r) => (r.snapshot_date > mx ? r.snapshot_date : mx), null)
+  return { stages, snapshotDate, hasData: rows.length > 0 }
 }
 
 // Channel page: totals for one channel_name + per-campaign drill-down.
@@ -215,7 +306,43 @@ export async function getLinkedInSnapshot(filters = {}) {
     spend: sum(rows, 'spend'),
     impressions: sum(rows, 'impressions'),
     clicks: sum(rows, 'clicks'),
-    leads: sum(rows, 'leads'),
+    leads: sum(rows, 'leads'), // LinkedIn lead-gen FORM leads (delivery rows)
+  }
+
+  // SF-attributed pipeline + revenue for the LinkedIn Paid CHANNEL (region-scoped,
+  // lifetime — same timeframe as the lifetime spend snapshot, so ROI compares
+  // like-for-like). The delivery rows carry £0 pipeline; the attributed value sits
+  // on the channel's SF campaign rows. Best-effort: ROI is omitted (NA) if this read
+  // fails. Quarter is intentionally NOT applied (matches the lifetime snapshot).
+  let attributed = { pipeline: NA, closedWon: NA }
+  try {
+    const chRows = await fetchAll(() => {
+      let q = supabase
+        .from('v_fact_enriched')
+        .select('fact_id,region_code,pipeline_value,closed_won_value')
+        .eq('channel_name', 'LinkedIn Paid')
+      if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+      return q
+    }, ['fact_id'])
+    attributed = { pipeline: sum(chRows, 'pipeline_value'), closedWon: sum(chRows, 'closed_won_value') }
+  } catch {
+    /* attribution best-effort — leave ROI as NA rather than fabricate */
+  }
+
+  // Efficiency metrics — all real now that LinkedIn spend/impressions/clicks +
+  // SF-attributed pipeline/revenue are live. CTR/CPC/CPM are unambiguous; CPL uses
+  // LinkedIn FORM leads (the native conversions), NOT the broad SF-attributed lead
+  // count; ROI is shown on influenced pipeline (headline) and won revenue (secondary).
+  const { spend, impressions, clicks, leads } = totals
+  const efficiency = {
+    ctr: impressions > 0 ? clicks / impressions : NA, // click-through rate
+    cpc: clicks > 0 ? spend / clicks : NA, // cost per click (GBP)
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : NA, // cost per 1,000 impressions (GBP)
+    cplForm: leads > 0 ? spend / leads : NA, // cost per LinkedIn form lead (GBP)
+    pipeline: attributed.pipeline,
+    closedWon: attributed.closedWon,
+    roiPipeline: spend > 0 && !isNA(attributed.pipeline) ? attributed.pipeline / spend : NA,
+    roiRevenue: spend > 0 && !isNA(attributed.closedWon) ? attributed.closedWon / spend : NA,
   }
   const campaigns = rows
     .map((r) => {
@@ -241,10 +368,207 @@ export async function getLinkedInSnapshot(filters = {}) {
     currency: 'GBP',
     snapshotDate,
     totals,
+    efficiency,
     campaigns,
     hasData: rows.length > 0,
     rowCount: rows.length,
   }
+}
+
+// ---- Email engagement SNAPSHOT (B2, 19 Jun) ------------------------------
+// Pardot/Account-Engagement rollups on Campaign (sent/delivered/opens/clicks)
+// are LIFETIME per-campaign totals — a snapshot like LinkedIn delivery, NOT a
+// daily series. Region scopes it (parsed from the campaign name at ingest); the
+// QUARTER filter is intentionally ignored (a lifetime snapshot isn't a quarter
+// slice) — the as-of date is shown. Path A (20 Jun): only emails_sent comes from
+// Salesforce (Campaign.NumberSent); delivered/opens/clicks/CTR are NOT in this org
+// (no Account Engagement objects) → returned as NA. Unsubscribe likewise not shown.
+export async function getEmailEngagement(filters = {}) {
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_email_engagement')
+      .select('campaign_key,campaign_name,region_code,snapshot_date,emails_sent,emails_delivered,email_opens,email_clicks')
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['campaign_key']) // unique PK
+
+  const snapshotDate = rows.reduce((mx, r) => (r.snapshot_date > mx ? r.snapshot_date : mx), null)
+
+  // A metric is "available" only if at least one row carries a non-null value.
+  // In this org delivered/opens/clicks are always NULL (no Account Engagement /
+  // pi__ objects, no ListEmail — checked 20 Jun), so they surface as NA — never a
+  // misleading 0 / 0%. emails_sent is always present.
+  const has = (field) => rows.some((r) => r[field] != null)
+  const hasDelivered = has('emails_delivered')
+  const hasOpens = has('email_opens')
+  const hasClicks = has('email_clicks')
+
+  const rate = (n, d) => (isNA(n) || !(d > 0) ? NA : n / d)
+
+  const campaigns = rows
+    .map((r) => {
+      const sent = Number(r.emails_sent) || 0
+      const delivered = r.emails_delivered == null ? NA : Number(r.emails_delivered)
+      const opens = r.email_opens == null ? NA : Number(r.email_opens)
+      const clicks = r.email_clicks == null ? NA : Number(r.email_clicks)
+      const base = !isNA(delivered) && delivered > 0 ? delivered : sent // open/CTR denominator
+      return {
+        campaignKey: r.campaign_key,
+        campaignName: r.campaign_name || r.campaign_key,
+        regionCode: r.region_code,
+        sent, delivered, opens, clicks,
+        openRate: rate(opens, base),
+        ctr: rate(clicks, base),
+      }
+    })
+    .sort((a, b) => b.sent - a.sent)
+
+  const totals = {
+    sent: sum(rows, 'emails_sent'),
+    delivered: hasDelivered ? sum(rows, 'emails_delivered') : NA,
+    opens: hasOpens ? sum(rows, 'email_opens') : NA,
+    clicks: hasClicks ? sum(rows, 'email_clicks') : NA,
+  }
+  const base = hasDelivered && totals.delivered > 0 ? totals.delivered : totals.sent
+  return {
+    snapshotDate,
+    totals: {
+      ...totals,
+      openRate: rate(totals.opens, base),
+      ctr: rate(totals.clicks, base),
+      deliveryRate: hasDelivered ? rate(totals.delivered, totals.sent) : NA,
+    },
+    campaigns,
+    hasData: rows.length > 0,
+    rowCount: rows.length,
+  }
+}
+
+// ---- Events / webinars ---------------------------------------------------
+// Webinar registrations + attendance from GoToWebinar (fact_event_daily, matched
+// to the SF webinar campaign → v_event_daily). Real per-webinar registrants /
+// attendees / attendance_rate; region + quarter scope it (events have a date, so
+// quarter applies — unlike the lifetime snapshots). Dry-runs were excluded at
+// ingest. Owned/earned (in-person) events + per-event MQL/SQL/pipeline are NOT
+// tracked (no SF event-type / in-person field) → never fabricated.
+export async function getEvents(filters = {}) {
+  const rows = await fetchAll(() => {
+    let q = supabase
+      .from('v_event_daily')
+      .select('event_key,event_name,activity_date,region_code,year,quarter,campaign_key,registrants,attendees')
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+    } else {
+      q = q.gte('year', HISTORY_START_YEAR)
+    }
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['event_key'])
+
+  const rate = (att, reg) => (reg > 0 ? att / reg : NA)
+  const webinars = rows
+    .map((r) => {
+      const registrants = Number(r.registrants) || 0
+      const attendees = Number(r.attendees) || 0
+      return {
+        eventKey: r.event_key,
+        eventName: r.event_name || r.event_key,
+        activityDate: r.activity_date,
+        regionCode: r.region_code,
+        campaignKey: r.campaign_key,
+        registrants,
+        attendees,
+        attendanceRate: rate(attendees, registrants),
+      }
+    })
+    .sort((a, b) => (a.activityDate < b.activityDate ? 1 : -1))
+
+  const registrants = sum(rows, 'registrants')
+  const attendees = sum(rows, 'attendees')
+  return {
+    webinars,
+    totals: {
+      webinars: webinars.length,
+      registrants,
+      attendees,
+      attendanceRate: rate(attendees, registrants),
+    },
+    hasData: rows.length > 0,
+  }
+}
+
+// MQL rate by event type (Level A/B, 20 Jun). Splits the Events & Webinars channel
+// by SF Campaign.Type (Webinar / Event / Seminar) — needs campaign_type on
+// v_fact_enriched (Level B + an SF re-run to populate; rows with no type bucket as
+// 'Untyped' until then). MQL rate = MQLs ÷ leads per type. Owned-vs-earned isn't
+// separable (no SF field) — Event/Seminar are the in-person types.
+export async function getEventTypeFunnel(filters = {}) {
+  const rows = await fetchAll(
+    () => applyFilters(
+      supabase.from('v_fact_enriched').select('fact_id,campaign_type,leads,mql_count,sql_count,pipeline_value'),
+      { ...filters, channel: 'Events & Webinars' },
+    ),
+    ['fact_id'],
+  )
+  const LABEL = { Webinar: 'Webinars', Event: 'In-person events', 'Seminar / Conference': 'Seminars / Conferences' }
+  const byType = [...groupBy(rows, 'campaign_type')]
+    .map(([type, rs]) => {
+      const leads = sum(rs, 'leads')
+      const mql = sum(rs, 'mql_count')
+      return {
+        type: type || 'Untyped',
+        label: LABEL[type] || type || 'Untyped (re-run SF workflow)',
+        leads,
+        mql,
+        sql: sum(rs, 'sql_count'),
+        pipeline: sum(rs, 'pipeline_value'),
+        mqlRate: leads > 0 ? mql / leads : NA,
+      }
+    })
+    .sort((a, b) => b.leads - a.leads)
+  return { byType, hasData: rows.length > 0 }
+}
+
+// Event-campaign detail — per-campaign SF funnel for the Events & Webinars channel,
+// carrying campaign_type so the Events page can FILTER by type (Webinar / Event /
+// Seminar) and show the earlier per-campaign drill-down. Also rolls up by type for
+// the MQL-rate bars. Region + quarter scoped. campaign_type is null until the SF
+// re-run (Level B) → those rows bucket as 'Untyped'.
+export async function getEventsDetail(filters = {}) {
+  const rows = await fetchAll(
+    () => applyFilters(
+      supabase
+        .from('v_fact_enriched')
+        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,pipeline_value,closed_won_value'),
+      { ...filters, channel: 'Events & Webinars' },
+    ),
+    ['fact_id'],
+  )
+
+  const campaigns = [...groupBy(rows, 'campaign_key')]
+    .map(([key, rs]) => ({
+      campaignKey: key,
+      campaignName: rs[0]?.campaign_name || key || 'Unattributed',
+      campaignType: rs[0]?.campaign_type || null,
+      leads: sum(rs, 'leads'),
+      mql: sum(rs, 'mql_count'),
+      sql: sum(rs, 'sql_count'),
+      pipeline: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }))
+    .sort((a, b) => b.pipeline - a.pipeline)
+
+  const types = [...new Set(rows.map((r) => r.campaign_type).filter(Boolean))].sort()
+
+  const byType = [...groupBy(rows, 'campaign_type')]
+    .map(([type, rs]) => {
+      const leads = sum(rs, 'leads')
+      const mql = sum(rs, 'mql_count')
+      return { type: type || 'Untyped', leads, mql, mqlRate: leads > 0 ? mql / leads : NA }
+    })
+    .sort((a, b) => b.leads - a.leads)
+
+  return { campaigns, types, byType, hasData: rows.length > 0 }
 }
 
 // ---- Outreach.io engagement SNAPSHOT -------------------------------------
@@ -448,19 +772,24 @@ export async function getWebTraffic(filters = {}) {
     () => applyWebFilters(
       supabase
         .from('v_web_daily')
-        .select('activity_date,region_code,region_name,hostname,sessions,engaged_sessions,key_events'),
+        .select('activity_date,region_code,region_name,hostname,channel_group,sessions,engaged_sessions,key_events'),
       filters,
     ),
-    ['activity_date', 'region_code', 'hostname'], // grain key (date × region × hostname)
+    ['activity_date', 'region_code', 'hostname', 'channel_group'], // grain key (date × region × hostname × channel)
   )
 
   const sessions = sum(rows, 'sessions')
   const engaged = sum(rows, 'engaged_sessions')
+  // Organic-social referred sessions: GA4 sessionDefaultChannelGroup = 'Organic Social'
+  // (unpaid social only — excludes 'Paid Social'). Powers the mockup's
+  // "Traffic to website (social sessions)" KPI. Available since the 22 Jun GA4 re-grain.
+  const socialRows = rows.filter((r) => r.channel_group === 'Organic Social')
   const totals = {
     sessions,
     engaged,
     engagementRate: sessions ? engaged / sessions : NA,
     keyEvents: naIfAllZero(rows, 'key_events'), // pending: GA4 conversions not confirmed
+    socialSessions: socialRows.length ? sum(socialRows, 'sessions') : NA,
   }
 
   const byHostname = [...groupBy(rows, 'hostname')]
@@ -516,9 +845,23 @@ export async function getSeo(filters = {}) {
     p_history_start: HISTORY_START_YEAR,
     p_limit: 15,
   })
+  // Top keywords/queries — same server-side top-N RPC over fact_seo_query_daily
+  // (~1M rows). Query grain has no region, so quarter/year-scoped only. Scoped to
+  // HISTORY_START_YEAR (2026) so any pre-2026 rows in the table are excluded.
+  const queriesP = supabase.rpc('get_seo_top_queries', {
+    p_quarter: qn,
+    p_year: REPORTING_YEAR,
+    p_history_start: HISTORY_START_YEAR,
+    p_limit: 15,
+  })
 
-  const [daily, { data: pData, error: pErr }] = await Promise.all([dailyP, pagesP])
+  const [daily, { data: pData, error: pErr }, { data: qData, error: qErr }] = await Promise.all([
+    dailyP,
+    pagesP,
+    queriesP,
+  ])
   if (pErr) throw pErr
+  if (qErr) throw qErr
 
   const clicks = sum(daily, 'clicks')
   const impressions = sum(daily, 'impressions')
@@ -540,7 +883,22 @@ export async function getSeo(filters = {}) {
     avgPosition: p.avg_position == null ? NA : Number(p.avg_position),
   }))
 
-  return { totals, topPages, hasData: daily.length > 0 || topPages.length > 0, dayCount: daily.length }
+  // Top keywords (same shape, keyed by query).
+  const topQueries = (qData || []).map((q) => ({
+    query: q.query,
+    clicks: Number(q.clicks),
+    impressions: Number(q.impressions),
+    ctr: q.ctr == null ? NA : Number(q.ctr),
+    avgPosition: q.avg_position == null ? NA : Number(q.avg_position),
+  }))
+
+  return {
+    totals,
+    topPages,
+    topQueries,
+    hasData: daily.length > 0 || topPages.length > 0 || topQueries.length > 0,
+    dayCount: daily.length,
+  }
 }
 
 // ---- Marketing budget / spend (EUR, finance-grained) ---------------------

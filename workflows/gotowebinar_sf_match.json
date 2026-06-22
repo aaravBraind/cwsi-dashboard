@@ -1,0 +1,102 @@
+{
+  "name": "CWSI - GoToWebinar <-> SF Webinar Campaign Match (2026)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## GTW <-> SF webinar MATCH (2026)\n\nJoins both probes: fetch all 2026 GoToWebinar webinars + all 2026 SF Type='Webinar' campaigns, then output the campaign_key <-> webinar_key map.\n\n### Join key (confirmed from live data, 20 Jun)\nCampaign.StartDate matches 0/4 (it's the campaign WINDOW-OPEN date). The real webinar date is the dd.mm.yyyy in Campaign.Name and that == GTW start_date (3/4); the 4th (no date in name) resolves uniquely by title + GTW date within [StartDate,EndDate].\n\n### Match Webinars node\n1. Drop GTW dry-runs / run-throughs / tests (5 of 9 in 2026).\n2. Primary: name-date (dd.mm.yyyy from Campaign.Name) == GTW start_date.\n3. Fallback: title-token overlap + GTW date in [StartDate,EndDate].\nOutput: matched rows (sf_start_date / name_date / gtw_start_date side-by-side) + any unmatched either side + summary. Reproduces 4/4 on live data.\n\n### AFTER IMPORT\n1. Select your GoToWebinar OAuth2 credential on 'Get Webinars'.\n2. Salesforce cred is preset on 'SF: Get Webinar Campaigns' (Salesforce account 2).\n3. Execute. Open 'Match Webinars' output.\n\nRead-only: no DB writes. Next: feed campaign_key<->webinar_key into the GTW attendance ingest (fact_event_daily).",
+        "height": 560,
+        "width": 560
+      },
+      "id": "m-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "m-trigger",
+      "name": "Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 620]
+    },
+    {
+      "parameters": {
+        "resource": "webinar",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "times": {
+            "timesProperties": {
+              "fromTime": "2026-01-01T00:00:00Z",
+              "toTime": "={{ new Date().toISOString() }}"
+            }
+          }
+        }
+      },
+      "id": "m-getwebinars",
+      "name": "Get Webinars",
+      "type": "n8n-nodes-base.goToWebinar",
+      "typeVersion": 1,
+      "position": [240, 620],
+      "notes": "Select your predefined GoToWebinar OAuth2 API credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flatten each GTW webinar to the match fields. Native 'Webinar: Get All'\n// returns one item per webinar; first session's startTime is the event date.\nreturn $input.all().map((it) => {\n  const w = it.json;\n  const t0 = (w.times && w.times[0]) || {};\n  const start = t0.startTime || w.startTime || null;\n  return { json: {\n    webinar_key: String(w.webinarKey || w.id || ''),\n    subject: w.subject || w.name || null,\n    time_zone: w.timeZone || null,\n    start_time: start,\n    start_date: start ? String(start).slice(0, 10) : null,\n    session_count: Array.isArray(w.times) ? w.times.length : null\n  }};\n});"
+      },
+      "id": "m-flatten",
+      "name": "Flatten GTW",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 620]
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, Name, Type, Status, StartDate, EndDate FROM Campaign WHERE Type = 'Webinar' AND StartDate >= 2026-01-01 ORDER BY StartDate"
+      },
+      "id": "m-sfquery",
+      "name": "SF: Get Webinar Campaigns",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [720, 620],
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slim SF webinar campaigns + parse the webinar date from the name.\n//   sf_start_date / sf_end_date = Campaign.StartDate/EndDate (StartDate is the\n//     campaign WINDOW-OPEN date, NOT the webinar date — confirmed 0/4 match).\n//   name_date = dd.mm.yyyy in Campaign.Name -> yyyy-mm-dd (DAY-FIRST), the real\n//     webinar date; name_date_raw kept for audit.\nfunction nameDate(name) {\n  const m = String(name || '').match(/(\\d{1,2})[.\\/-](\\d{1,2})[.\\/-](\\d{4})/);\n  if (!m) return { raw: null, iso: null };\n  const dd = m[1].padStart(2, '0'), mm = m[2].padStart(2, '0');\n  return { raw: m[0], iso: `${m[3]}-${mm}-${dd}` };\n}\nreturn $input.all().map((it) => {\n  const c = it.json;\n  const nd = nameDate(c.Name);\n  return { json: {\n    campaign_key: c.Id,\n    name: c.Name || null,\n    status: c.Status || null,\n    sf_start_date: c.StartDate || null,\n    sf_end_date: c.EndDate || null,\n    name_date_raw: nd.raw,\n    name_date: nd.iso\n  }};\n});"
+      },
+      "id": "m-slim",
+      "name": "Slim SF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 620]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Match GTW webinars <-> SF webinar campaigns. Join key confirmed from live data\n// (20 Jun): Campaign.StartDate == GTW date matches 0/4; name-date matches 3/4 exact;\n// the 4th (no date in name) resolves uniquely by title + GTW date in [StartDate,EndDate].\nconst gtw = $('Flatten GTW').all().map((i) => i.json);\nconst sf = $('Slim SF').all().map((i) => i.json);\n\n// 1) drop GTW dry-runs / run-throughs / tests\nconst DRY = /\\b(dry[\\s-]?run|run[\\s-]?through|rehearsal|\\btest\\b)\\b/i;\nconst live = gtw.filter((w) => !DRY.test(w.subject || ''));\nconst droppedDryRuns = gtw.length - live.length;\n\n// title token-overlap for tie-breaks / nameless fallback\nfunction toks(s) { return new Set(String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\\s+/).filter((w) => w.length > 3)); }\nfunction overlap(a, b) { const A = toks(a), B = toks(b); if (!A.size || !B.size) return 0; let n = 0; for (const t of A) if (B.has(t)) n++; return n / Math.min(A.size, B.size); }\n\nconst out = [];\nconst usedGtw = new Set();\n\nfor (const c of sf) {\n  let best = null, reason = '';\n\n  // PRIMARY: name-date == GTW start_date\n  if (c.name_date) {\n    const cands = live.filter((w) => w.start_date === c.name_date && !usedGtw.has(w.webinar_key));\n    if (cands.length === 1) { best = cands[0]; reason = 'name-date == GTW date'; }\n    else if (cands.length > 1) { best = cands.slice().sort((a, b) => overlap(b.subject, c.name) - overlap(a.subject, c.name))[0]; reason = 'name-date == GTW date (+title tiebreak)'; }\n  }\n\n  // FALLBACK: title overlap + GTW date within [StartDate, EndDate]\n  if (!best) {\n    const inWin = live.filter((w) => !usedGtw.has(w.webinar_key) && c.sf_start_date && c.sf_end_date && w.start_date >= c.sf_start_date && w.start_date <= c.sf_end_date);\n    const ranked = inWin.map((w) => ({ w, score: overlap(w.subject, c.name) })).sort((a, b) => b.score - a.score);\n    if (ranked.length && ranked[0].score >= 0.34) { best = ranked[0].w; reason = 'title + GTW date in [StartDate,EndDate]'; }\n  }\n\n  if (best) {\n    usedGtw.add(best.webinar_key);\n    out.push({ json: {\n      matched: true,\n      match_reason: reason,\n      campaign_key: c.campaign_key,\n      sf_name: c.name,\n      sf_start_date: c.sf_start_date,   // campaign window-open (NOT the webinar date)\n      sf_end_date: c.sf_end_date,\n      name_date: c.name_date,           // webinar date parsed from the name\n      webinar_key: best.webinar_key,\n      gtw_subject: best.subject,\n      gtw_start_date: best.start_date,\n      gtw_time_zone: best.time_zone\n    }});\n  } else {\n    out.push({ json: { matched: false, side: 'sf_unmatched', campaign_key: c.campaign_key, sf_name: c.name, sf_start_date: c.sf_start_date, name_date: c.name_date, note: 'no GTW webinar matched' }});\n  }\n}\n\n// surface any live GTW webinars that didn't match an SF campaign (visibility, not an error)\nfor (const w of live) {\n  if (!usedGtw.has(w.webinar_key)) out.push({ json: { matched: false, side: 'gtw_unmatched', webinar_key: w.webinar_key, gtw_subject: w.subject, gtw_start_date: w.start_date } });\n}\n\nconst matched = out.filter((r) => r.json.matched).length;\nout.unshift({ json: { _summary: true, sf_campaigns: sf.length, gtw_total: gtw.length, gtw_dry_runs_dropped: droppedDryRuns, gtw_live: live.length, matched, sf_unmatched: out.filter((r) => r.json.side === 'sf_unmatched').length, gtw_unmatched: out.filter((r) => r.json.side === 'gtw_unmatched').length } });\nreturn out;"
+      },
+      "id": "m-match",
+      "name": "Match Webinars",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 620]
+    }
+  ],
+  "connections": {
+    "Execute workflow": { "main": [[{ "node": "Get Webinars", "type": "main", "index": 0 }]] },
+    "Get Webinars": { "main": [[{ "node": "Flatten GTW", "type": "main", "index": 0 }]] },
+    "Flatten GTW": { "main": [[{ "node": "SF: Get Webinar Campaigns", "type": "main", "index": 0 }]] },
+    "SF: Get Webinar Campaigns": { "main": [[{ "node": "Slim SF", "type": "main", "index": 0 }]] },
+    "Slim SF": { "main": [[{ "node": "Match Webinars", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

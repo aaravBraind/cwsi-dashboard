@@ -103,10 +103,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  channel_id = EXCLUDED.channel_id;",
+        "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, campaign_type, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, $5, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  campaign_type = EXCLUDED.campaign_type,\n  channel_id = EXCLUDED.channel_id;",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ [$json.campaign_key, $json.channel_name, $json.campaign_name, $json.source_system] }}"
+          "queryReplacement": "={{ [$json.campaign_key, $json.channel_name, $json.campaign_name, $json.campaign_type, $json.source_system] }}"
         }
       },
       "id": "db1031f6-0e0c-4a19-8d13-90191bbe75ca",
@@ -126,7 +126,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// Map Salesforce Campaign records to dim_campaign rows.\nreturn $input.all().map((i) => {\n  const c = i.json;\n  return { json: {\n    campaign_key: c.Id,\n    campaign_name: c.Name || null,\n    channel_name: channelForType(c.Type),\n    source_system: 'salesforce'\n  }};\n});"
+        "jsCode": "const CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// Map Salesforce Campaign records to dim_campaign rows.\nreturn $input.all().map((i) => {\n  const c = i.json;\n  return { json: {\n    campaign_key: c.Id,\n    campaign_name: c.Name || null,\n    channel_name: channelForType(c.Type),\n    campaign_type: c.Type || null,\n    source_system: 'salesforce'\n  }};\n});"
       },
       "id": "eaa0b168-e1e6-40c2-bfff-d143d5ae3c01",
       "name": "Map Campaigns to dim_campaign",
@@ -140,7 +140,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, Name, Type, Status FROM Campaign"
+        "query": "SELECT Id, Name, Type, Status, NumberSent FROM Campaign"
       },
       "id": "0e523f35-88e8-4c7d-8d18-407316e31ab6",
       "name": "SF: Get Campaigns",
@@ -217,6 +217,217 @@
           "name": "Salesforce account 2"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// B2 (Path A, 20 Jun): Email SENDS snapshot. This SF org has NO Account Engagement\n// (Pardot pi__*) objects and NO ListEmail object, so opens/clicks/delivered cannot\n// be queried -- only Campaign.NumberSent. We write ONE snapshot row per EMAIL-type\n// campaign with emails_sent set and the rest NULL. Region parsed from campaign name\n// (best-effort, like LinkedIn), UNASSIGNED fallback.\nfunction regionFromName(name) {\n  const n = String(name || '').toLowerCase();\n  if (/uk\\/ie|\\b(uki|uk|u\\.k\\.|united kingdom|ireland|ie|irish|gb)\\b/.test(n)) return 'UKI';\n  if (/\\b(belux|belgium|benelux|luxembourg|lux)\\b/.test(n)) return 'BeLux';\n  if (/\\b(nl|netherlands|holland|dutch)\\b/.test(n)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst today = new Date().toISOString().slice(0, 10);\nreturn $input.all()\n  .map((i) => i.json)\n  .filter((c) => c.Type === 'Email') // Email-channel campaigns only (matches the Email page)\n  .map((c) => ({ json: {\n    campaign_key: c.Id,\n    region_code: regionFromName(c.Name),\n    snapshot_date: today,\n    emails_sent: Number(c.NumberSent) || 0,\n    emails_delivered: null,\n    email_opens: null,\n    email_clicks: null\n  }}))\n  // Path A (20 Jun): no Account Engagement (pi__) objects + no ListEmail in this org,\n  // so opens/clicks/delivered are NOT in Salesforce -> NULL (not 0). Keep rows with sends.\n  .filter((r) => r.json.emails_sent > 0);"
+      },
+      "id": "a1f0e2c3-1111-4aaa-8bbb-000000000001",
+      "name": "Map Email Engagement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_email_engagement\n  (campaign_key, region_id, snapshot_date, emails_sent, emails_delivered, email_opens, email_clicks, loaded_at)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  $3, $4, $5, $6, $7, now())\nON CONFLICT (campaign_key) DO UPDATE SET\n  region_id = EXCLUDED.region_id,\n  snapshot_date = EXCLUDED.snapshot_date,\n  emails_sent = EXCLUDED.emails_sent,\n  emails_delivered = EXCLUDED.emails_delivered,\n  email_opens = EXCLUDED.email_opens,\n  email_clicks = EXCLUDED.email_clicks,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.campaign_key, $json.region_code, $json.snapshot_date, $json.emails_sent, $json.emails_delivered, $json.email_opens, $json.email_clicks] }}"
+        }
+      },
+      "id": "a1f0e2c3-1111-4aaa-8bbb-000000000002",
+      "name": "Upsert fact_email_engagement",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        336
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, Type, IsWon, IsClosed, StageName, Amount, CloseDate, CreatedDate, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE Type IN ('Renewal','Upsell','Cross-Sell')"
+      },
+      "id": "a1f0e2c3-2222-4aaa-8bbb-000000000003",
+      "name": "SF: Get Renewals",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        1216
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// B3 (19 Jun): Retention/expansion snapshot. Opportunity.Type in\n// Renewal/Upsell/Cross-Sell. Renewals are account-based, NOT campaign-attributed,\n// so they get their own region+date fact (never fact_channel_daily). Won deals\n// (IsWon) = contracts retained/expanded; open qualified deals = renewal pipeline.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst UNQUALIFIED = ['Unqualified opp'];\nconst TYPES = ['Renewal','Upsell','Cross-Sell'];\nconst opps = $input.all().map((i) => i.json);\nconst agg = {};\nfunction rowFor(region, date, type) {\n  const key = region + '|' + date + '|' + type;\n  if (!agg[key]) agg[key] = { region_code: region, activity_date: date, opp_type: type, won_count: 0, won_value: 0, open_count: 0, open_value: 0 };\n  return agg[key];\n}\nfor (const o of opps) {\n  if (!TYPES.includes(o.Type)) continue;\n  const date = String((o.IsClosed ? o.CloseDate : o.CreatedDate) || o.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const region = o.Account && (o.Account.Region__c || o.Account.BillingCountry);\n  const r = rowFor(regionFromField(region), date, o.Type);\n  const amount = Number(o.Amount) || 0;\n  if (o.IsWon) { r.won_count += 1; r.won_value += amount; }\n  else if (!o.IsClosed && !UNQUALIFIED.includes(o.StageName)) { r.open_count += 1; r.open_value += amount; }\n}\nreturn Object.values(agg).map((json) => ({ json }));"
+      },
+      "id": "a1f0e2c3-2222-4aaa-8bbb-000000000004",
+      "name": "Build Renewal Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_renewal_daily\n  (region_id, activity_date, opp_type, won_count, won_value, open_count, open_value, loaded_at)\nVALUES (\n  (SELECT region_id FROM dim_region WHERE region_code = $1),\n  $2, $3, $4, $5, $6, $7, now())\nON CONFLICT ON CONSTRAINT uq_renewal_grain DO UPDATE SET\n  won_count = EXCLUDED.won_count,\n  won_value = EXCLUDED.won_value,\n  open_count = EXCLUDED.open_count,\n  open_value = EXCLUDED.open_value,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.region_code, $json.activity_date, $json.opp_type, $json.won_count, $json.won_value, $json.open_count, $json.open_value] }}"
+        }
+      },
+      "id": "a1f0e2c3-2222-4aaa-8bbb-000000000005",
+      "name": "Upsert fact_renewal_daily",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        1216
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, Subject, ActivityDate, OwnerId, WhoId, WhatId, TYPEOF What WHEN Account THEN Region__c, BillingCountry WHEN Opportunity THEN Account.Region__c, Account.BillingCountry END FROM Event WHERE Type = 'Meeting' AND ActivityDate >= 2026-01-01"
+      },
+      "id": "a1f0e2c3-3333-4aaa-8bbb-000000000006",
+      "name": "SF: Get Meetings",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        1376
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// B7 (20 Jun): Meetings booked from SF Event (Type='Meeting'). Activities, not\n// campaign-attributed, so they get their own region+date fact (fact_meeting_daily),\n// mirroring renewals. Region resolves off the polymorphic What (Account direct /\n// Opportunity->Account via TYPEOF), then the meeting's Who (Lead, reusing the\n// already-fetched Leads) as fallback, else UNASSIGNED. DEDUPE: one meeting may be\n// logged once per internal owner with the same Subject/day/Who/What -> count those\n// as a single meeting (Owner excluded from the key). 'Booked' = ALL sales meetings\n// (Event has no Outreach-source field, so Outreach-only can't be isolated).\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst meetings = $('SF: Get Meetings').all().map((i) => i.json);\n// Lead region by Lead Id (reuse the already-fetched Leads) for What-blank meetings.\nconst leadRegionById = {};\nfor (const l of $('SF: Get Leads').all().map((i) => i.json)) leadRegionById[l.Id] = l.Lead_Region__c || l.Country;\nfunction regionForMeeting(m) {\n  const w = m.What; // TYPEOF: Account -> {Region__c,BillingCountry}; Opportunity -> {Account:{...}}\n  if (w) {\n    if (w.Region__c || w.BillingCountry) return regionFromField(w.Region__c || w.BillingCountry);\n    if (w.Account && (w.Account.Region__c || w.Account.BillingCountry)) return regionFromField(w.Account.Region__c || w.Account.BillingCountry);\n  }\n  if (m.WhoId && leadRegionById[m.WhoId]) return regionFromField(leadRegionById[m.WhoId]);\n  return 'UNASSIGNED';\n}\nconst seen = {};\nconst agg = {};\nfor (const m of meetings) {\n  const day = String(m.ActivityDate || '').slice(0, 10);\n  if (!day) continue;\n  const k = [m.Subject || '', day, m.WhoId || '', m.WhatId || ''].join('|');\n  if (seen[k]) continue; // drop per-attendee duplicate of the same meeting\n  seen[k] = true;\n  const region = regionForMeeting(m);\n  const key = region + '|' + day;\n  if (!agg[key]) agg[key] = { region_code: region, activity_date: day, meeting_count: 0 };\n  agg[key].meeting_count += 1;\n}\nreturn Object.values(agg).map((json) => ({ json }));"
+      },
+      "id": "a1f0e2c3-3333-4aaa-8bbb-000000000007",
+      "name": "Build Meeting Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_meeting_daily (region_id, activity_date, meeting_count, loaded_at)\nVALUES ((SELECT region_id FROM dim_region WHERE region_code = $1), $2, $3, now())\nON CONFLICT ON CONSTRAINT uq_meeting_grain DO UPDATE SET\n  meeting_count = EXCLUDED.meeting_count,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.region_code, $json.activity_date, $json.meeting_count] }}"
+        }
+      },
+      "id": "a1f0e2c3-3333-4aaa-8bbb-000000000008",
+      "name": "Upsert fact_meeting_daily",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        1376
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, StageName, Probability, Amount, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE IsClosed = false"
+      },
+      "id": "a1f0e2c3-4444-4aaa-8bbb-000000000009",
+      "name": "SF: Get Open Opps",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        1536
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// fact_opportunity_stage (Option 1, 20 Jun): OPEN-pipeline snapshot. Count + sum(Amount)\n// of open opportunities grouped by StageName x region, as of today. Closed deals are\n// excluded here (already covered by the funnel's closed-won). Region via Account.Region__c\n// (fixed hop, fallback BillingCountry), UNASSIGNED otherwise. One snapshot per run\n// (snapshot_date = today); the upsert grain keeps a row per region x date x stage so\n// older snapshots persist (a stepping stone to Option-2 trends later).\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst today = new Date().toISOString().slice(0, 10);\nconst opps = $input.all().map((i) => i.json);\nconst agg = {};\nfor (const o of opps) {\n  const stage = o.StageName || 'Unknown';\n  const region = regionFromField(o.Account && (o.Account.Region__c || o.Account.BillingCountry));\n  const key = region + '|' + stage;\n  if (!agg[key]) agg[key] = { region_code: region, snapshot_date: today, stage_name: stage, probability: (o.Probability == null ? null : Number(o.Probability)), opp_count: 0, opp_value: 0 };\n  if (o.Probability != null) agg[key].probability = Number(o.Probability); // constant per stage\n  agg[key].opp_count += 1;\n  agg[key].opp_value += Number(o.Amount) || 0;\n}\nreturn Object.values(agg).map((json) => ({ json }));"
+      },
+      "id": "a1f0e2c3-4444-4aaa-8bbb-000000000010",
+      "name": "Build Opp Stage Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_opportunity_stage (region_id, snapshot_date, stage_name, probability, opp_count, opp_value, loaded_at)\nVALUES ((SELECT region_id FROM dim_region WHERE region_code = $1), $2, $3, $4, $5, $6, now())\nON CONFLICT ON CONSTRAINT uq_opp_stage_grain DO UPDATE SET\n  probability = EXCLUDED.probability,\n  opp_count = EXCLUDED.opp_count,\n  opp_value = EXCLUDED.opp_value,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.region_code, $json.snapshot_date, $json.stage_name, $json.probability, $json.opp_count, $json.opp_value] }}"
+        }
+      },
+      "id": "a1f0e2c3-4444-4aaa-8bbb-000000000011",
+      "name": "Upsert fact_opportunity_stage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        1536
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
     }
   ],
   "connections": {
@@ -281,6 +492,88 @@
             "node": "SF: Get Opportunities",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Map Email Engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Email Engagement": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_email_engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Renewals": {
+      "main": [
+        [
+          {
+            "node": "Build Renewal Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Meetings": {
+      "main": [
+        [
+          {
+            "node": "Build Meeting Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Meeting Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_meeting_daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Open Opps": {
+      "main": [
+        [
+          {
+            "node": "Build Opp Stage Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Opp Stage Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_opportunity_stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Renewal Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_renewal_daily",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -312,6 +605,21 @@
         [
           {
             "node": "Build Fact Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SF: Get Renewals",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SF: Get Meetings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SF: Get Open Opps",
             "type": "main",
             "index": 0
           }

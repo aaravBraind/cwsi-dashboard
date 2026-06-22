@@ -1,10 +1,10 @@
-  {
+{
     "nodes": [
       {
         "parameters": {
-          "content": "## GSC query/keyword -> fact_seo_query_daily (PAGINATED)\n\nSelf-serve SEO keyword feed (added 2026-06-17). Fills the 'Top keywords per category' panel that was previously unsourced (we only had page-level data).\n\nPROPERTY: URL-prefix  https://cwsisecurity.com/  (same as search_console_ingest).\nGSC retains ~16 months. Dimension = [date, query]; NO region dim (query+country gets sparse + GSC anonymises low-volume queries).\n\nDAILY: lookback_days = 7.\nONE-TIME BACKFILL: set lookback_days = 490, run once, confirm rows, then RESET to 7.\n\nAFTER IMPORT:\n1. 'Config' gsc_site_url already = https://cwsisecurity.com/ .\n2. Select the Google OAuth2 cred (webmasters.readonly) on the GSC HTTP node.\n3. GSC lags ~2 days; window ends today-2.\n4. NOTE: GSC withholds (anonymises) queries below a volume threshold, so summed query clicks will be < total clicks in fact_seo_daily. This is expected, not a bug.",
-          "height": 460,
-          "width": 480
+          "content": "## GSC query/keyword -> fact_seo_query_daily (10-DAY WINDOW LOOP)\n\nSelf-serve SEO keyword feed. Fills the 'Top keywords per category' panel.\n\nPROPERTY: URL-prefix  https://cwsisecurity.com/  (same as search_console_ingest).\nDimension = [date, query]; NO region dim.\n\n2026-ONLY + MEMORY-SAFE:\n'Build Date Windows' splits the range into 10-day windows and 'Loop Over Windows' (batchSize 1) fetches + writes ONE window at a time, so we never hold the whole backfill in memory. The window start is CLAMPED to year_floor (2026-01-01), so pre-2026 data is NEVER fetched, whatever lookback_days is.\n\nLOOKBACK:\n- DAILY: lookback_days = 7  (-> one ~9-day window).\n- ONE-TIME 2026 BACKFILL: set lookback_days = 175, run once (~17 windows Jan 1 -> today), confirm rows, then RESET to 7.\n  (Any value >=170 covers all of 2026 so far; the 2026-01-01 floor stops it going earlier.)\n\nIDEMPOTENT: Upsert uses ON CONFLICT (activity_date, query, source) -> re-running NEVER duplicates; it updates the same row. Safe to re-run any time.\n\nAFTER IMPORT:\n1. 'Config': gsc_site_url already set; set lookback_days (175 for backfill, then 7).\n2. Select the Google OAuth2 cred (webmasters.readonly) on the GSC HTTP node.\n3. 'Loop Over Windows': output 'loop' -> GSC HTTP; 'done' -> nothing. n8n sometimes renders these swapped.\n4. GSC lags ~2 days; windows end at today-2. GSC anonymises low-volume queries (summed query clicks < fact_seo_daily). Expected.",
+          "height": 540,
+          "width": 540
         },
         "id": "qn-sticky-1",
         "name": "Sticky Note",
@@ -27,14 +27,15 @@
         "name": "Daily 05:20",
         "type": "n8n-nodes-base.scheduleTrigger",
         "typeVersion": 1.3,
-        "position": [0, 528]
+        "position": [0, 640]
       },
       {
         "parameters": {
           "assignments": {
             "assignments": [
               { "id": "a1", "name": "gsc_site_url", "value": "https://cwsisecurity.com/", "type": "string" },
-              { "id": "a2", "name": "lookback_days", "value": 7, "type": "number" }
+              { "id": "a2", "name": "lookback_days", "value": 7, "type": "number" },
+              { "id": "a3", "name": "year_floor", "value": "2026-01-01", "type": "string" }
             ]
           },
           "options": {}
@@ -43,7 +44,28 @@
         "name": "Config",
         "type": "n8n-nodes-base.set",
         "typeVersion": 3.4,
-        "position": [192, 528]
+        "position": [192, 640]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Build 10-day date windows from max(year_floor, today-2-lookback) to today-2.\n// CLAMPED at year_floor (2026-01-01) so pre-2026 data is never fetched\n// (reporting is 2026-only). GSC data lags ~2 days, so the window ends at today-2.\nconst cfg = $('Config').first().json;\nconst lookback = Number(cfg.lookback_days) || 7;\nconst floorStr = String(cfg.year_floor || '2026-01-01');\nconst STEP = 10;   // days per window\nconst LAG = 2;     // GSC reporting lag\n\nconst ymd = (d) => d.toISOString().slice(0, 10);\nconst addDays = (d, n) => { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; };\n\nconst now = new Date();\nconst end = addDays(now, -LAG);                 // endDate = today-2\nlet start = addDays(now, -(lookback + LAG));    // lookback window start\nconst floor = new Date(floorStr + 'T00:00:00Z');\nif (start.getTime() < floor.getTime()) start = floor;  // never before 2026-01-01\n\nconst windows = [];\nlet ws = new Date(start.getTime());\nwhile (ws.getTime() <= end.getTime()) {\n  let we = addDays(ws, STEP - 1);\n  if (we.getTime() > end.getTime()) we = end;\n  windows.push({ json: { startDate: ymd(ws), endDate: ymd(we) } });\n  ws = addDays(we, 1);\n}\nif (windows.length === 0) windows.push({ json: { startDate: ymd(end), endDate: ymd(end) } });\nreturn windows;"
+        },
+        "id": "qn-windows",
+        "name": "Build Date Windows",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [384, 640]
+      },
+      {
+        "parameters": {
+          "batchSize": 1,
+          "options": {}
+        },
+        "id": "qn-loopwin",
+        "name": "Loop Over Windows",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [592, 640]
       },
       {
         "parameters": {
@@ -53,7 +75,7 @@
           "nodeCredentialType": "googleOAuth2Api",
           "sendBody": true,
           "specifyBody": "json",
-          "jsonBody": "={\n  \"startDate\": \"{{ $now.minus({ days: Number($('Config').first().json.lookback_days) + 2 }).toFormat('yyyy-MM-dd') }}\",\n  \"endDate\": \"{{ $now.minus({ days: 2 }).toFormat('yyyy-MM-dd') }}\",\n  \"dimensions\": [\"date\", \"query\"],\n  \"rowLimit\": 25000\n}",
+          "jsonBody": "={\n  \"startDate\": \"{{ $json.startDate }}\",\n  \"endDate\": \"{{ $json.endDate }}\",\n  \"dimensions\": [\"date\", \"query\"],\n  \"rowLimit\": 25000\n}",
           "options": {
             "pagination": {
               "pagination": {
@@ -76,20 +98,20 @@
         "name": "GSC: Query by Keyword",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [384, 528],
+        "position": [816, 736],
         "credentials": {
           "googleOAuth2Api": { "id": "aGp39YlpqVwDaBTl", "name": "CWSI Oauth" }
         }
       },
       {
         "parameters": {
-          "jsCode": "// GSC date x query (ALL pages) -> fact_seo_query_daily rows.\nconst items = $input.all();\nlet rows = [];\nfor (const it of items) { rows = rows.concat((it.json && it.json.rows) || []); }\nconst out = [];\nlet issues = 0;\nfor (const r of rows) {\n  const keys = r.keys || [];\n  const date = String(keys[0] || '');\n  const query = String(keys[1] || '');\n  if (date.length !== 10 || !query) { issues++; continue; }\n  out.push({\n    activity_date: date,\n    query: query,\n    clicks: Number(r.clicks) || 0,\n    impressions: Number(r.impressions) || 0,\n    ctr: Number(r.ctr) || 0,\n    avg_position: Number((Number(r.position) || 0).toFixed(2)),\n    source: 'gsc'\n  });\n}\nif (out.length === 0) {\n  throw new Error('GSC query feed returned 0 usable rows - check site URL format and webmasters.readonly access');\n}\nconst meta = { rows_in: rows.length, issues: issues, pages: items.length };\nreturn out.map((json) => ({ json: Object.assign({}, json, { _meta: meta }) }));"
+          "jsCode": "// GSC date x query for the CURRENT 10-day window (may span multiple pages) ->\n// fact_seo_query_daily rows. No throw on empty (a backfill must survive a thin\n// window); auth/config errors still surface at the HTTP node.\nconst items = $input.all();\nlet rows = [];\nfor (const it of items) { rows = rows.concat((it.json && it.json.rows) || []); }\nconst out = [];\nfor (const r of rows) {\n  const keys = r.keys || [];\n  const date = String(keys[0] || '');\n  const query = String(keys[1] || '');\n  if (date.length !== 10 || !query) continue;\n  out.push({\n    activity_date: date,\n    query: query,\n    clicks: Number(r.clicks) || 0,\n    impressions: Number(r.impressions) || 0,\n    ctr: Number(r.ctr) || 0,\n    avg_position: Number((Number(r.position) || 0).toFixed(2)),\n    source: 'gsc'\n  });\n}\nreturn out.map((json) => ({ json }));"
         },
         "id": "qn-build",
         "name": "Build Query Rows",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [576, 528]
+        "position": [1024, 736]
       },
       {
         "parameters": {
@@ -104,7 +126,7 @@
         "name": "Upsert fact_seo_query_daily",
         "type": "n8n-nodes-base.postgres",
         "typeVersion": 2.6,
-        "position": [768, 528],
+        "position": [1232, 736],
         "credentials": {
           "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" }
         }
@@ -112,17 +134,17 @@
       {
         "parameters": {
           "operation": "executeQuery",
-          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('gsc_query', CURRENT_DATE, $1, $2, $3, $4);",
+          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('gsc_query', CURRENT_DATE, $1, $2, 0, 0);",
           "options": {
             "queryBatching": "single",
-            "queryReplacement": "={{ $(\"Build Query Rows\").first().json._meta.rows_in }},{{ $(\"Build Query Rows\").all().length }},{{ $(\"Build Query Rows\").first().json._meta.issues }},{{ (function(){ const ri = $(\"Build Query Rows\").first().json._meta.rows_in; const is = $(\"Build Query Rows\").first().json._meta.issues; return ri ? Number((is / ri * 100).toFixed(2)) : 0; })() }}"
+            "queryReplacement": "={{ [$('Build Query Rows').all().length, $('Build Query Rows').all().length] }}"
           }
         },
         "id": "qn-dqlog",
         "name": "Write data_quality_log",
         "type": "n8n-nodes-base.postgres",
         "typeVersion": 2.6,
-        "position": [960, 528],
+        "position": [1440, 736],
         "executeOnce": true,
         "credentials": {
           "postgres": { "id": "ch1cQkzV21w5Wpxf", "name": "CWSI" }
@@ -131,10 +153,13 @@
     ],
     "connections": {
       "Daily 05:20": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-      "Config": { "main": [[{ "node": "GSC: Query by Keyword", "type": "main", "index": 0 }]] },
+      "Config": { "main": [[{ "node": "Build Date Windows", "type": "main", "index": 0 }]] },
+      "Build Date Windows": { "main": [[{ "node": "Loop Over Windows", "type": "main", "index": 0 }]] },
+      "Loop Over Windows": { "main": [[], [{ "node": "GSC: Query by Keyword", "type": "main", "index": 0 }]] },
       "GSC: Query by Keyword": { "main": [[{ "node": "Build Query Rows", "type": "main", "index": 0 }]] },
       "Build Query Rows": { "main": [[{ "node": "Upsert fact_seo_query_daily", "type": "main", "index": 0 }]] },
-      "Upsert fact_seo_query_daily": { "main": [[{ "node": "Write data_quality_log", "type": "main", "index": 0 }]] }
+      "Upsert fact_seo_query_daily": { "main": [[{ "node": "Write data_quality_log", "type": "main", "index": 0 }]] },
+      "Write data_quality_log": { "main": [[{ "node": "Loop Over Windows", "type": "main", "index": 0 }]] }
     },
     "pinData": {},
     "meta": {
