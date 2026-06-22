@@ -18,7 +18,7 @@
 // Actuals are always real. Only TARGETS are placeholder (client-gated) — they are
 // flagged provisional everywhere they surface. See docs/KPI_REGISTER.md.
 
-import { getKpiTracker } from './queries'
+import { getKpiTracker, getKpiTargets } from './queries'
 import { FY_TARGETS, CONVERSION_TARGETS, CPL_TARGET_GBP } from './thresholds'
 import { isNA, REGIONS, QUARTER_PILLS } from './constants'
 import { gbp, num } from './format'
@@ -49,6 +49,24 @@ const quarterLabel = (q) => (QUARTER_PILLS.find((p) => p.q === q) || {}).label |
 export async function getBoardPack(filters = {}) {
   const { funnel, hasData } = await getKpiTracker(filters)
 
+  // Targets read from the editable kpi_targets DB table (FY values), falling back
+  // to the thresholds.js placeholders if a row/value is absent — so a client target
+  // edit propagates to the board pack, not just the KPI Tracker.
+  const targetsByKey = await getKpiTargets()
+  const fyTgt = (key, fallback) => {
+    const v = targetsByKey[key] ? targetsByKey[key].fy : null
+    return v == null ? fallback : Number(v)
+  }
+  const TGT = {
+    mqls: fyTgt('totalMqls', FY_TARGETS.mqls),
+    sqls: fyTgt('totalSqls', FY_TARGETS.sqls),
+    mqlToSql: fyTgt('mqlToSql', CONVERSION_TARGETS.mqlToSqlRate),
+    closedWonCount: fyTgt('closedWonCount', FY_TARGETS.closedWonCount),
+    pipeline: fyTgt('influencedPipeline', FY_TARGETS.influencedPipeline),
+    margin: fyTgt('influencedMargin', FY_TARGETS.influencedMargin),
+    cpl: fyTgt('costPerLead', CPL_TARGET_GBP),
+  }
+
   const mql = funnel.mql
   const sql = funnel.sql
   const pipeline = funnel.pipeline
@@ -63,39 +81,39 @@ export async function getBoardPack(filters = {}) {
     {
       key: 'mqls', order: 1, label: 'MQLs', unit: 'count',
       value: mql, valueDisplay: real(mql) ? num(mql) : 'n/a',
-      target: FY_TARGETS.mqls, targetDisplay: `FY ${num(FY_TARGETS.mqls)}`,
+      target: TGT.mqls, targetDisplay: `FY ${num(TGT.mqls)}`,
       trace: 'Σ v_fact_enriched.mql_count (scoped)',
     },
     {
       key: 'sqls', order: 2, label: 'SQLs', unit: 'count',
       value: sql, valueDisplay: real(sql) ? num(sql) : 'n/a',
-      target: FY_TARGETS.sqls, targetDisplay: `FY ${num(FY_TARGETS.sqls)}`,
+      target: TGT.sqls, targetDisplay: `FY ${num(TGT.sqls)}`,
       trace: 'Σ v_fact_enriched.sql_count (scoped)',
     },
     {
       key: 'mqlToSql', order: 3, label: 'MQL → SQL Rate', unit: 'rate',
       value: mqlToSql, valueDisplay: mqlToSql == null ? 'n/a' : `${(mqlToSql * 100).toFixed(1)}%`,
-      target: CONVERSION_TARGETS.mqlToSqlRate,
-      targetDisplay: `FY ${(CONVERSION_TARGETS.mqlToSqlRate * 100).toFixed(0)}%`,
+      target: TGT.mqlToSql,
+      targetDisplay: `FY ${(TGT.mqlToSql * 100).toFixed(0)}%`,
       trace: 'sql_count ÷ mql_count (derived)',
     },
     {
       key: 'closedOpps', order: 4, label: 'Closed Opportunities', unit: 'count',
       value: closedWonCount, valueDisplay: real(closedWonCount) ? num(closedWonCount) : 'n/a',
-      target: FY_TARGETS.closedWonCount, targetDisplay: `FY ${num(FY_TARGETS.closedWonCount)}`,
+      target: TGT.closedWonCount, targetDisplay: `FY ${num(TGT.closedWonCount)}`,
       trace: 'Σ v_fact_enriched.closed_won_count (scoped)',
       note: real(closedWonCount) ? null : 'pending SF re-run',
     },
     {
       key: 'pipeline', order: 5, label: 'Influenced Pipeline', unit: 'gbp',
       value: pipeline, valueDisplay: real(pipeline) ? gbp(pipeline) : 'n/a',
-      target: FY_TARGETS.influencedPipeline, targetDisplay: `FY ${gbp(FY_TARGETS.influencedPipeline)}`,
+      target: TGT.pipeline, targetDisplay: `FY ${gbp(TGT.pipeline)}`,
       trace: 'Σ v_fact_enriched.pipeline_value (scoped)',
     },
     {
       key: 'margin', order: 6, label: 'Influenced Margin', unit: 'gbp',
       value: margin, valueDisplay: real(margin) ? gbp(margin) : 'n/a',
-      target: FY_TARGETS.influencedMargin, targetDisplay: `FY ${gbp(FY_TARGETS.influencedMargin)}`,
+      target: TGT.margin, targetDisplay: `FY ${gbp(TGT.margin)}`,
       trace: 'Σ v_fact_enriched.margin_value (won amount − vendor cost, scoped)',
     },
     {
@@ -103,7 +121,7 @@ export async function getBoardPack(filters = {}) {
       // CPL is NOT computable yet — no per-channel spend mapping (spend is NA).
       // Surface as pending; never fabricate. Target stays as context.
       value: null, valueDisplay: 'n/a',
-      target: CPL_TARGET_GBP, targetDisplay: `FY ≤ ${gbp(CPL_TARGET_GBP)}`,
+      target: TGT.cpl, targetDisplay: `FY ≤ ${gbp(TGT.cpl)}`,
       trace: 'spend ÷ leads — spend not yet mapped to channel',
       note: 'pending per-channel spend mapping',
     },
@@ -123,8 +141,8 @@ export async function getBoardPack(filters = {}) {
   const yieldPerSql = real(pipeline) && real(sql) && sql > 0 ? pipeline / sql : null
   const levers = []
 
-  if (yieldPerMql && real(mql) && mql < FY_TARGETS.mqls) {
-    const gap = FY_TARGETS.mqls - mql
+  if (yieldPerMql && real(mql) && mql < TGT.mqls) {
+    const gap = TGT.mqls - mql
     levers.push({
       id: 'mql-gap', title: 'Close the MQL volume gap to FY target',
       gap, gapDisplay: `${num(gap)} more MQLs`,
@@ -133,24 +151,24 @@ export async function getBoardPack(filters = {}) {
     })
   }
   if (yieldPerSql && real(mql) && mql > 0 && real(sql)) {
-    const targetSqls = mql * CONVERSION_TARGETS.mqlToSqlRate
+    const targetSqls = mql * TGT.mqlToSql
     if (sql < targetSqls) {
       const extra = targetSqls - sql
       levers.push({
-        id: 'mqlsql-lift', title: `Lift MQL→SQL conversion to FY ${(CONVERSION_TARGETS.mqlToSqlRate * 100).toFixed(0)}%`,
+        id: 'mqlsql-lift', title: `Lift MQL→SQL conversion to FY ${(TGT.mqlToSql * 100).toFixed(0)}%`,
         gap: extra, gapDisplay: `${num(Math.round(extra))} more SQLs`,
         impactValue: extra * yieldPerSql,
         basis: `${num(Math.round(extra))} SQLs × ${gbp(yieldPerSql)} pipeline/SQL`,
       })
     }
   }
-  if (real(pipeline) && pipeline < FY_TARGETS.influencedPipeline) {
-    const gap = FY_TARGETS.influencedPipeline - pipeline
+  if (real(pipeline) && pipeline < TGT.pipeline) {
+    const gap = TGT.pipeline - pipeline
     levers.push({
       id: 'pipeline-gap', title: 'Close the influenced-pipeline gap to FY target',
       gap, gapDisplay: `${gbp(gap)} to FY target`,
       impactValue: gap,
-      basis: `FY ${gbp(FY_TARGETS.influencedPipeline)} − current ${gbp(pipeline)}`,
+      basis: `FY ${gbp(TGT.pipeline)} − current ${gbp(pipeline)}`,
     })
   }
   levers.sort((a, b) => b.impactValue - a.impactValue)

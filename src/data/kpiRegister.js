@@ -117,3 +117,24 @@ export function achievement(row, period, value) {
   const v = Number(value)
   return row.lower_is_better ? (v === 0 ? null : Number(t) / v) : v / Number(t)
 }
+
+// Status-light class from the achievement fraction (green ≥95% / amber ≥80% / red).
+export function lightOf(row, period, value) {
+  const r = achievement(row, period, value)
+  if (r == null) return 'neu'
+  if (r >= 0.95) return 'green'
+  if (r >= 0.8) return 'amber'
+  return 'red'
+}
+
+// The raw target number at this period, or null.
+export const targetAt = (row, period) => (row && row[period] != null ? Number(row[period]) : null)
+
+// Format a target value by its kpi_targets unit ('gbp'|'rate'|'count'|'x').
+export function fmtTarget(unit, t) {
+  if (t == null) return null
+  if (unit === 'gbp') return gbp(t)
+  if (unit === 'rate') return `${(Number(t) * 100).toFixed(1)}%`
+  if (unit === 'x') return `${Number(t).toFixed(1)}×`
+  return num(t)
+}

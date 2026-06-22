@@ -50,7 +50,13 @@ export function useUpdateKpiTarget() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ kpiKey, period, value }) => updateKpiTarget(kpiKey, period, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpi-targets'] }),
+    // Refresh both the target register (KPI Tracker + Overview read it) and the
+    // board pack (which bakes targets into its computed figure set) so a target
+    // edit recomputes everywhere.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kpi-targets'] })
+      qc.invalidateQueries({ queryKey: ['board-pack'] })
+    },
   })
 }
 
