@@ -296,15 +296,16 @@ export async function generateReportPpt(report, filters = {}, { onProgress } = {
   const stamp = new Date().toISOString().slice(0, 10)
   const filename = `CWSI_${FILE[report] || 'Report'}_${regionLabelOf(filters.region).replace(/\s+/g, '')}_${scopeLabel(filters.quarter)}_${stamp}.pptx`
 
-  // 1. Start the generation — returns fast with a generationId.
-  const started = await callWebhook({ prompt, filename })
+  // 1. Start the generation — returns fast with a generationId. `type` lets the
+  //    n8n workflow tell the reports apart ('kpi' | 'board' | 'pipeline').
+  const started = await callWebhook({ type: report, prompt, filename })
   const generationId = started.generationId
   if (!generationId) throw new Error('Gamma did not return a generationId (check the API key in n8n).')
 
   // 2. Poll until completed/failed. ~5 min budget (Gamma decks usually finish in
   //    1–3 min); each poll is a short request, so Cloudflare's 100s cap never bites.
-  const POLL_MS = 30000
-  const MAX_ATTEMPTS = 12
+  const POLL_MS = 10000
+  const MAX_ATTEMPTS = 30
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     await sleep(POLL_MS)
     onProgress?.(attempt)
