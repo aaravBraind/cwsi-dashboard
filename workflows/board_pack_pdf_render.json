@@ -1,0 +1,181 @@
+{
+  "name": "CWSI - Board Pack PDF (Route 3, HTML -> Gotenberg Chromium)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Board Pack PDF — HTML -> headless Chrome (Route 3)\n\nWHAT: the dashboard POSTs the CWSI-branded board-pack HTML; we wrap it as index.html,\nsend it to **Gotenberg** (Chromium) to render a real vector PDF, and return it as\nbase64. Matches the artifact design AND keeps selectable text.\n\nSETUP (one-time):\n1. Run a Gotenberg instance reachable from n8n. Docker:\n     docker run --rm -p 3000:3000 gotenberg/gotenberg:8\n   (host it anywhere n8n can reach; for n8n cloud it must be a PUBLIC https URL).\n2. Open the **Gotenberg: render** HTTP node and set the URL to:\n     https://YOUR-GOTENBERG-HOST/forms/chromium/convert/html\n3. Activate. Copy the PRODUCTION webhook URL from the Webhook node.\n4. In the dashboard .env set:\n     VITE_BOARDPACK_PDF_WEBHOOK_URL=<that production URL>\n\nNOTES:\n- printBackground=true is set so the navy cover / gradients / chips render.\n- The HTML is self-contained (inline CSS + base64 logo); fonts load from Google\n  Fonts at render time (Chromium has network) with a system fallback.\n- Confidential: keep Gotenberg on infra you control — the board figures pass\n  through it. Do NOT point at an untrusted public converter.",
+        "height": 540,
+        "width": 470
+      },
+      "id": "pdf-sticky",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "board-pack-pdf",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "pdf-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        520,
+        320
+      ],
+      "webhookId": "cwsi-board-pack-pdf"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the posted HTML string into an in-memory file named index.html (Gotenberg\n// requires the Chromium entrypoint to be called index.html). Also carries the\n// requested filename through for the response.\nconst inp = $input.first().json;\nconst b = inp.body || inp;\nconst html = (b && b.html) || '';\nconst filename = (b && b.filename) || 'CWSI_BoardPack.pdf';\nif (!html) { throw new Error('No html provided in request body.'); }\nconst binary = await this.helpers.prepareBinaryData(Buffer.from(html, 'utf8'), 'index.html', 'text/html');\nreturn [{ json: { filename }, binary: { 'index.html': binary } }];"
+      },
+      "id": "pdf-make-binary",
+      "name": "HTML -> index.html",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gotenberg-production-9d4e.up.railway.app/forms/chromium/convert/html",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "index.html"
+            },
+            {
+              "name": "printBackground",
+              "value": "true"
+            },
+            {
+              "name": "preferCssPageSize",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "pdf-gotenberg",
+      "name": "Gotenberg: render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return the PDF to the SPA as base64. n8n may store the HTTP binary in memory OR\n// on the filesystem (cloud default) - in filesystem mode item.binary.data.data is\n// just the storage marker (\"filesystem-v2\"), NOT the bytes. getBinaryDataBuffer\n// fetches the real buffer either way.\nconst item = $input.first();\nif (!item.binary || !item.binary.data) {\n  throw new Error('Gotenberg returned no PDF binary (check the GOTENBERG URL / service).');\n}\nconst buff = await this.helpers.getBinaryDataBuffer(0, 'data');\nif (!buff || !buff.length) { throw new Error('Empty PDF buffer from Gotenberg.'); }\nreturn [{ json: { pdfBase64: buff.toString('base64'), filename: item.json.filename || 'CWSI_BoardPack.pdf' } }];"
+      },
+      "id": "pdf-to-b64",
+      "name": "PDF -> base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ pdfBase64: $json.pdfBase64, filename: $json.filename }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "pdf-respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTML -> index.html",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML -> index.html": {
+      "main": [
+        [
+          {
+            "node": "Gotenberg: render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gotenberg: render": {
+      "main": [
+        [
+          {
+            "node": "PDF -> base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF -> base64": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

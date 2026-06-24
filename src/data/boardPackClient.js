@@ -10,6 +10,7 @@
 // AI endpoint returns. A pack that references an untraceable number is blocked.
 
 import { validateBoardPack } from './traceValidator'
+import { supabase } from '../lib/supabaseClient'
 
 const WEBHOOK_URL = import.meta.env.VITE_BOARDPACK_WEBHOOK_URL
 
@@ -49,4 +50,54 @@ export async function generateBoardNarrative(figureSet) {
   // Enforce the trace-to-data guarantee at the display boundary.
   const validation = validateBoardPack(response, figureSet.traceTable)
   return { ...response, validation, generatedAt: new Date().toISOString() }
+}
+
+// Persist a generated pack to the `board_pack` table so it can be re-exported and
+// kept as history (the on-screen narrative is otherwise ephemeral). Two rules:
+//  • Only TRACE-PASSED packs are stored — a pack that failed the number-check is not
+//    a publishable artifact, so it's never archived.
+//  • The figure set is stored FROZEN alongside the narrative, so a saved pack stays
+//    internally consistent (narrative ↔ figures) even after the warehouse moves.
+// Returns the new row id, or null if nothing was stored (blocked pack).
+export async function saveBoardPack({ region, quarter, figureSet, generated }) {
+  if (!generated?.validation?.ok) return null // never persist a blocked pack
+  const row = {
+    region: region || 'all',
+    quarter: quarter || 'ytd',
+    model: generated.model || null,
+    figure_set: figureSet,
+    narrative: generated.narrative || {},
+    recommendations: generated.recommendations || [],
+    validation: generated.validation || null,
+  }
+  const { data, error } = await supabase.from('board_pack').insert(row).select('id').single()
+  if (error) throw error
+  return data
+}
+
+// Re-hydrate the latest TRACE-PASSED pack saved for a scope. The on-screen narrative
+// otherwise lives only in the generate-mutation's in-memory state, so a refresh loses
+// it; this read path lets the Board page show the last published pack on load. Shaped
+// to match generateBoardNarrative()'s return so NarrativePanel can render it directly.
+// Returns null if no pack has been saved for this scope yet.
+export async function getLatestBoardPack({ region, quarter } = {}) {
+  const { data, error } = await supabase
+    .from('board_pack')
+    .select('model,figure_set,narrative,recommendations,validation,generated_at')
+    .eq('region', region || 'all')
+    .eq('quarter', quarter || 'ytd')
+    .order('generated_at', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  const row = data && data[0]
+  if (!row) return null
+  return {
+    narrative: row.narrative || {},
+    recommendations: Array.isArray(row.recommendations) ? row.recommendations : [],
+    model: row.model || null,
+    validation: row.validation || null,
+    figureSet: row.figure_set || null,
+    generatedAt: row.generated_at,
+    saved: true, // flag: came from the archive, not a fresh generate this session
+  }
 }

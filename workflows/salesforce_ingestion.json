@@ -51,6 +51,54 @@
     },
     {
       "parameters": {
+        "jsCode": "// FULL-REPLACE GUARD (23 Jun): the SF facts are about to be deleted & re-inserted\n// (full-replace) to kill stale orphan grains -- e.g. an open opp dated by CreatedDate\n// that later closes moves to a CloseDate grain, leaving its old open-pipeline row\n// behind forever under an upsert-only load. Before deleting, abort if the build\n// produced 0 rows (e.g. a Salesforce read returned empty), so we never wipe\n// fact_channel_daily and leave it empty. Passes the rows through unchanged.\nconst rows = $('Build Fact Rows').all();\nif (rows.length === 0) {\n  throw new Error('SF ingest: 0 fact rows built -- aborting before full-replace so fact_channel_daily is never wiped empty.');\n}\nreturn rows;"
+      },
+      "id": "a1f0e2c3-5555-4aaa-8bbb-000000000012",
+      "name": "Guard: rows present",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        1016
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Full-replace: clear ALL Salesforce-sourced channel facts, then re-insert the\n-- complete set the build just produced (the SF queries pull full history, no date\n-- filter, so this is complete). Kills stale orphan grains that upsert-only left behind.\nDELETE FROM fact_channel_daily WHERE source = 'salesforce';",
+        "options": {}
+      },
+      "id": "a1f0e2c3-5555-4aaa-8bbb-000000000013",
+      "name": "Delete SF channel rows",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1400,
+        1016
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Re-emit the built fact rows after the delete (the Postgres delete returns no\n// items), so the insert below has data -- same pattern as the budget-tracker sync.\nreturn $('Build Fact Rows').all();"
+      },
+      "id": "a1f0e2c3-5555-4aaa-8bbb-000000000014",
+      "name": "Reload Fact Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        1016
+      ]
+    },
+    {
+      "parameters": {
         "operation": "xlsx",
         "options": {
           "fileName": "cwsi_salesforce_facts.xlsx",
@@ -446,12 +494,45 @@
       "main": [
         [
           {
-            "node": "Upsert fact_channel_daily",
+            "node": "Guard: rows present",
             "type": "main",
             "index": 0
           },
           {
             "node": "Write Facts to Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: rows present": {
+      "main": [
+        [
+          {
+            "node": "Delete SF channel rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete SF channel rows": {
+      "main": [
+        [
+          {
+            "node": "Reload Fact Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reload Fact Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_channel_daily",
             "type": "main",
             "index": 0
           }

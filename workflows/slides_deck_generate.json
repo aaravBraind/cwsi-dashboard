@@ -1,0 +1,161 @@
+{
+  "name": "CWSI Branded Deck — fill template, export PDF + PPTX",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Branded deck: fill a CWSI Slides template -> PDF + PPTX\n\nApp (deckClient.js) POSTs { report, region, quarter, fields } -> this fills the matching\nmaster template, exports BOTH formats, deletes the temp copy, and returns { pdfBase64, pptxBase64 }.\n\n### SETUP (after import)\n1. Pick your **Google OAuth2** credential (presentations + drive) on ALL httpRequest nodes.\n2. **Activate** the workflow, copy the **Production webhook URL** from the Webhook node, and set it as\n   `VITE_SLIDESDECK_WEBHOOK_URL` in the app's .env.\n3. TEMPLATE_IDs are baked into 'Build requests' (board / kpi / pipeline). Edit there if a template changes.\n\n### NOTE\n- Charts are deferred — `[[CHART]]`/`[[TABLE]]` slots are blanked so raw tokens never show. Charts come next.\n- First-run things to watch: the binary->base64 step ('Build base64 response' reads each export node's\n  binary), and Drive `files.export`'s ~10MB cap (fine for these decks).",
+        "height": 320,
+        "width": 560
+      },
+      "id": "note-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slides-deck-generate",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*" }
+      },
+      "id": "wh-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 420],
+      "webhookId": "slides-deck-generate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resolve the template for this report and build the Slides batchUpdate requests:\n// one replaceAllText per {{field}}, plus blank any [[CHART]]/[[TABLE]] slot (charts deferred).\nconst body = $json.body || $json;\nconst report = body.report || 'board';\nconst fields = body.fields || {};\n\nconst TEMPLATES = {\n  board: '1nsgaKwnL_uHhoNFXEZlI6EDSjH581Xyyj6HaUCIcUpo',\n  kpi: '1ptKLsG4mZ-0fKW99GKI8phExuIgzff2ViOS832oiNTI',\n  pipeline: '1wGl1uT2c99Gvhx3ug8FPYP65phy2KY51tfnOlb4wPj4',\n};\nconst templateId = TEMPLATES[report] || TEMPLATES.board;\n\nconst requests = [];\nfor (const [k, v] of Object.entries(fields)) {\n  requests.push({ replaceAllText: { containsText: { text: '{{' + k + '}}', matchCase: true }, replaceText: v == null ? '' : String(v) } });\n}\nfor (const name of ['KPI_CHART', 'FUNNEL_CHART', 'CHANNEL_CHART', 'KPI_TABLE', 'STAGE_TABLE']) {\n  requests.push({ replaceAllText: { containsText: { text: '[[' + name + ']]', matchCase: true }, replaceText: '' } });\n}\nreturn { json: { templateId, report, requests } };"
+      },
+      "id": "code-build",
+      "name": "Build requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $json.templateId }}/copy",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: 'CWSI deck (temp)' }) }}",
+        "options": {}
+      },
+      "id": "http-copy",
+      "name": "Copy template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 420],
+      "credentials": { "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://slides.googleapis.com/v1/presentations/{{ $json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $('Build requests').item.json.requests }) }}",
+        "options": {}
+      },
+      "id": "http-fill",
+      "name": "Fill (batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 420],
+      "credentials": { "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Copy template').item.json.id }}/export",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [{ "name": "mimeType", "value": "application/pdf" }] },
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "id": "http-pdf",
+      "name": "Export PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 420],
+      "credentials": { "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Copy template').item.json.id }}/export",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [{ "name": "mimeType", "value": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }] },
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "id": "http-pptx",
+      "name": "Export PPTX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 420],
+      "credentials": { "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pull the base64 of each exported file straight from its export node's binary\n// (n8n stores binary as base64 in .data) — reaching back by node name avoids any\n// binary-passthrough issues between nodes.\nconst pdfBin = $('Export PDF').item.binary;\nconst pptxBin = $('Export PPTX').item.binary;\nreturn { json: {\n  pdfBase64: pdfBin && pdfBin.data ? pdfBin.data.data : null,\n  pptxBase64: pptxBin && pptxBin.data ? pptxBin.data.data : null,\n} };"
+      },
+      "id": "code-b64",
+      "name": "Build base64 response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 420]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://www.googleapis.com/drive/v3/files/{{ $('Copy template').item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "options": {}
+      },
+      "id": "http-del",
+      "name": "Delete temp deck",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 420],
+      "credentials": { "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Build base64 response').item.json) }}",
+        "options": { "responseHeaders": { "entries": [{ "name": "Access-Control-Allow-Origin", "value": "*" }] } }
+      },
+      "id": "resp-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1760, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Build requests", "type": "main", "index": 0 }]] },
+    "Build requests": { "main": [[{ "node": "Copy template", "type": "main", "index": 0 }]] },
+    "Copy template": { "main": [[{ "node": "Fill (batchUpdate)", "type": "main", "index": 0 }]] },
+    "Fill (batchUpdate)": { "main": [[{ "node": "Export PDF", "type": "main", "index": 0 }]] },
+    "Export PDF": { "main": [[{ "node": "Export PPTX", "type": "main", "index": 0 }]] },
+    "Export PPTX": { "main": [[{ "node": "Build base64 response", "type": "main", "index": 0 }]] },
+    "Build base64 response": { "main": [[{ "node": "Delete temp deck", "type": "main", "index": 0 }]] },
+    "Delete temp deck": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": { "templateCredsSetupCompleted": false }
+}

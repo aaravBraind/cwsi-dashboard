@@ -1,0 +1,226 @@
+{
+  "name": "board-pack-gamma",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "board-pack-gamma",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*" }
+      },
+      "id": "11111111-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2000, 32],
+      "webhookId": "board-pack-gamma"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "if0000001-0001-0001-0001-000000000001",
+              "leftValue": "={{ $json.body.generationId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11111111-0002-0001-0001-000000000002",
+      "name": "Is poll?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1776, 32]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://public-api.gamma.app/v1.0/generations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "={{ $env.GAMMA_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  inputText: $json.body.prompt,\n  textMode: \"preserve\",\n  format: \"presentation\",\n  cardSplit: \"inputTextBreaks\",\n  exportAs: \"pptx\",\n  additionalInstructions: \"Professional corporate board report. Primary navy #0a2c52, accent blue #1471e6, clean minimal data-forward layout. Render every Markdown table in full and keep all figures, percentages and the AI narrative text EXACTLY as written — do not paraphrase, summarise, round, or invent numbers.\"\n}) }}",
+        "options": {}
+      },
+      "id": "11111111-0003-0001-0001-000000000003",
+      "name": "Create Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1552, 176]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'pending', generationId: $json.generationId }) }}",
+        "options": {
+          "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] }
+        }
+      },
+      "id": "11111111-0004-0001-0001-000000000004",
+      "name": "Respond Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1328, 176]
+    },
+    {
+      "parameters": {
+        "url": "=https://public-api.gamma.app/v1.0/generations/{{ $json.body.generationId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "={{ $env.GAMMA_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11111111-0005-0001-0001-000000000005",
+      "name": "Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1552, -96]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 1 },
+                "conditions": [
+                  {
+                    "id": "c0000001-0001-0001-0001-000000000001",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "completed",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "completed"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 1 },
+                "conditions": [
+                  {
+                    "id": "c0000001-0002-0001-0001-000000000002",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "failed",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra", "renameFallbackOutput": "pending" }
+      },
+      "id": "11111111-0006-0001-0001-000000000006",
+      "name": "Status Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-1328, -96]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.pptxUrl || $json.exportUrl || ($json.urls && $json.urls.pptx) }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "id": "11111111-0007-0001-0001-000000000007",
+      "name": "Download PPTX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1104, -224]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return the PPTX to the SPA as base64. n8n may store the HTTP binary in memory\n// OR on the filesystem (cloud default) - in filesystem mode item.binary.data.data\n// is just the storage marker (\"filesystem-v2\"), NOT the bytes. getBinaryDataBuffer\n// fetches the real buffer either way (same fix as board_pack_pdf_render).\nconst item = $input.first();\nif (!item.binary || !item.binary.data) {\n  throw new Error('Gamma returned no PPTX binary (check the exportUrl / export step).');\n}\nconst buff = await this.helpers.getBinaryDataBuffer(0, 'data');\nif (!buff || !buff.length) { throw new Error('Empty PPTX buffer from Gamma.'); }\nreturn [{ json: { pptxBase64: buff.toString('base64') } }];"
+      },
+      "id": "11111111-0008-0001-0001-000000000008",
+      "name": "To Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, -224]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'completed', pptxBase64: $json.pptxBase64 }) }}",
+        "options": {
+          "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] }
+        }
+      },
+      "id": "11111111-0009-0001-0001-000000000009",
+      "name": "Respond Completed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-656, -224]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 502,
+        "responseBody": "={{ JSON.stringify({ status: 'failed', error: 'Gamma generation failed' }) }}",
+        "options": {
+          "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] }
+        }
+      },
+      "id": "11111111-0010-0001-0001-000000000010",
+      "name": "Respond Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1104, -16]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: $json.status || 'pending' }) }}",
+        "options": {
+          "responseHeaders": { "entries": [ { "name": "Access-Control-Allow-Origin", "value": "*" } ] }
+        }
+      },
+      "id": "11111111-0011-0001-0001-000000000011",
+      "name": "Respond Pending",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1104, 128]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Is poll?", "type": "main", "index": 0 }]] },
+    "Is poll?": {
+      "main": [
+        [{ "node": "Poll Status", "type": "main", "index": 0 }],
+        [{ "node": "Create Generation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Generation": { "main": [[{ "node": "Respond Started", "type": "main", "index": 0 }]] },
+    "Poll Status": { "main": [[{ "node": "Status Switch", "type": "main", "index": 0 }]] },
+    "Status Switch": {
+      "main": [
+        [{ "node": "Download PPTX", "type": "main", "index": 0 }],
+        [{ "node": "Respond Failed", "type": "main", "index": 0 }],
+        [{ "node": "Respond Pending", "type": "main", "index": 0 }]
+      ]
+    },
+    "Download PPTX": { "main": [[{ "node": "To Base64", "type": "main", "index": 0 }]] },
+    "To Base64": { "main": [[{ "node": "Respond Completed", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": { "instanceId": "67994d09d0bcfbc102762806169114b9f0f9e7027aa2ec98415eaef0d21ad219" }
+}

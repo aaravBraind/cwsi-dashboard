@@ -14,8 +14,12 @@
 // Matches money / counts / percentages with optional £$€ prefix, thousands
 // commas, decimals and k/m/bn or % suffixes. The leading negative lookbehind
 // drops digits glued to letters or a dot ("GA4", "H2", "Q3", "v4.2", "B9") so
-// label tokens are never mistaken for numeric claims.
-const NUMBER_RE = /(?<![A-Za-z0-9.])([£$€]\s?)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s?(%|bn|[kmKMB])?/g
+// label tokens are never mistaken for numeric claims. The trailing negative
+// lookahead stops a k/m/b suffix being eaten from the start of a following WORD
+// — so "540 MQLs" reads as the count 540, not 540 million (the "M" belongs to
+// "MQLs"); ditto "12 meetings", "3 bn-class". A real unit ("£4.1m", "612k") is
+// followed by a space/punctuation/end, so it still matches.
+const NUMBER_RE = /(?<![A-Za-z0-9.])([£$€]\s?)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s?(%|bn|[kmKMB])?(?![A-Za-z])/g
 
 // Numbers that are never "claims": reporting years and the 1–7 metric ordinals
 // the agreed order is numbered with. Kept tight on purpose — better to flag a
@@ -116,6 +120,11 @@ export function validateBoardPack(response, traceTable) {
   push('On track', n.onTrack)
   push('Behind & addressable', n.behindAddressable)
   push('H2 plan', n.h2Plan)
+  // Enriched sections (optional) — validated identically when present, so every
+  // number in the richer narrative is held to the same trace-to-data guarantee.
+  push('Channel insights', n.channelInsights)
+  push('Pipeline commentary', n.pipelineCommentary)
+  push('Risks & caveats', n.riskFlags)
   ;(response?.recommendations || []).forEach((r, i) => {
     push(`Recommendation ${i + 1} · ${r.title || ''}`.trim(), [r.rationale, r.estimatedImpact].filter(Boolean).join(' '))
   })

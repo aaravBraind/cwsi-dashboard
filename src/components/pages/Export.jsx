@@ -13,10 +13,18 @@ import { I } from '../icons'
 // is fetched fresh at the chosen scope, so the file is self-contained.
 
 const REPORTS = [
-  { id: 'kpi', title: 'Full KPI Register', sub: 'Every KPI · actual vs target · status', formats: ['CSV', 'PDF', 'PPTX'] },
-  { id: 'board', title: 'Board Pack', sub: 'Top-line metrics + gaps-to-close (figure set)', formats: ['PDF', 'PPTX'] },
-  { id: 'pipeline', title: 'Pipeline Report', sub: 'Funnel + by-channel breakdown', formats: ['CSV', 'PDF'] },
+  { id: 'kpi', title: 'Full KPI Register', sub: 'Every KPI · actual vs target · status', formats: ['PDF', 'PPTX'] },
+  { id: 'board', title: 'Board Pack', sub: 'Branded board pack — figures, detail + AI narrative', formats: ['BRANDED', 'PPTX'] },
+  { id: 'pipeline', title: 'Pipeline Report', sub: 'Funnel + by-channel breakdown', formats: ['PDF', 'PPTX'] },
 ]
+
+// Every report now offers the same two branded routes:
+//   PDF ('BRANDED' on the board, 'PDF' elsewhere) = artifact-matching HTML →
+//     headless-Chrome (Gotenberg) PDF via n8n.
+//   PPTX = the attractive, editable Gamma deck via n8n (preserve-mode, figures kept
+//     verbatim). 'BRANDED' is surfaced simply as "PDF".
+const FORMAT_LABEL = { BRANDED: 'PDF' }
+const fmtLabel = (f) => FORMAT_LABEL[f] || f
 
 export default function Export() {
   const { filters } = useFilters()
@@ -27,7 +35,7 @@ export default function Export() {
       <div className="page-head">
         <div>
           <div className="page-title">Export <span className="accent">Data</span></div>
-          <div className="page-sub">Download any report as CSV, PDF or PPTX — pick the region &amp; quarter at export</div>
+          <div className="page-sub">Export any report as a branded PDF or an editable PPTX deck — pick the region &amp; quarter at export</div>
         </div>
       </div>
 
@@ -49,7 +57,7 @@ export default function Export() {
                     key={fmt}
                   >
                     <svg className="icon icon-sm" viewBox="0 0 24 24">{I.download}</svg>
-                    {fmt}
+                    {fmtLabel(fmt)}
                   </button>
                 ))}
               </div>
@@ -94,7 +102,7 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="modal-title">Export {title}<span className="fmt">{format}</span></div>
+            <div className="modal-title">Export {title}<span className="fmt">{fmtLabel(format)}</span></div>
             <div className="modal-sub">Choose the scope — figures are pulled fresh for this selection.</div>
           </div>
           <button className="modal-x" onClick={onClose} disabled={busy} aria-label="Close">×</button>
@@ -116,9 +124,24 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
             </select>
           </div>
 
-          {report === 'board' && (
+          {report === 'board' && format === 'BRANDED' && (
             <div className="modal-note">
-              Exports the computed figure set + gaps-to-close. Generate the AI narrative on the Board Pack page first if you want it included later.
+              Renders the <strong>CWSI-branded board pack</strong> (matches the on-screen design) via headless Chrome and downloads a PDF — figures, detail sections and the saved AI narrative. Generate the narrative on the Board Pack page first for this scope so it's included.
+            </div>
+          )}
+          {report === 'board' && format === 'PPTX' && (
+            <div className="modal-note">
+              Renders an <strong>attractive, editable Gamma deck</strong> (.pptx) from the live figures + the latest trace-passed AI narrative — kept verbatim, never paraphrased. Generate the narrative on the Board Pack page first for this scope so it's included.
+            </div>
+          )}
+          {report !== 'board' && format === 'PDF' && (
+            <div className="modal-note">
+              Renders a <strong>CWSI-branded PDF</strong> (matches the on-screen design) via headless Chrome — figures are pulled fresh for this scope and trace-to-data verified.
+            </div>
+          )}
+          {report !== 'board' && format === 'PPTX' && (
+            <div className="modal-note">
+              Renders an <strong>attractive, editable Gamma deck</strong> (.pptx) from the live figures — kept verbatim, never paraphrased. This calls Gamma and can take a minute or two.
             </div>
           )}
           {err && <div className="modal-err">{err}</div>}
@@ -127,7 +150,7 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
         <div className="modal-foot">
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={busy}>
-            {busy ? 'Preparing…' : `Download ${format}`}
+            {busy ? 'Preparing…' : format === 'PPTX' ? 'Generate deck' : 'Generate PDF'}
           </button>
         </div>
       </div>

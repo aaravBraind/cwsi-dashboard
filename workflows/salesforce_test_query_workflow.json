@@ -1,0 +1,126 @@
+{
+  "name": "Salesforce Test — run SOQL & inspect results",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Salesforce SOQL Tester — run a query, see what comes back\n\nA throwaway sandbox so you can test SOQL **inside n8n** (same auth/node the real pipeline uses) instead of the Salesforce Developer Console. Nothing is written anywhere — read-only.\n\n### SETUP\nNothing to do — the **Salesforce account 2** credential is already preset on \"Run SOQL\" (same as the `SF: Get …` / probe workflows). Instance is `cwsi.my.salesforce.com`. If it ever shows as missing, just re-pick it from the dropdown.\n\n### HOW TO USE\n- Open **\"✏️ SOQL — edit me\"**, paste/edit the `soql` value, then click **Execute workflow** (top bar).\n- Click the **\"Run SOQL\"** node to see the raw rows Salesforce returned.\n- Click **\"📊 Summary\"** for row count + the field list (handy when you don't know which columns came back).\n- Always add a `LIMIT` while testing — the node returns the first page only.\n\n### READY-MADE QUERIES (paste into the Set node)\n- **Emails sent per campaign** (feeds the Email page):\n  `SELECT Id, Name, Type, NumberSent FROM Campaign WHERE NumberSent > 0 ORDER BY NumberSent DESC LIMIT 25`\n- **Do we have Pardot engagement fields?** (this ERRORS if they don't exist — that error *is* the answer to \"why is open/click n/a\"):\n  `SELECT Id, TotalEmailsDelivered, UniqueEmailOpens, UniqueEmailTrackedLinkClicks FROM Campaign LIMIT 5`\n- **Won deals + their vendor cost** (the margin source — `margin = Amount − Vendor_Cost_Price__c`; a BLANK cost is why Influenced Margin shows n/a):\n  `SELECT Id, Name, Amount, Vendor_Cost_Price__c, CloseDate, StageName FROM Opportunity WHERE IsWon = true AND CloseDate >= 2026-04-01 ORDER BY CloseDate DESC LIMIT 50`\n- **Won deals MISSING cost** (exactly the deals that null out margin — e.g. the Q2 FY2026 ones):\n  `SELECT Id, Name, Amount, CloseDate FROM Opportunity WHERE IsWon = true AND Vendor_Cost_Price__c = null AND CloseDate >= 2026-04-01 ORDER BY CloseDate DESC`\n- **Open pipeline snapshot** (Pipeline page):\n  `SELECT Id, StageName, Probability, Amount, Account.Region__c FROM Opportunity WHERE IsClosed = false LIMIT 50`\n- **Count only** (fast sanity check):\n  `SELECT COUNT() FROM Campaign`\n- **List all fields on an object** — SOQL can't do `SELECT *`; instead open Setup → Object Manager → <Object> → Fields & Relationships, or query a single record and read the Summary node's field list.\n",
+        "height": 620,
+        "width": 640
+      },
+      "id": "note-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "trig-1",
+      "name": "When clicking Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        720,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "asg-soql",
+              "name": "soql",
+              "value": "SELECT Id, Name, Type, NumberSent FROM Campaign WHERE NumberSent > 0 ORDER BY NumberSent DESC LIMIT 25",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-1",
+      "name": "✏️ SOQL — edit me",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        940,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "={{ $json.soql }}"
+      },
+      "id": "sf-1",
+      "name": "Run SOQL",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        220
+      ],
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Quick, human-readable summary of what Salesforce returned.\n// The raw rows are on the \"Run SOQL\" node; this just makes them easy to scan.\nconst rows = $input.all().map((i) => i.json);\nconst soql = $('✏️ SOQL — edit me').first().json.soql;\n\n// Field list = union of keys across the returned rows (minus Salesforce's attributes blob).\nconst fields = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => k !== 'attributes');\n\nreturn [{\n  json: {\n    soql,\n    rowCount: rows.length,\n    fields,\n    note: rows.length === 0\n      ? 'No rows. If you expected data, check the WHERE clause; if the query ERRORED instead, that field/object likely does not exist in this org.'\n      : 'Open the \"Run SOQL\" node to see the full rows.',\n    firstRow: rows[0] || null,\n  },\n}];"
+      },
+      "id": "code-1",
+      "name": "📊 Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking Execute workflow": {
+      "main": [
+        [
+          {
+            "node": "✏️ SOQL — edit me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✏️ SOQL — edit me": {
+      "main": [
+        [
+          {
+            "node": "Run SOQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SOQL": {
+      "main": [
+        [
+          {
+            "node": "📊 Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

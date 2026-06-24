@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useFilters } from '../filters/FilterContext'
 import { getFxEurToGbp } from '../data/fx'
 import { getBoardPack } from '../data/boardPack'
-import { generateBoardNarrative } from '../data/boardPackClient'
+import { generateBoardNarrative, saveBoardPack, getLatestBoardPack } from '../data/boardPackClient'
 import {
   getOverview,
   getKpiTracker,
@@ -209,13 +209,36 @@ export function useBoardPack() {
   })
 }
 
+// The latest TRACE-PASSED pack saved for the active scope. Read path for the
+// archive: lets the Board page re-hydrate the last published narrative on load,
+// since the generate-mutation's result is in-memory only and lost on refresh.
+export function useSavedBoardPack() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['board-pack-saved', filters.region, filters.quarter],
+    queryFn: () => getLatestBoardPack({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
 // Generate the AI narrative + recommendations. mutate(figureSet) POSTs the
 // computed figures to the n8n→Claude webhook, then validates every returned
 // number against the figure set (trace-to-data). Manual trigger — exec generation
 // is never automatic on page load.
 export function useGenerateBoardPack() {
+  const { filters } = useFilters()
+  const qc = useQueryClient()
   return useMutation({
     mutationKey: ['board-pack-generate'],
     mutationFn: (figureSet) => generateBoardNarrative(figureSet),
+    // Persist trace-passed packs (figure set stored FROZEN alongside the narrative)
+    // so they can be re-exported + kept as history. Scope is the active region/quarter.
+    // A save failure must never break the on-screen result — swallow + log only.
+    // On a successful save, refresh the saved-pack read so the archive (which the
+    // Board page falls back to after refresh) reflects this newly published pack.
+    onSuccess: (generated, figureSet) => {
+      saveBoardPack({ region: filters.region, quarter: filters.quarter, figureSet, generated })
+        .then(() => qc.invalidateQueries({ queryKey: ['board-pack-saved', filters.region, filters.quarter] }))
+        .catch((e) => console.error('Board pack persist failed (narrative still shown):', e))
+    },
   })
 }

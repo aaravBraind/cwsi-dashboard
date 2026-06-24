@@ -1,7 +1,9 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState, NotAvailablePanel } from '../States'
 import { usePipeline, useOpportunityStage } from '../../hooks/useDashboardData'
+import { useFilters } from '../../filters/FilterContext'
 import { gbp, num, pct } from '../../data/format'
+import { I } from '../icons'
 
 export default function Pipeline() {
   const q = usePipeline()
@@ -26,6 +28,8 @@ export default function Pipeline() {
 
 function Body({ data }) {
   const { funnel, bySource } = data
+  const { filters } = useFilters()
+  const quarterScoped = filters.quarter && filters.quarter !== 'ytd'
   return (
     <>
       {/* Top strip */}
@@ -53,6 +57,19 @@ function Body({ data }) {
             <Stage name="Pipeline £" val={gbp(funnel.pipeline)} extra="value" />
             <Stage name="Closed-Won" val={gbp(funnel.closedWon)} extra="value" />
           </div>
+          {quarterScoped && (
+            <div className="callout amber" style={{ marginTop: 12 }}>
+              <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+              <div className="callout-body">
+                <strong>Quarterly funnel = "reached-or-beyond", scope-dated.</strong> Stages are dated by
+                different Salesforce events — leads/MQLs by lead date, SQLs/pipeline/closed-won by
+                opportunity created/close date — so a deal can land in a different quarter at each stage.
+                Within a single quarter these counts show how many records reached <em>at least</em> that
+                stage (Leads ≥ MQLs ≥ SQLs by construction), not same-cohort flow. View <strong>YTD</strong> for
+                a true end-to-end funnel where the stages reconcile.
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

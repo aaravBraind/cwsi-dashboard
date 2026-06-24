@@ -229,6 +229,73 @@ export async function getKpiTracker(filters) {
   }
 }
 
+// Prior in-scope quarter for QoQ trend. Reporting is 2026-only (HISTORY_START_YEAR),
+// so Q1 has no in-scope predecessor and YTD is not a single quarter → both return
+// null (QoQ is simply omitted there, never faked against an out-of-scope quarter).
+function priorQuarter(quarter) {
+  return { q2: 'q1', q3: 'q2', q4: 'q3' }[quarter] || null
+}
+
+// ---- Board Pack rich data set (T-7, enriched) ------------------------------
+// One scoped fetch feeds the funnel + channel contribution + regional split; a
+// second scoped fetch (prior quarter) feeds QoQ trend; retention + open-pipeline
+// stage distribution come from their own views. Everything is computed with the
+// SAME helpers (funnelOf/sum/groupBy) the rest of the dashboard uses, so the board
+// pack can never disagree with a channel/pipeline page. boardPack.js shapes this
+// raw set into the metric/lever/trace structure; this layer only aggregates.
+export async function getBoardPackData(filters = {}) {
+  const prevQ = priorQuarter(filters.quarter)
+  const [rows, prevRows, retention, stage] = await Promise.all([
+    fetchFacts(filters),
+    prevQ ? fetchFacts({ ...filters, quarter: prevQ }) : Promise.resolve(null),
+    getRetention(filters),
+    getOpportunityStage(filters),
+  ])
+
+  const funnel = funnelOf(rows)
+  const prevFunnel = prevRows ? funnelOf(prevRows) : null
+
+  // Channel contribution — who drove the pipeline. Dropped if a channel has no
+  // signal in scope (keeps the board pack to channels that actually contributed).
+  const byChannel = [...groupBy(rows, 'channel_name')]
+    .map(([channel, rs]) => ({
+      channel: channel ?? 'Unattributed',
+      leads: sum(rs, 'leads'),
+      mql: sum(rs, 'mql_count'),
+      sql: sum(rs, 'sql_count'),
+      pipeline: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }))
+    .filter((c) => c.pipeline > 0 || c.mql > 0 || c.closedWon > 0)
+    .sort((a, b) => b.pipeline - a.pipeline)
+
+  // Regional split — only meaningful when scope is All Regions; the board pack
+  // shows it conditionally on that. Ordered by pipeline contribution.
+  const byRegion = [...groupBy(rows, 'region_code')]
+    .map(([code, rs]) => ({
+      regionCode: code ?? 'UNASSIGNED',
+      region: rs[0]?.region_name ?? code ?? 'Unassigned',
+      mql: sum(rs, 'mql_count'),
+      sql: sum(rs, 'sql_count'),
+      pipeline: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }))
+    .filter((r) => r.pipeline > 0 || r.mql > 0 || r.closedWon > 0)
+    .sort((a, b) => b.pipeline - a.pipeline)
+
+  return {
+    funnel,
+    prevFunnel,
+    prevQuarter: prevQ,
+    byChannel,
+    byRegion,
+    retention,
+    stage, // { stages, snapshotDate, hasData } — open-pipeline snapshot (region-scoped)
+    hasData: rows.length > 0,
+    rowCount: rows.length,
+  }
+}
+
 // ---- KPI target register (editable; KPI Tracker only) ---------------------
 // PROVISIONAL placeholder targets live in the `kpi_targets` table (seeded from
 // thresholds.js KPI_QUARTERLY_TARGETS). The KPI Tracker reads them here and edits

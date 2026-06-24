@@ -1,0 +1,105 @@
+{
+  "name": "CWSI Slides Templates — one-time bootstrap",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## One-time: create the 3 CWSI master Slides templates\n\nCreates **CWSI Board Pack / KPI / Pipeline** template decks via the Slides API, with every\n`{{token}}` and `[[CHART]]` placeholder already laid out and named (Manrope, navy cover).\n\n### SETUP (after import)\n1. On BOTH HTTP nodes, pick your **Google OAuth2** credential (scopes: presentations + drive).\n2. Click **Execute workflow**.\n3. Open the **Template IDs** node output → copy the 3 `TEMPLATE_ID` values and send them to me.\n\n### THEN (by hand, 5 min) — the API can't do these:\n- On each **cover** slide: swap the solid-navy background for the gradient/photo, drop in the\n  white `CWSI.` logo. (The text tokens are already there.)\n- Optional: nudge boxes / restyle to taste. Keep the `{{tokens}}` and `[[CHART]]` text EXACTLY\n  as generated — the fill workflow matches them verbatim.\n\nRead-only to your data — only creates 3 Drive files. Safe to re-run (makes 3 new decks each time).",
+        "height": 360,
+        "width": 540
+      },
+      "id": "note-1",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {},
+      "id": "trig-1",
+      "name": "When clicking Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The 3 decks to create. deckKey drives the layout in 'Build requests'.\nreturn [\n  { json: { deckKey: 'boardpack', title: 'CWSI Board Pack \\u2014 TEMPLATE' } },\n  { json: { deckKey: 'kpi', title: 'CWSI KPI Register \\u2014 TEMPLATE' } },\n  { json: { deckKey: 'pipeline', title: 'CWSI Pipeline \\u2014 TEMPLATE' } },\n];"
+      },
+      "id": "code-list",
+      "name": "Deck list",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slides.googleapis.com/v1/presentations",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.title }) }}",
+        "options": {}
+      },
+      "id": "http-create",
+      "name": "Create presentation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 440],
+      "credentials": {
+        "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build the Slides batchUpdate requests that lay out one template deck.\n// Reads the just-created presentation ($json) + its deckKey (from 'Deck list').\nconst res = $json;\nconst presentationId = res.presentationId;\nconst defaultSlideId = (res.slides && res.slides[0]) ? res.slides[0].objectId : null;\nconst deckKey = $('Deck list').item.json.deckKey;\n\nconst NAVY = '#0a2c52', INK = '#0f172a', MUTE = '#78869c', WHITE = '#ffffff', PALE = '#cfe1f7';\nfunction hexToRgb(h) { const n = parseInt(h.replace('#',''),16); return { red:((n>>16)&255)/255, green:((n>>8)&255)/255, blue:(n&255)/255 }; }\nlet seq = 0; const uid = (p) => deckKey + '_' + p + '_' + (seq++);\nconst reqs = [];\nfunction addSlide() { const id = uid('s'); reqs.push({ createSlide: { objectId: id, slideLayoutReference: { predefinedLayout: 'BLANK' } } }); return id; }\nfunction setBg(sid, hex) { reqs.push({ updatePageProperties: { objectId: sid, pageProperties: { pageBackgroundFill: { solidFill: { color: { rgbColor: hexToRgb(hex) } } } }, fields: 'pageBackgroundFill.solidFill.color' } }); }\nfunction box(sid, x, y, w, h, text, o) { o = o || {}; const id = uid('b'); reqs.push({ createShape: { objectId: id, shapeType: 'TEXT_BOX', elementProperties: { pageObjectId: sid, size: { width: { magnitude: w, unit: 'PT' }, height: { magnitude: h, unit: 'PT' } }, transform: { scaleX: 1, scaleY: 1, translateX: x, translateY: y, unit: 'PT' } } } }); if (text && text.length) { reqs.push({ insertText: { objectId: id, text: text } }); reqs.push({ updateTextStyle: { objectId: id, style: { fontFamily: 'Manrope', fontSize: { magnitude: o.size || 12, unit: 'PT' }, bold: !!o.bold, foregroundColor: { opaqueColor: { rgbColor: hexToRgb(o.color || INK) } } }, fields: 'fontFamily,fontSize,bold,foregroundColor', textRange: { type: 'ALL' } } }); } return id; }\n\nconst m = (i, f) => '{{m' + i + '_' + f + '}}';\nconst metricLines = [];\nfor (let i = 1; i <= 7; i++) metricLines.push(m(i,'label') + ': ' + m(i,'value') + '   (target ' + m(i,'target') + ' \\u00b7 ' + m(i,'pct') + ' \\u00b7 ' + m(i,'status') + ')');\nconst funnelLines = ['Leads: {{leads}}', 'MQLs: {{mql}}', 'SQLs: {{sql}}', 'Opportunities: {{opp}}', 'Pipeline: {{pipeline_gbp}}', 'Closed-won: {{closed_won_gbp}}'];\nconst footLines = ['{{confidentiality}}', '{{contact}}', 'Generated {{generated_date}}'];\n\nconst DECKS = {\n  boardpack: [\n    { cover: true, title: '{{report_title}}', scope: '{{scope_line}}' },\n    { title: 'Executive Summary', lines: ['{{exec_summary}}'] },\n    { title: 'Top-line KPIs', lines: metricLines, charts: ['[[KPI_CHART]]'] },\n    { title: 'Pipeline Funnel', lines: funnelLines, charts: ['[[FUNNEL_CHART]]'] },\n    { title: 'By Channel', lines: ['Channel mix \\u2014 see chart.'], charts: ['[[CHANNEL_CHART]]'] },\n    { title: 'Gaps to Close', lines: ['1. {{lever1_title}} \\u2014 gap {{lever1_gap}} \\u00b7 impact {{lever1_impact}}', '2. {{lever2_title}} \\u2014 gap {{lever2_gap}} \\u00b7 impact {{lever2_impact}}', '3. {{lever3_title}} \\u2014 gap {{lever3_gap}} \\u00b7 impact {{lever3_impact}}'] },\n    { title: 'Closing', lines: footLines }\n  ],\n  kpi: [\n    { cover: true, title: '{{report_title}}', scope: '{{scope_line}}' },\n    { title: 'Executive Summary', lines: ['{{exec_summary}}'] },\n    { title: 'KPI Register', lines: ['Full register \\u2014 see table.'], charts: ['[[KPI_TABLE]]', '[[KPI_CHART]]'] },\n    { title: 'Closing', lines: footLines }\n  ],\n  pipeline: [\n    { cover: true, title: '{{report_title}}', scope: '{{scope_line}}' },\n    { title: 'Pipeline Funnel', lines: funnelLines, charts: ['[[FUNNEL_CHART]]'] },\n    { title: 'Open Pipeline by Stage', lines: ['Stage breakdown \\u2014 see table.'], charts: ['[[STAGE_TABLE]]'] },\n    { title: 'Closing', lines: footLines }\n  ]\n};\n\nconst slides = DECKS[deckKey] || [];\nfor (const s of slides) {\n  const sid = addSlide();\n  if (s.cover) {\n    setBg(sid, NAVY);\n    box(sid, 40, 34, 300, 44, 'CWSI.', { size: 26, bold: true, color: WHITE });\n    box(sid, 40, 150, 640, 90, s.title, { size: 34, bold: true, color: WHITE });\n    box(sid, 40, 250, 640, 40, s.scope, { size: 16, color: PALE });\n    continue;\n  }\n  if (s.title) box(sid, 40, 28, 640, 38, s.title, { size: 22, bold: true, color: NAVY });\n  if (s.lines && s.lines.length) box(sid, 40, 84, 640, 210, s.lines.join('\\n'), { size: 13, color: INK });\n  if (s.charts) s.charts.forEach((c, idx) => box(sid, 40 + idx * 230, 310, 210, 70, c, { size: 11, color: MUTE }));\n}\nif (defaultSlideId) reqs.push({ deleteObject: { objectId: defaultSlideId } });\n\nreturn { json: { presentationId: presentationId, deckKey: deckKey, title: $('Deck list').item.json.title, requests: reqs } };"
+      },
+      "id": "code-build",
+      "name": "Build requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://slides.googleapis.com/v1/presentations/{{ $json.presentationId }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ requests: $json.requests }) }}",
+        "options": {}
+      },
+      "id": "http-batch",
+      "name": "Apply layout (batchUpdate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 440],
+      "credentials": {
+        "googleOAuth2Api": { "id": "REPLACE_WITH_GOOGLE_OAUTH2", "name": "Google OAuth2 account" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tidy summary: the 3 TEMPLATE_IDs + edit URLs to copy and send back.\nreturn $('Build requests').all().map((i) => ({ json: {\n  deck: i.json.deckKey,\n  title: i.json.title,\n  TEMPLATE_ID: i.json.presentationId,\n  edit_url: 'https://docs.google.com/presentation/d/' + i.json.presentationId + '/edit',\n} }));"
+      },
+      "id": "code-ids",
+      "name": "Template IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 440]
+    }
+  ],
+  "connections": {
+    "When clicking Execute workflow": { "main": [[{ "node": "Deck list", "type": "main", "index": 0 }]] },
+    "Deck list": { "main": [[{ "node": "Create presentation", "type": "main", "index": 0 }]] },
+    "Create presentation": { "main": [[{ "node": "Build requests", "type": "main", "index": 0 }]] },
+    "Build requests": { "main": [[{ "node": "Apply layout (batchUpdate)", "type": "main", "index": 0 }]] },
+    "Apply layout (batchUpdate)": { "main": [[{ "node": "Template IDs", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": { "templateCredsSetupCompleted": false }
+}
