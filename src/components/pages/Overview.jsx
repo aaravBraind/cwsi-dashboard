@@ -287,6 +287,7 @@ function WebinarAttendance({ ev }) {
   const { totals, webinars } = ev.data
   const noShow = Math.max(0, totals.registrants - totals.attendees)
   const attPct = pct(totals.attendees, totals.registrants, 0)
+  const noShowPct = pct(noShow, totals.registrants, 0)
   const maxRate = Math.max(0.01, ...webinars.map((w) => (isNA(w.attendanceRate) ? 0 : w.attendanceRate)))
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
@@ -299,8 +300,8 @@ function WebinarAttendance({ ev }) {
       </div>
       <div className="panel-body">
         <div className="seg-bar">
-          <div className="web" style={{ flex: Math.max(1, totals.attendees) }}>{attPct}</div>
-          <div className="own" style={{ flex: Math.max(1, noShow) }}>{noShow ? 'no-show' : ''}</div>
+          <div className="web" style={{ flex: Math.max(1, totals.attendees) }} title="Attended">{attPct}</div>
+          <div className="own" style={{ flex: Math.max(1, noShow) }} title="No-show">{noShow ? noShowPct : ''}</div>
         </div>
         <div className="seg-legend">
           <div className="leg"><span className="dot" style={{ background: 'var(--cwsi-blue)' }} />Attended · {num(totals.attendees)}</div>
