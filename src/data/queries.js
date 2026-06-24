@@ -23,15 +23,26 @@ const FACT_COLS =
 
 // Translate the shared filter object into PostgREST predicates. Every active
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
+// Today (YYYY-MM-DD, browser runtime) — the upper bound for "to date" reads.
+const todayIso = () => new Date().toISOString().slice(0, 10)
+
 // QUARTER SCOPE:
 //   q1..q4 → that quarter of REPORTING_YEAR (2026).
 //   ytd    → HISTORY_START_YEAR (2026) → now; all earlier years excluded.
+// FUTURE-DATE CAP: every figure is "to date" — rows dated after today are excluded.
+// A quarter that hasn't started yet (Q3/Q4) therefore returns nothing, and YTD stops
+// at today. This removes phantom funnel rows from SF closed-LOST opps that carry a
+// stale FUTURE CloseDate (they leak sql_count into future quarters with £0 pipeline /
+// 0 won; the monotonic floor then lifts Leads/MQL to match). Real figures are
+// untouched: open pipeline is dated by CreatedDate (past) and won deals can't close
+// in the future, so only those future-dated artifacts drop out.
 function applyFilters(q, f = {}) {
   if (f.quarter && f.quarter !== 'ytd') {
     q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(f.quarter).replace('q', '')))
   } else {
     q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward
   }
+  q = q.lte('activity_date', todayIso()) // to-date cap (see note above)
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   if (f.channel) q = q.eq('channel_name', f.channel)
   if (f.campaign && f.campaign !== 'all') q = q.eq('campaign_key', f.campaign)
