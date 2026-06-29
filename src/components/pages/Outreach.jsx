@@ -8,8 +8,9 @@ import { replyLight } from '../../data/thresholds'
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
 
 // Outreach.io — SDR sales-engagement channel. Matches the functional mockup
-// layout. Engagement is live (lifetime snapshot); meetings / SQL / pipeline are
-// pending Salesforce attribution and render explicit "pending", never fabricated.
+// layout. Engagement is live (lifetime snapshot); meetings are Outreach-sourced
+// and render explicit "pending" (Outreach meetings feed reads 0 — never fabricated).
+// SQL / pipeline were removed from this page (no Outreach↔Salesforce link).
 export default function Outreach() {
   // Practice area is page-local (pillar lives only in this feed, not globally).
   const [pillar, setLocalPillar] = useState(null)
@@ -35,8 +36,9 @@ export default function Outreach() {
         <div className="callout-body">
           <strong>Channel scope:</strong> Outreach.io covers SDR-led sales engagement — multi-step
           cadences with replies and meetings booked. Figures are a <strong>cumulative lifetime
-          snapshot</strong> (not a daily trend); <strong>region</strong> scopes them. Meetings, SQLs and
-          pipeline £ come from Salesforce attribution (not wired yet) and show as <strong>pending</strong>.
+          snapshot</strong> (not a daily trend); <strong>region</strong> scopes them. <strong>Meetings</strong>{' '}
+          come from Outreach.io's own counter and show as <strong>pending</strong> until that feed is flowing
+          (it currently reads 0).
         </div>
       </div>
 
@@ -105,7 +107,7 @@ function Body({ data, pillar }) {
           </div>
           <div className="kpi-label">Meetings booked</div>
           <div className="kpi-val">—</div>
-          <div className="kpi-sub"><span className="kpi-target">pending Salesforce attribution</span></div>
+          <div className="kpi-sub"><span className="kpi-target">pending Outreach meetings feed</span></div>
         </div>
       </div>
 
@@ -114,7 +116,7 @@ function Body({ data, pillar }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Outreach Engagement Funnel</div>
-            <div className="panel-sub">Prospect → Open → Click → Reply → Meeting → SQL</div>
+            <div className="panel-sub">Prospect → Open → Click → Reply → Meeting</div>
           </div>
           <span className="chip blue">snapshot</span>
         </div>
@@ -125,14 +127,12 @@ function Body({ data, pillar }) {
             <Stage name="Clicks" val={num(funnel.clicks)} extra={`${ratePct(kpis.clickRate)} click`} />
             <Stage name="Replies" val={num(funnel.replies)} extra={`${ratePct(kpis.replyRate)} reply`} />
             <Stage name="Meetings" val="—" extra="pending" />
-            <Stage name="SQLs" val="—" extra="pending" />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {ratePct(kpis.openRate)} Open</span>
             <span className="conv">▶ {ratePct(kpis.clickRate)} Click</span>
             <span className="conv">▶ {ratePct(kpis.replyRate)} Reply</span>
             <span className="conv">▶ Meeting → pending</span>
-            <span className="conv">▶ SQL → pending</span>
           </div>
         </div>
       </div>
@@ -159,8 +159,6 @@ function Body({ data, pillar }) {
                 <th className="r">Open %</th>
                 <th className="r">Reply %</th>
                 <th className="r">Meetings</th>
-                <th className="r">SQLs</th>
-                <th className="r">Pipeline £</th>
                 <th className="c">Status</th>
               </tr>
             </thead>
@@ -172,8 +170,6 @@ function Body({ data, pillar }) {
                 <td className="r mono">{ratePct(kpis.openRate, 0)}</td>
                 <td className="r mono">{ratePct(kpis.replyRate)}</td>
                 <td className="r mono mono-d">pending</td>
-                <td className="r mono mono-d">pending</td>
-                <td className="r mono mono-d">pending</td>
                 <td />
               </tr>
             </tbody>
@@ -181,37 +177,23 @@ function Body({ data, pillar }) {
         </div>
       </div>
 
-      {/* Step-level engagement + Pipeline contribution (both pending data) */}
-      <div className="cols-2">
-        <EngagementBySteps pillar={pillar} />
-
-        <div className="panel" style={{ marginBottom: 0 }}>
-          <div className="panel-head">
-            <div className="left">
-              <div className="panel-title">Outreach → Pipeline Contribution</div>
-              <div className="panel-sub">Attribution into Salesforce</div>
-            </div>
-            <span className="chip neu">Pending</span>
-          </div>
-          <div className="panel-body">
-            <div className="def-grid" style={{ gridTemplateColumns: '1fr' }}>
-              <Def k="Meetings booked" v="pending" />
-              <Def k="SQLs from Outreach" v="pending" />
-              <Def k="→ Opportunities" v="pending" />
-              <Def k="→ Closed-Won" v="pending" />
-              <Def k="Pipeline £ (GBP)" v="pending" />
-              <Def k="Cost per meeting" v="pending" />
-            </div>
-            <div className="callout amber" style={{ marginTop: 14, marginBottom: 0 }}>
-              <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg></div>
-              <div className="callout-body">
-                Pending <strong>Salesforce attribution</strong> (meetings/SQL/pipeline) and an agreed
-                <strong> EUR→GBP</strong> rate for Outreach cost. Engagement above is live.
-              </div>
-            </div>
-          </div>
+      <div className="callout amber" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </div>
+        <div className="callout-body">
+          <strong>Open % / Reply %</strong> show "n/a" only where a sequence has no prospects yet (the rate
+          has no denominator). <strong>Meetings</strong> show "pending" because the meetings-booked counter from
+          Outreach.io isn't flowing yet (it currently reads 0) — these are the Outreach-sequence-generated
+          meetings, distinct from the all-meetings figure held in Salesforce. Engagement counts (prospects →
+          replies) are live.
         </div>
       </div>
+
+      {/* Step-level engagement */}
+      <EngagementBySteps pillar={pillar} />
     </>
   )
 }
@@ -225,10 +207,10 @@ function EngagementBySteps({ pillar }) {
     <div className="panel" style={{ marginBottom: 0 }}>
       <div className="panel-head">
         <div className="left">
-          <div className="panel-title">Engagement by Step</div>
-          <div className="panel-sub">Every cadence step, all types · ordered by step number</div>
+          <div className="panel-title">Engagement by Step Type</div>
+          <div className="panel-sub">Each step type once, aggregated across all cadence positions</div>
         </div>
-        <span className="chip blue">all steps</span>
+        <span className="chip blue">by type</span>
       </div>
       <div className="panel-body">
         {s.isLoading && <Loading label="Loading steps…" />}
@@ -259,9 +241,9 @@ function AllStepsBars({ steps }) {
             ? `${ratePct(x.openRate, 0)} open`
             : x.isCall ? `${ratePct(x.connectRate, 0)} connect` : 'no engagement'
           return (
-            <div className="bar-row" key={`${x.step}-${x.type}`}>
-              <div className="bar-label" style={{ width: 240 }} title={`Step ${x.step} · ${x.label}`}>
-                Step {x.step} · {x.label}
+            <div className="bar-row" key={x.type}>
+              <div className="bar-label" style={{ width: 240 }} title={`${x.label} · ${num(x.count)} cadence steps`}>
+                {x.label}
               </div>
               <div className="bar-track">
                 <div className={`bar-fill ${fill}`} style={{ width: `${w}%` }} />
@@ -286,7 +268,7 @@ function RegionGroup({ g }) {
   const label = g.region === 'UNASSIGNED' ? 'Unassigned / ad-hoc' : g.region
   return (
     <>
-      <tr className="cat"><td colSpan={9}>{label}</td></tr>
+      <tr className="cat"><td colSpan={7}>{label}</td></tr>
       {g.rows.map((r) => {
         const open = r.prospects ? r.opens / r.prospects : null
         const reply = r.prospects ? r.replies / r.prospects : null
@@ -299,8 +281,6 @@ function RegionGroup({ g }) {
             <td className="r mono">{open == null ? 'n/a' : `${(open * 100).toFixed(0)}%`}</td>
             <td className="r mono">{reply == null ? 'n/a' : `${(reply * 100).toFixed(1)}%`}</td>
             <td className="r mono mono-d">pending</td>
-            <td className="r mono mono-d">pending</td>
-            <td className="r mono mono-d">pending</td>
             <td className="c"><span className={`tl-bare ${lt}`} /></td>
           </tr>
         )
@@ -311,8 +291,6 @@ function RegionGroup({ g }) {
         <td className="r mono">{num(sub.prospects)}</td>
         <td className="r mono">{sub.prospects ? `${((sub.opens / sub.prospects) * 100).toFixed(0)}%` : 'n/a'}</td>
         <td className="r mono">{subReply == null ? 'n/a' : `${(subReply * 100).toFixed(1)}%`}</td>
-        <td className="r mono mono-d">pending</td>
-        <td className="r mono mono-d">pending</td>
         <td className="r mono mono-d">pending</td>
         <td />
       </tr>
@@ -326,8 +304,4 @@ const Stage = ({ name, val, extra }) => (
     <div className="stage-val">{val}</div>
     <div className="stage-extra">{extra}</div>
   </div>
-)
-
-const Def = ({ k, v }) => (
-  <div className="def-row"><span className="def-key">{k}</span><span className="def-val mono-d">{v}</span></div>
 )

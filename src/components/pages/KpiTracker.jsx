@@ -128,7 +128,7 @@ function TargetCell({ kpiKey, row, period, scope }) {
       type="button"
       onClick={begin}
       className={`tgt-btn${empty ? ' empty' : ''}${upd.isPending ? ' saving' : ''}`}
-      title="Edit target — provisional placeholder, saved to kpi_targets"
+      title="Edit target — provisional placeholder, saved automatically"
     >
       <span>{empty ? 'Set target' : fmtByUnit(unit, t)}</span>
       <svg className="icon tgt-pen" viewBox="0 0 24 24">{I.pencil}</svg>
@@ -168,8 +168,8 @@ function Register({ f, web, events, attendance, retention, quarter, targets }) {
       <div className="kpi-banner">
         <svg className="icon b-icn" viewBox="0 0 24 24">{I.pencil}</svg>
         <div>
-          <strong>Targets are provisional &amp; editable.</strong> Actuals are live from the warehouse; each
-          <strong> Target</strong> is a placeholder — click it to set the real number (saves to <code>kpi_targets</code>,
+          <strong>Targets are provisional &amp; editable.</strong> Actuals are live from the source data; each
+          <strong> Target</strong> is a placeholder — click it to set the real number (it saves automatically,
           and %-of-target + status recompute). Edits apply to the <strong>active quarter</strong> ({scope}); switch the
           quarter pills to set the others.
         </div>

@@ -136,7 +136,7 @@ export async function getBoardPack(filters = {}) {
       value: closedWonCount, valueDisplay: real(closedWonCount) ? num(closedWonCount) : 'n/a',
       target: TGT.closedWonCount, targetDisplay: `FY ${num(TGT.closedWonCount)}`,
       trace: 'Σ v_fact_enriched.closed_won_count (scoped)',
-      note: real(closedWonCount) ? null : 'pending SF re-run',
+      note: real(closedWonCount) ? null : 'pending Salesforce data refresh',
     },
     {
       key: 'pipeline', order: 5, label: 'Influenced Pipeline', unit: 'gbp',

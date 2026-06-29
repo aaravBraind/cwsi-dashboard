@@ -13,7 +13,7 @@ export default function Pipeline() {
       <div className="page-head">
         <div>
           <div className="page-title">Pipeline <span className="accent">Report</span></div>
-          <div className="page-sub">Funnel + pipeline by source · live from v_fact_enriched · FY2026</div>
+          <div className="page-sub">Funnel + pipeline by source · live from Salesforce · FY2026</div>
         </div>
         <QuarterPills />
       </div>
@@ -83,7 +83,7 @@ function Body({ data }) {
             <div className="panel-title">Pipeline by Source — full breakdown</div>
             <div className="panel-sub">Leads, MQLs, SQLs, pipeline &amp; closed-won by channel · scoped</div>
           </div>
-          <span className="chip blue">v_fact_enriched</span>
+          <span className="chip blue">Salesforce</span>
         </div>
         <div className="panel-body no-pad">
           <table className="tbl">
@@ -121,6 +121,19 @@ function Body({ data }) {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="callout amber" style={{ marginTop: 18, marginBottom: 0 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </div>
+        <div className="callout-body">
+          <strong>CPL shows "n/a"</strong> because cost per lead needs per-channel spend, and only LinkedIn
+          delivery spend is available so far. The other channels' spend is pending (Margot's merged
+          spend sheet) — once that spend is added to the data, CPL populates per source automatically.
         </div>
       </div>
     </>

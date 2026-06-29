@@ -23,7 +23,7 @@ export default function Overview() {
             Marketing <span className="accent">Intelligence</span> Dashboard
           </div>
           <div className="page-sub">
-            Quarterly KPI view · FY2026 · Source: Salesforce (seed) · live from v_fact_enriched
+            Quarterly KPI view · FY2026 · Source: Salesforce (seed)
           </div>
         </div>
         <QuarterPills />
@@ -141,6 +141,27 @@ function Body({ data }) {
         </div>
       </div>
 
+      {/* Why is Influenced Margin showing "—"? Explain the vendor-cost gap. */}
+      {isNA(funnel.margin) && (
+        <div className="callout amber" style={{ marginBottom: 18 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </div>
+          <div className="callout-body">
+            <strong>Influenced margin shows "—" because vendor cost is missing.</strong>{' '}
+            Margin = won amount − vendor cost.{' '}
+            {funnel.marginPendingDeals
+              ? `The ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'} in this scope have no vendor cost entered`
+              : 'None of the won deals in this scope have a vendor cost entered'}
+            {' '}yet, so margin can't be calculated. Add the cost on those Salesforce opportunities and the figure will populate automatically.
+          </div>
+        </div>
+      )}
+
       {/* 2. Lead Conversion Funnel */}
       <div className="panel">
         <div className="panel-head">
@@ -254,6 +275,11 @@ function Body({ data }) {
               <HealthRow label="MQL → SQL rate" cls={lightFor(mqlToSqlV, 'mqlToSql')} val={pct(funnel.sql, funnel.mql)} />
               <HealthRow label="CPL average" cls="neu" val="n/a" />
               <HealthRow label="Event attendance" cls={evt ? lightFor(attendanceV, 'attendanceRate') : 'neu'} val={evt ? pct(evt.attendees, evt.registrants, 0) : 'n/a'} />
+            </div>
+            <div className="info-pill" style={{ marginTop: 14 }}>
+              <strong>CPL average</strong> is "n/a" — it needs per-channel spend, which is pending (only LinkedIn
+              delivery spend is available).
+              {!evt && ' Event attendance is "n/a" because there is no webinar (GoToWebinar) attendance in the selected region / quarter.'}
             </div>
           </div>
         </div>

@@ -53,9 +53,8 @@ function Body({ pack, gen, saved }) {
       <div className="callout amber" style={{ marginTop: 4 }}>
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
-          <strong>Targets are provisional.</strong> Actuals are live from the warehouse; the FY targets
-          shown are placeholders (<code>docs/KPI_REGISTER.md</code>) until Paul + Claire deliver the
-          formal register. The AI narrative cites these targets flagged as provisional and never invents a number.
+          <strong>Targets are provisional.</strong> Actuals are live from the source data; the FY targets
+          shown are placeholders until Paul + Claire deliver the formal register. The AI narrative cites these targets flagged as provisional and never invents a number.
         </div>
       </div>
 
@@ -66,6 +65,23 @@ function Body({ pack, gen, saved }) {
       <div className="kpis cols-3">
         {metrics.slice(4).map((m) => <MetricCard key={m.key} m={m} prevQ={meta.prevQuarterLabel} />)}
       </div>
+
+      {/* Why are some headline figures "n/a"? List each pending metric + reason. */}
+      {metrics.some((m) => m.valueDisplay === 'n/a') && (
+        <div className="callout amber" style={{ marginBottom: 0 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>Why some figures show "n/a".</strong> These metrics don't yet have the underlying data to
+            calculate them — the figure is left blank rather than shown as a misleading zero. Every other number
+            above is live.
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {metrics.filter((m) => m.valueDisplay === 'n/a').map((m) => (
+                <li key={m.key}><strong>{m.label}</strong> — {m.note || 'source data pending'}.</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {/* 2. Deep-dive detail — each section is expandable ONLY when it has data in
           this scope, so the top line stays scannable and the depth is one click away. */}
@@ -261,7 +277,9 @@ function PipelineHealthSection({ ph }) {
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
           Probability-weighted (forecast) pipeline: <strong>{ph.weightedDisplay}</strong>. This is a
-          current-state open-pipeline snapshot (region-scoped), not a quarter slice.
+          current-state open-pipeline snapshot (region-scoped), not a quarter slice. A <strong>"—"</strong> in
+          the Probability column means that stage has no win-probability set in Salesforce yet, so it isn't
+          weighted into the forecast (the Total row shows "—" because a total has no single probability).
         </div>
       </div>
     </Expandable>
@@ -351,18 +369,24 @@ function NarrativePanel({ pack, gen, saved }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">AI Board Narrative</div>
-          <div className="panel-sub">
-            3-part: on track · behind &amp; addressable · H2 plan{result?.model ? ` · ${result.model}` : ''}
-            {fromArchive && saved.generatedAt && ` · last published ${new Date(saved.generatedAt).toLocaleString()}`}
-          </div>
+          <div className="panel-sub">3-part: on track · behind &amp; addressable · H2 plan</div>
         </div>
-        <button
-          className="btn primary"
-          onClick={() => gen.mutate(pack)}
-          disabled={gen.isPending}
-        >
-          {gen.isPending ? 'Generating…' : result ? 'Regenerate' : 'Generate narrative'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {fromArchive && saved.generatedAt && (
+            <span className="chip blue" title="When this narrative was last published">
+              Last published {new Date(saved.generatedAt).toLocaleString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+            </span>
+          )}
+          <button
+            className="btn primary"
+            onClick={() => gen.mutate(pack)}
+            disabled={gen.isPending}
+          >
+            {gen.isPending ? 'Generating…' : result ? 'Regenerate' : 'Generate narrative'}
+          </button>
+        </div>
       </div>
       <div className="panel-body">
         {gen.isIdle && !result && (
@@ -371,7 +395,7 @@ function NarrativePanel({ pack, gen, saved }) {
             <div className="callout-body">
               Generate an AI-written board narrative + prioritised recommendations from the figures above.
               The app sends only the computed figure set to Claude; every number in the result is then
-              checked against the warehouse and any untraceable figure blocks publish.
+              checked against the source data and any untraceable figure blocks publish.
             </div>
           </div>
         )}
@@ -419,7 +443,7 @@ function ValidationBadge({ v }) {
         <div className="callout-body">
           <strong style={{ color: 'var(--green, #1c8a4a)' }}>✓ Trace-to-data passed.</strong>{' '}
           All {v.claimCount} numeric claim{v.claimCount === 1 ? '' : 's'} across {v.checked} checked figure
-          {v.checked === 1 ? '' : 's'} trace to a warehouse value. Safe to publish.
+          {v.checked === 1 ? '' : 's'} trace to a source-data value. Safe to publish.
         </div>
       </div>
     )
@@ -429,7 +453,7 @@ function ValidationBadge({ v }) {
       <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
       <div className="callout-body">
         <strong>⚠ Publish blocked — {v.flags.length} untraceable figure{v.flags.length === 1 ? '' : 's'}.</strong>{' '}
-        The narrative below is held for review: it contains numbers that don't match any warehouse value.
+        The narrative below is held for review: it contains numbers that don't match any source-data value.
         Regenerate, or correct the flagged figures before publishing.
       </div>
     </div>

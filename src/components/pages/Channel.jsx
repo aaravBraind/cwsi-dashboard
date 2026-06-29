@@ -28,7 +28,7 @@ export default function Channel({ channel }) {
               ? 'LinkedIn delivery snapshot (GBP) + Salesforce-attributed funnel · FY2026'
               : isEmail
                 ? 'Email engagement snapshot (Pardot) + Salesforce-attributed funnel · FY2026'
-                : 'Channel totals + per-campaign drill-down · live from v_fact_enriched · FY2026'}
+                : 'Channel totals + per-campaign drill-down · live from Salesforce · FY2026'}
           </div>
         </div>
         <QuarterPills />
@@ -223,7 +223,7 @@ function Body({ data, isLinkedIn, isEmail }) {
             <div className="panel-sub">
               {isLinkedIn
                 ? 'Leads / MQL / SQL / pipeline attributed in Salesforce · spend lives in the snapshot above'
-                : 'Per-campaign drill-down · names from v_campaign_current'}
+                : 'Per-campaign drill-down · campaign names from Salesforce'}
             </div>
           </div>
           <span className="chip blue">{campaigns.length} campaigns</span>
@@ -233,8 +233,8 @@ function Body({ data, isLinkedIn, isEmail }) {
             <thead>
               <tr>
                 <th>Campaign</th>
-                {!isLinkedIn && <th className="r">Spend</th>}
-                {!isLinkedIn && <th className="r">Impr.</th>}
+                {!isLinkedIn && !isEmail && <th className="r">Spend</th>}
+                {!isLinkedIn && !isEmail && <th className="r">Impr.</th>}
                 <th className="r">Leads</th>
                 <th className="r">MQLs</th>
                 <th className="r">SQLs</th>
@@ -246,8 +246,8 @@ function Body({ data, isLinkedIn, isEmail }) {
               {campaigns.map((c) => (
                 <tr key={c.campaignKey || c.campaignName}>
                   <td>{c.campaignName}</td>
-                  {!isLinkedIn && <td className="r mono mono-d">{isNA(c.spend) ? 'n/a' : gbp(c.spend)}</td>}
-                  {!isLinkedIn && <td className="r mono mono-d">{isNA(c.impressions) ? 'n/a' : num(c.impressions)}</td>}
+                  {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.spend) ? 'n/a' : gbp(c.spend)}</td>}
+                  {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.impressions) ? 'n/a' : num(c.impressions)}</td>}
                   <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
@@ -257,8 +257,8 @@ function Body({ data, isLinkedIn, isEmail }) {
               ))}
               <tr className="total">
                 <td>Total · {campaigns.length} campaigns</td>
-                {!isLinkedIn && <td className="r mono mono-d">n/a</td>}
-                {!isLinkedIn && <td className="r mono mono-d">n/a</td>}
+                {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
+                {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
                 <td className="r mono">{num(totals.leads)}</td>
                 <td className="r mono">{num(totals.mql)}</td>
                 <td className="r mono">{num(totals.sql)}</td>
@@ -279,7 +279,23 @@ function Body({ data, isLinkedIn, isEmail }) {
           </div>
           <div className="callout-body">
             Conversion / CTR / CPL panels render once <strong>spend, impressions and clicks</strong>{' '}
-            land in <code>v_fact_enriched</code> for this channel. Funnel volumes &amp; pipeline above are live.
+            are available for this channel. Funnel volumes &amp; pipeline above are live.
+          </div>
+        </div>
+      )}
+
+      {isEmail && (
+        <div className="callout" style={{ marginBottom: 0 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </div>
+          <div className="callout-body">
+            Email mainly drives <strong>top-of-funnel leads</strong>, so pipeline and closed-won attributed
+            <em> directly</em> to email is small — and can read <strong>£0</strong> in a single quarter (a real
+            zero, not missing data; those leads usually convert under other channels or later). Switch to{' '}
+            <strong>YTD</strong> for the fuller picture.
           </div>
         </div>
       )}
@@ -308,7 +324,7 @@ function EmailEngagementSnapshot() {
           </svg>
         </div>
         <div className="callout-body">
-          <strong>Emails sent</strong> — cumulative snapshot from Salesforce (Campaign <code>NumberSent</code>,
+          <strong>Emails sent</strong> — cumulative snapshot from Salesforce (campaign send count,
           as of <strong>{snapshotDate}</strong>), <strong>not a daily series</strong>. Region is parsed from the
           campaign name (best-effort); quarter does not slice this snapshot, region does.{' '}
           <strong>Open rate, CTR, delivered and unsubscribe are not available</strong> — this Salesforce org

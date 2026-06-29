@@ -41,8 +41,8 @@ export default function Events() {
         <div className="callout-body">
           <strong>Attendance</strong> comes from GoToWebinar (webinars only, campaign-matched). The{' '}
           <strong>funnel &amp; per-campaign</strong> figures are Salesforce campaign-attributed (the Events &amp;
-          Webinars channel), split by <code>Campaign.Type</code>. In-person attendance + owned/earned split
-          aren’t tracked (no SF field). Region &amp; quarter scope everything; the Type filter scopes the funnel.
+          Webinars channel), split by campaign type in Salesforce. In-person attendance + owned/earned split
+          aren’t tracked (no Salesforce field for them yet). Region &amp; quarter scope everything; the Type filter scopes the funnel.
         </div>
       </div>
 
@@ -86,7 +86,7 @@ export default function Events() {
       <NotAvailablePanel
         title="Owned vs Earned event split"
         what="Owned (CWSI-run) vs Earned (sponsored/partner) split + per-event ROI / touchpoints"
-        why="Salesforce has no owned-vs-earned field — we split by Campaign.Type (Webinar / Event / Seminar) instead. Per-event ROI/touchpoints also need event spend + an attribution model."
+        why="Salesforce has no owned-vs-earned field — we split by campaign type (Webinar / Event / Seminar) instead. Per-event ROI/touchpoints also need event spend + an attribution model."
       />
     </>
   )
@@ -234,7 +234,7 @@ function MqlByType({ det }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">MQL Rate by Event Type</div>
-          <div className="panel-sub">Registrant → MQL conversion (MQLs ÷ leads) · by Salesforce Campaign.Type</div>
+          <div className="panel-sub">Registrant → MQL conversion (MQLs ÷ leads) · by Salesforce campaign type</div>
         </div>
         <span className="chip blue">{byType.length} types</span>
       </div>

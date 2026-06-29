@@ -712,8 +712,10 @@ export async function getEventsDetail(filters = {}) {
 
 // ---- Outreach.io engagement SNAPSHOT -------------------------------------
 // Reads v_outreach_sequence_current (latest snapshot only — counters are
-// lifetime-to-date, NOT a daily series). Region + pillar scope it. meetings /
-// SQL / pipeline come from Salesforce attribution (not wired) → pending, never
+// lifetime-to-date, NOT a daily series). Region + pillar scope it. meetings come
+// from Outreach.io's own meetings-booked counter (currently 0 in the feed →
+// pending the Outreach meetings sync, NOT a Salesforce thing); SQL / pipeline are
+// Salesforce outcomes pending the Outreach↔SF attribution link → pending, never
 // fabricated. Rates are computed here, never stored.
 export async function getOutreach(filters = {}) {
   const rows = await fetchAll(() => {
@@ -740,7 +742,7 @@ export async function getOutreach(filters = {}) {
     openRate: prospects ? sum(rows, 'opens') / prospects : NA,
     clickRate: prospects ? sum(rows, 'clicks') / prospects : NA,
     replyRate: prospects ? sum(rows, 'replies') / prospects : NA,
-    meetings: NA, // pending Salesforce attribution (column is 0 / not real)
+    meetings: NA, // pending Outreach meetings feed (Outreach.io meetings counter reads 0 — not yet syncing)
   }
 
   // Pillar coverage — how much of the snapshot has no practice area mapped.
@@ -827,12 +829,13 @@ const isEmailStep = (t) => /email/.test(t || '')
 
 // ---- Outreach per-step engagement SNAPSHOT -------------------------------
 // Reads v_outreach_step_current (latest snapshot) for ALL step types and returns
-// ONE unified, cadence-ordered list — every step (email, call, LinkedIn, task)
-// in one view, each with the engagement metric that applies to its type:
+// ONE row PER STEP TYPE — every type (email, call, LinkedIn, task) once, with the
+// engagement metric that applies to it:
 //   email → reached = delivered, open% / reply%
 //   call  → reached = dials (completed + no-answer), connect% = completed/dials
 //   linkedin / task → manual touchpoints, no engagement metrics at source (—)
-// Aggregated across all sequences at (step_order, step_type). Region + pillar scope it.
+// Aggregated across ALL cadence positions (step_order collapsed) so a type isn't
+// repeated at every step number. Region + pillar scope it.
 export async function getOutreachSteps(filters = {}) {
   const rows = await fetchAll(() => {
     let q = supabase
@@ -846,16 +849,16 @@ export async function getOutreachSteps(filters = {}) {
     return q
   }, ['id']) // unique PK (1,150 rows — was truncated at 1000 before)
 
-  // One entry per (step_order, step_type) — keeps every step type visible.
+  // One entry per step TYPE — aggregate across ALL cadence positions so a type
+  // (e.g. "Auto Email") appears ONCE, not repeated at every step number.
   const groups = new Map()
   for (const r of rows) {
-    const key = `${r.step_order}\u0000${r.step_type}`
+    const key = r.step_type
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(r)
   }
   const allSteps = [...groups.values()]
     .map((rs) => {
-      const step = rs[0].step_order
       const type = rs[0].step_type
       const email = isEmailStep(type)
       const isCall = type === 'call'
@@ -866,20 +869,23 @@ export async function getOutreachSteps(filters = {}) {
       const noAnswer = sum(rs, 'calls_no_answer')
       const dials = completed + noAnswer
       return {
-        step,
         type,
         label: humanizeStepType(type),
         email,
         isCall,
-        count: rs.length, // # sequences using this step type at this position
+        count: rs.length, // # of cadence-step slots of this type across all sequences
         reached: email ? delivered : isCall ? dials : NA,
         openRate: email && delivered ? opens / delivered : NA,
         replyRate: email && delivered ? replies / delivered : NA,
         connectRate: isCall && dials ? completed / dials : NA,
       }
     })
-    // cadence order, then type within a step
-    .sort((a, b) => a.step - b.step || a.type.localeCompare(b.type))
+    // engagement types first (by volume reached), manual touchpoints after
+    .sort((a, b) => {
+      const ar = isNA(a.reached) ? -1 : a.reached
+      const br = isNA(b.reached) ? -1 : b.reached
+      return br - ar || b.count - a.count || a.type.localeCompare(b.type)
+    })
 
   return { allSteps, hasData: rows.length > 0 }
 }
