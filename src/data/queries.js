@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabaseClient'
 import {
   REPORTING_YEAR,
   HISTORY_START_YEAR,
+  REPORTING_END_ISO,
   PILLAR_UNMAPPED,
   NA,
   isNA,
@@ -23,8 +24,18 @@ const FACT_COLS =
 
 // Translate the shared filter object into PostgREST predicates. Every active
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
-// Today (YYYY-MM-DD, browser runtime) — the upper bound for "to date" reads.
+// Today (YYYY-MM-DD, browser runtime).
 const todayIso = () => new Date().toISOString().slice(0, 10)
+
+// Upper bound for every "to date" read. The reporting window is fixed to H1 2026
+// (client, 1 Jul 2026), so we cap at the EARLIER of today and REPORTING_END_ISO
+// (Q2 2026 close). Because the window has closed, this is 2026-06-30 in practice
+// — so Q3/Q4 return empty and YTD stops at end of Q2 (never leaks Q3+ rows).
+// If REPORTING_END_ISO is set null later, this falls back to plain "today".
+const toDateCapIso = () => {
+  const today = todayIso()
+  return REPORTING_END_ISO && REPORTING_END_ISO < today ? REPORTING_END_ISO : today
+}
 
 // QUARTER SCOPE:
 //   q1..q4 → that quarter of REPORTING_YEAR (2026).
@@ -42,7 +53,7 @@ function applyFilters(q, f = {}) {
   } else {
     q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward
   }
-  q = q.lte('activity_date', todayIso()) // to-date cap (see note above)
+  q = q.lte('activity_date', toDateCapIso()) // to-date cap, capped at Q2 2026 close (see note above)
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   if (f.channel) q = q.eq('channel_name', f.channel)
   if (f.campaign && f.campaign !== 'all') q = q.eq('campaign_key', f.campaign)
@@ -166,8 +177,12 @@ export async function getRetention(filters = {}) {
     if (filters.quarter && filters.quarter !== 'ytd') {
       q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
     } else {
-      q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward (matches applyFilters)
+      // ytd = REPORTING_YEAR (2026) ONLY — not "2026 onward". Renewals carry future
+      // CloseDates (2027/2028), so an open-ended gte leaked future-dated won renewals
+      // into the 2026 figure. Bound to the single reporting year (client: 2026-only).
+      q = q.eq('year', REPORTING_YEAR)
     }
+    q = q.lte('activity_date', toDateCapIso()) // to-date cap (Q2 2026 close) — drop future/Q3+ renewals
     if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
     return q
   }, ['fact_id'])
@@ -198,12 +213,13 @@ export async function getMeetings(filters = {}) {
   const rows = await fetchAll(() => {
     let q = supabase
       .from('v_meetings')
-      .select('fact_id,region_code,year,quarter,meeting_count')
+      .select('fact_id,region_code,year,quarter,activity_date,meeting_count')
     if (filters.quarter && filters.quarter !== 'ytd') {
       q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
     } else {
       q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward (matches applyFilters)
     }
+    q = q.lte('activity_date', toDateCapIso()) // to-date cap (Q2 2026 close) — no Q3+ meetings
     if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
     return q
   }, ['fact_id'])
@@ -600,6 +616,7 @@ export async function getEvents(filters = {}) {
     } else {
       q = q.gte('year', HISTORY_START_YEAR)
     }
+    q = q.lte('activity_date', toDateCapIso()) // to-date cap (Q2 2026 close) — no Q3+ webinars
     if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
     return q
   }, ['event_key'])
@@ -905,6 +922,7 @@ function applyWebFilters(q, f = {}) {
   } else {
     q = q.gte('year', HISTORY_START_YEAR)
   }
+  q = q.lte('activity_date', toDateCapIso()) // to-date cap (Q2 2026 close) — GA4/SEO stop at end of Q2
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   return q
 }

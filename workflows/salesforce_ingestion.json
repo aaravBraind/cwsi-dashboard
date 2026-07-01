@@ -422,7 +422,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, StageName, Probability, Amount, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE IsClosed = false"
+        "query": "SELECT Id, StageName, Probability, Amount, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE IsClosed = false AND CreatedDate >= 2026-01-01T00:00:00Z"
       },
       "id": "a1f0e2c3-4444-4aaa-8bbb-000000000009",
       "name": "SF: Get Open Opps",

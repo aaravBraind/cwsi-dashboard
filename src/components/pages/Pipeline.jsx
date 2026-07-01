@@ -162,7 +162,7 @@ function StageDistribution() {
         <div className="left">
           <div className="panel-title">Pipeline Stage Distribution</div>
           <div className="panel-sub">
-            Open opportunities by stage · count &amp; value{snapshotDate ? ` · snapshot ${snapshotDate}` : ''}
+            Open opportunities (created 2026) by stage · count &amp; value{snapshotDate ? ` · snapshot ${snapshotDate}` : ''}
           </div>
         </div>
         <span className="chip blue">open pipeline</span>

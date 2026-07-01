@@ -23,7 +23,7 @@ export default function Overview() {
             Marketing <span className="accent">Intelligence</span> Dashboard
           </div>
           <div className="page-sub">
-            Quarterly KPI view · FY2026 · Source: Salesforce (seed)
+            Quarterly KPI view · FY2026 · Source: Salesforce
           </div>
         </div>
         <QuarterPills />
