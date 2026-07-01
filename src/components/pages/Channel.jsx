@@ -216,6 +216,22 @@ function Body({ data, isLinkedIn, isEmail }) {
         <Kpi label="Pipeline £ · scoped" val={gbp(totals.pipeline)} />
       </div>
 
+      <div className="callout amber" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </div>
+        <div className="callout-body">
+          <strong>A note on campaign names &amp; the year in them.</strong> Some Salesforce campaigns are
+          named after the year they launched (e.g. <em>“2024 …”</em>, <em>“2023 …”</em>) but are long-running
+          and still active. <strong>The year in the name is just a label, not the period of the data.</strong>{' '}
+          Every figure in this table is the campaign’s <strong>real 2026 activity only</strong> (Q1–Q2 2026,
+          the current reporting window) — any earlier-year activity for the same campaign is excluded by the
+          2026 scope. So a campaign named “2024 …” can correctly show 2026 numbers here.
+        </div>
+      </div>
+
       <div className="panel">
         <div className="panel-head">
           <div className="left">
@@ -310,7 +326,7 @@ function EmailEngagementSnapshot() {
   if (s.isError) return <ErrorState error={s.error} />
   if (!s.data || !s.data.hasData)
     return (
-      <EmptyState message="No email snapshot for this region yet — re-import & run the Salesforce workflow to populate emails-sent." />
+      <EmptyState message="No 2026 email-send data in Salesforce for this scope. Emails-sent (Campaign NumberSent) is only recorded on pre-2026 legacy campaigns, which are excluded from this 2026 view; no 2026 email campaign has a send count in this org." />
     )
 
   const { totals, campaigns, snapshotDate } = s.data

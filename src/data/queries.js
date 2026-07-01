@@ -539,13 +539,32 @@ export async function getLinkedInSnapshot(filters = {}) {
 // Salesforce (Campaign.NumberSent); delivered/opens/clicks/CTR are NOT in this org
 // (no Account Engagement objects) → returned as NA. Unsubscribe likewise not shown.
 export async function getEmailEngagement(filters = {}) {
-  const rows = await fetchAll(() => {
+  const allRows = await fetchAll(() => {
     let q = supabase
       .from('v_email_engagement')
       .select('campaign_key,campaign_name,region_code,snapshot_date,emails_sent,emails_delivered,email_opens,email_clicks')
     if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
     return q
   }, ['campaign_key']) // unique PK
+
+  // 2026 SCOPE: fact_email_engagement stores a LIFETIME NumberSent with no
+  // activity-year, so a legacy campaign (e.g. a 2021/2022 send) would otherwise
+  // surface here regardless of the reporting window. Restrict to campaigns that
+  // actually had Email-channel activity inside the window (v_fact_enriched,
+  // year >= 2026, capped at Q2 close) — a campaign is "in scope" if it appears
+  // there. NOT region-filtered (a campaign is a 2026 campaign globally); the
+  // region filter still applies to the engagement rows above.
+  const active = await fetchAll(() =>
+    supabase
+      .from('v_fact_enriched')
+      .select('fact_id,campaign_key')
+      .eq('channel_name', 'Email')
+      .gte('year', HISTORY_START_YEAR)
+      .lte('activity_date', toDateCapIso()),
+    ['fact_id'],
+  )
+  const inScope = new Set(active.map((r) => r.campaign_key))
+  const rows = allRows.filter((r) => inScope.has(r.campaign_key))
 
   const snapshotDate = rows.reduce((mx, r) => (r.snapshot_date > mx ? r.snapshot_date : mx), null)
 
