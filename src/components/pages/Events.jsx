@@ -179,6 +179,23 @@ function FunnelAndCampaigns({ det, type }) {
         <Kpi label="Pipeline £ · scoped" val={gbp(t.pipeline)} sub={`${gbp(t.won)} closed-won`} />
       </div>
 
+      <div className="callout amber" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </div>
+        <div className="callout-body">
+          <strong>A note on event names &amp; the year in them.</strong> Some Salesforce event campaigns are
+          named after the date the event was held (e.g. <em>“25.09.2025 …”</em>, <em>“… Event 2024”</em>) but
+          stay open as attendees keep progressing. <strong>The year in the name is just a label, not the period
+          of the data.</strong> Every figure here is the campaign’s <strong>real 2026 activity only</strong>{' '}
+          (Q1–Q2 2026) — e.g. an attendee from a 2024/2025 event whose opportunity reached SQL in 2026. Earlier-year
+          activity for the same campaign is excluded by the 2026 scope, so an older-named event can correctly show
+          2026 numbers here.
+        </div>
+      </div>
+
       <div className="panel">
         <div className="panel-head">
           <div className="left">
