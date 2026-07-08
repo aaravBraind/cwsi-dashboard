@@ -30,11 +30,11 @@ export default function Email() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>What's shown here:</strong> the four whitepaper-download &amp; workflow campaigns —
-          <strong> Data That Moves Your Business Forward</strong>, <strong>Apple for Enterprise Tech Deep Dive</strong>,
-          <strong> Becoming Frontier: Leading the Next Phase of AI</strong>, and the <strong>Microsoft E7 Offering
-          Workflow</strong>. Figures are the <strong>commercial funnel</strong> (leads through to revenue) attributed to
-          those campaigns in Salesforce. Region &amp; quarter scope every figure.
+          <strong>What's shown here:</strong> your <strong>whitepaper-download campaigns</strong> and the
+          <strong> Salesforce email workflows</strong> — including the four you named (Data That Moves, Apple for
+          Enterprise Tech Deep Dive, Becoming Frontier, and the Microsoft E7 Offering Workflow). Figures are the{' '}
+          <strong>commercial funnel</strong> (leads through to revenue) attributed to those campaigns in Salesforce.
+          Region &amp; quarter scope every figure.
         </div>
       </div>
 
@@ -59,7 +59,7 @@ const Stage = ({ name, val, extra }) => (
 const opps = (v) => (isNA(v) ? '—' : num(v))
 
 function Body({ data, ov }) {
-  const { totals, campaigns, matchedCount, targetCount } = data
+  const { totals, campaigns, matchedCount } = data
   return (
     <>
       {/* Commercial funnel — Margot's requested order (same style as Overview) */}
@@ -67,9 +67,9 @@ function Body({ data, ov }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} campaigns · current view</div>
+            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} whitepaper &amp; workflow campaigns · current view</div>
           </div>
-          <span className="chip blue">{matchedCount} of {targetCount} campaigns</span>
+          <span className="chip blue">{matchedCount} campaigns</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
@@ -97,6 +97,7 @@ function Body({ data, ov }) {
             <thead>
               <tr>
                 <th>Campaign</th>
+                <th>Type</th>
                 <th className="r">Leads <Explain id="leads" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
@@ -109,6 +110,7 @@ function Body({ data, ov }) {
               {campaigns.map((c) => (
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
+                  <td><span className={`chip ${c.kind === 'Whitepaper' ? 'blue' : 'neu'}`}>{c.kind}</span></td>
                   <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
@@ -119,6 +121,7 @@ function Body({ data, ov }) {
               ))}
               <tr className="total">
                 <td>Total · {matchedCount} campaigns</td>
+                <td />
                 <td className="r mono">{num(totals.leads)}</td>
                 <td className="r mono">{num(totals.mql)}</td>
                 <td className="r mono">{num(totals.sql)}</td>

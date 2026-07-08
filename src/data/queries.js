@@ -543,33 +543,38 @@ export async function getChannel(channelName, filters, excludeTypes = null) {
   }
 }
 
-// Email page (Margot, Jul 2026): the whitepaper-download + workflow campaigns she
-// named, scoped by explicit campaign_key — NOT by channel/type. Three are stored in
-// Salesforce as "Content / White Paper" (so they otherwise sit under Organic SEO) and
-// one as "Email"; scoping by type showed the wrong set. All the fact data already
-// exists in v_fact_enriched (no re-ingest needed) — we just read these keys. There are
-// NO email-engagement metrics: this org has no send/open data (NumberSent = 0, no
-// Account Engagement), so the page shows the COMMERCIAL funnel only. Editable list —
-// add a key here if CWSI adds a campaign to the programme.
-export const EMAIL_CAMPAIGN_KEYS = [
-  '701Si00000V3LvjIAF', // Q1 2026 - Data That Moves Your Business Forward Whitepaper
-  '701Tm00000cHsHgIAK', // 2026 - Apple for Enterprise Tech Deep Dive - Whitepaper
-  '701Tm00000c9ygeIAA', // 2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
-  '701Tm00000az9RSIAY', // 2026 - Microsoft E7 Offering Workflow
-]
+// Email page (Margot, Jul 2026): "whitepaper download promotion campaigns and
+// Salesforce workflows". Scoped by campaign_type, NOT channel — Content/White Paper
+// otherwise falls under Organic SEO. We include:
+//   • EVERY "Content/White Paper" campaign (the whitepapers), and
+//   • the genuine email WORKFLOWS (type "Email" whose name contains "workflow"),
+// which naturally includes the four campaigns Margot named. We deliberately EXCLUDE
+// the bulk list-import / mis-typed "Email" campaigns she flagged as the wrong ones
+// (e.g. "FS (M) Data Security", "Legal (large)", "Jim Outreach Sequences", a
+// mis-typed webinar) — those are not whitepapers or workflows. All the fact data is
+// already in v_fact_enriched (no re-ingest). NO email-engagement metrics (this org has
+// no send/open data, no Account Engagement) → the page shows the COMMERCIAL funnel only.
+const EMAIL_INCLUDE_TYPES = ['Content/White Paper', 'Email']
+const isEmailWorkflow = (name) => /workflow/i.test(String(name || ''))
+function isEmailReportRow(r) {
+  if (r.campaign_type === 'Content/White Paper') return true // all whitepapers
+  if (r.campaign_type === 'Email') return isEmailWorkflow(r.campaign_name) // workflows only
+  return false
+}
 
 export async function getEmailReport(filters = {}) {
   // region + quarter only — never the global channel/campaign/pillar (these campaigns
-  // span the SEO + Email channels; the scoping is by campaign_key below).
+  // span the SEO + Email channels; the scoping is by campaign_type/name below).
   const scoped = { region: filters.region, quarter: filters.quarter }
-  const rows = await fetchAll(
-    () => applyFilters(supabase.from('v_fact_enriched').select(FACT_COLS), scoped).in('campaign_key', EMAIL_CAMPAIGN_KEYS),
+  const rows = (await fetchAll(
+    () => applyFilters(supabase.from('v_fact_enriched').select(FACT_COLS), scoped).in('campaign_type', EMAIL_INCLUDE_TYPES),
     ['fact_id'],
-  )
+  )).filter(isEmailReportRow)
   const campaigns = [...groupBy(rows, 'campaign_key')]
     .map(([key, rs]) => ({
       campaignKey: key,
       campaignName: rs[0]?.campaign_name ?? key,
+      kind: rs[0]?.campaign_type === 'Content/White Paper' ? 'Whitepaper' : 'Workflow',
       leads: sum(rs, 'leads'),
       mql: sum(rs, 'mql_count'),
       sql: sum(rs, 'sql_count'),
@@ -582,7 +587,6 @@ export async function getEmailReport(filters = {}) {
     totals: funnelOf(rows),
     campaigns,
     hasData: rows.length > 0,
-    targetCount: EMAIL_CAMPAIGN_KEYS.length,
     matchedCount: campaigns.length,
   }
 }
