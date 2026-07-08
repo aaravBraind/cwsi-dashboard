@@ -60,6 +60,13 @@ export const I = {
       <path d="M22 2L12 12" />
     </>
   ),
+  // Clean open-eye (no slash) — used by the Explain "how we got this number" button.
+  eyeOpen: (
+    <>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -93,6 +100,13 @@ export const I = {
     <>
       <line x1="12" y1="2" x2="12" y2="22" />
       <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </>
+  ),
+  euro: (
+    <>
+      <path d="M18 6a7 7 0 1 0 0 12" />
+      <line x1="3" y1="10" x2="13" y2="10" />
+      <line x1="3" y1="14" x2="13" y2="14" />
     </>
   ),
   trend: (

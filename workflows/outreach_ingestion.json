@@ -1,187 +1,364 @@
 {
-    "nodes": [
-      {
-        "parameters": {
-          "content": "## Outreach.io -> fact_outreach_sequence_daily  (engagement, snapshot)\n\nSETUP AFTER IMPORT:\n1. \"Outreach: Get Sequences\" is pre-wired to the \"Outreach Sequence\" OAuth2 credential\n   and sends Accept: application/vnd.api+json.\n2. Region + pillar are parsed from the CWSI naming convention\n   (UK&I->UKI, BeLux, NL ; Secure X / Copilot->AI / Data Security->Data /\n    UEM->Endpoints / SecOps+Threat Protection->Operations).\n   Use SEQUENCE_MAP in the Code node ONLY to override a sequence the parser gets wrong.\n\nBEHAVIOUR:\n- Funnel = prospect-level unique counts: prospects=numContactedProspects,\n  opens=prospectOpenCount, clicks=prospectClickCount, replies=numRepliedProspects.\n- Counters are LIFETIME totals -> activity_date = run date (snapshot; same-day re-run upserts).\n- Test/Dummy sequences are skipped. meetings=0 (meetings/SQL/pipeline come from Salesforce).\n- Grain: one row per sequence per day. Engagement %s are computed in the dashboard view.\n",
-          "height": 360,
-          "width": 540
-        },
-        "id": "728159d3-5a07-4a82-8ff0-5a4e2d813003",
-        "name": "Sticky Note",
-        "type": "n8n-nodes-base.stickyNote",
-        "typeVersion": 1,
-        "position": [
-          0,
-          0
-        ]
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Outreach.io -> fact_outreach_sequence_daily  (engagement, snapshot)\n\nSETUP AFTER IMPORT:\n1. \"Outreach: Get Sequences\" is pre-wired to the \"Outreach Sequence\" OAuth2 credential\n   and sends Accept: application/vnd.api+json.\n2. Region + pillar are parsed from the CWSI naming convention\n   (UK&I->UKI, BeLux, NL ; Secure X / Copilot->AI / Data Security->Data /\n    UEM->Endpoints / SecOps+Threat Protection->Operations).\n   Use SEQUENCE_MAP in the Code node ONLY to override a sequence the parser gets wrong.\n\nBEHAVIOUR:\n- Funnel = prospect-level unique counts: prospects=numContactedProspects,\n  opens=prospectOpenCount, clicks=prospectClickCount, replies=numRepliedProspects.\n- Counters are LIFETIME totals -> activity_date = run date (snapshot; same-day re-run upserts).\n- Test/Dummy sequences are skipped. meetings=0 (meetings/SQL/pipeline come from Salesforce).\n- Grain: one row per sequence per day. Engagement %s are computed in the dashboard view.\n",
+        "height": 360,
+        "width": 540
       },
-      {
-        "parameters": {
-          "rule": {
-            "interval": [
-              {
-                "triggerAtHour": 6
-              }
-            ]
-          }
-        },
-        "id": "14a45f93-0160-43b0-b18e-e62fe223aa76",
-        "name": "Schedule: Daily",
-        "type": "n8n-nodes-base.scheduleTrigger",
-        "typeVersion": 1.3,
-        "position": [
-          0,
-          464
-        ]
+      "id": "728159d3-5a07-4a82-8ff0-5a4e2d813003",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
       },
-      {
-        "parameters": {
-          "url": "https://api.outreach.io/api/v2/sequences?page[size]=1000",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "oAuth2Api",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Accept",
-                "value": "application/vnd.api+json"
-              }
-            ]
-          },
-          "options": {
+      "id": "14a45f93-0160-43b0-b18e-e62fe223aa76",
+      "name": "Schedule: Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.outreach.io/api/v2/sequences?page[size]=1000",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.api+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
             "response": {
-              "response": {
-                "responseFormat": "json"
-              }
+              "responseFormat": "json"
             }
-          }
-        },
-        "id": "f351fd09-82ee-45f2-b490-1a8c3753eb29",
-        "name": "Outreach: Get Sequences",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.4,
-        "position": [
-          240,
-          464
-        ],
-        "credentials": {
-          "oAuth2Api": {
-            "id": "GyVW4j5ZbEKjDTRQ",
-            "name": "Outreach Sequence"
           }
         }
       },
-      {
-        "parameters": {
-          "jsCode": "// Outreach sequences -> fact_outreach_sequence_daily  (SNAPSHOT per run).\n// Sequence-object counters are LIFETIME totals -> activity_date = run date (upserts in place).\n// Funnel uses PROSPECT-LEVEL unique counts (so rates read as \"% of prospects\"):\n//   prospects = numContactedProspects, opens = prospectOpenCount,\n//   clicks = prospectClickCount, replies = numRepliedProspects.\n// Region/pillar are derived from the CWSI naming convention; SEQUENCE_MAP overrides everything.\n// Meetings/SQL/pipeline are NOT in the Outreach API (they come from Salesforce) -> meetings = 0.\n\n// =====================================================================\n// OPTIONAL manual overrides — only for sequences the parser gets wrong.\n//   region: 'UKI' | 'BeLux' | 'NL' | 'UNASSIGNED'\n//   pillar: one of the 5 Secure areas, or null\nconst SEQUENCE_MAP = {\n  // '173': { region: 'UKI', pillar: 'Secure Operations' },\n};\n// =====================================================================\n\nconst REGIONS = ['UKI', 'BeLux', 'NL', 'UNASSIGNED'];\nconst PILLARS = ['Secure AI', 'Secure Data', 'Secure Endpoints', 'Secure Identity', 'Secure Operations'];\nconst SKIP = /dummy|(^|[^a-z])test\\b|test of sales|test sales|test \\d/i;   // drop test/dummy sequences\n\nfunction regionFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/belux/.test(n)) return 'BeLux';\n  if (/(^|[^a-z])nl([^a-z]|$)|netherlands|gemeente/.test(n)) return 'NL';\n  if (/uk&i|uk & i|\\buki\\b|united kingdom|\\buk\\b|ireland|dublin/.test(n)) return 'UKI';\n  return 'UNASSIGNED';\n}\nfunction pillarFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/secure ai|copilot|(^|[^a-z])ai([^a-z]|$)|agents? 365/.test(n)) return 'Secure AI';\n  if (/secure data|data security|data is an asset/.test(n)) return 'Secure Data';\n  if (/secure endpoint|endpoint|\\buem\\b|device/.test(n)) return 'Secure Endpoints';\n  if (/secure identity|identity/.test(n)) return 'Secure Identity';\n  if (/secure operations|secops|threat protection|frontline operations/.test(n)) return 'Secure Operations';\n  return null;\n}\nfunction pick(a, names) { for (const k of names) { if (a[k] != null) return Number(a[k]) || 0; } return 0; }\n\nconst today = new Date().toISOString().slice(0, 10);\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const seq of list) {\n    if (!seq || seq.id == null) continue;\n    const a = seq.attributes || {};\n    const id = String(seq.id);\n    const name = a.name || '';\n    if (SKIP.test(name)) continue;\n\n    let region = null, pillar = null;\n    if (SEQUENCE_MAP[id]) { region = SEQUENCE_MAP[id].region; pillar = SEQUENCE_MAP[id].pillar; }\n    if (!region) region = regionFromName(name);\n    if (!pillar) pillar = pillarFromName(name);\n    if (REGIONS.indexOf(region) < 0) region = 'UNASSIGNED';\n    if (pillar && PILLARS.indexOf(pillar) < 0) pillar = null;\n\n    out.push({ json: {\n      activity_date: today,\n      sequence_id: id,\n      sequence_name: name,\n      region_code: region,\n      pillar_name: pillar,                                   // null allowed\n      prospects: pick(a, ['numContactedProspects', 'prospectContactedCount', 'scheduleCount']),\n      opens:     pick(a, ['prospectOpenCount', 'openCount']),\n      clicks:    pick(a, ['prospectClickCount', 'clickCount']),\n      replies:   pick(a, ['numRepliedProspects', 'prospectReplyCount', 'replyCount']),\n      meetings:  0,\n      enabled:   a.enabled === true\n    } });\n  }\n}\nif (out.length === 0) {\n  throw new Error('Outreach: no sequences after parse - check the OAuth2 credential, scope read_sequences, and the Accept header.');\n}\nreturn out;"
-        },
-        "id": "7e9f62a1-becc-4d91-879a-b887704096b7",
-        "name": "Map Sequences → Fact Rows",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          480,
-          464
-        ]
-      },
-      {
-        "parameters": {
-          "operation": "executeQuery",
-          "query": "INSERT INTO fact_outreach_sequence_daily\n  (activity_date, sequence_id, sequence_name, region_id, pillar_id,\n   prospects, opens, clicks, replies, meetings, enabled, source)\nVALUES (\n  $1, $2, $3,\n  (SELECT region_id FROM dim_region WHERE region_code = $4),\n  (SELECT pillar_id FROM dim_practice_pillar WHERE pillar_name = $5),\n  $6, $7, $8, $9, $10, $11::boolean, 'outreach')\nON CONFLICT ON CONSTRAINT uq_outreach_seq_grain DO UPDATE SET\n  sequence_name = EXCLUDED.sequence_name,\n  region_id     = EXCLUDED.region_id,\n  pillar_id     = EXCLUDED.pillar_id,\n  prospects     = EXCLUDED.prospects,\n  opens         = EXCLUDED.opens,\n  clicks        = EXCLUDED.clicks,\n  replies       = EXCLUDED.replies,\n  meetings      = EXCLUDED.meetings,\n  enabled       = EXCLUDED.enabled,\n  loaded_at     = now();",
-          "options": {
-            "queryBatching": "independently",
-            "queryReplacement": "={{ [$json.activity_date, $json.sequence_id, $json.sequence_name, $json.region_code, $json.pillar_name, $json.prospects, $json.opens, $json.clicks, $json.replies, $json.meetings, $json.enabled] }}"
-          }
-        },
-        "id": "cd4c04d5-4b7c-44ae-b081-88354b19078b",
-        "name": "Upsert fact_outreach_sequence_daily",
-        "type": "n8n-nodes-base.postgres",
-        "typeVersion": 2.6,
-        "position": [
-          720,
-          464
-        ],
-        "credentials": {
-          "postgres": {
-            "id": "ch1cQkzV21w5Wpxf",
-            "name": "CWSI"
-          }
+      "id": "f351fd09-82ee-45f2-b490-1a8c3753eb29",
+      "name": "Outreach: Get Sequences",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        464
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "GyVW4j5ZbEKjDTRQ",
+          "name": "Outreach Sequence"
         }
-      },
-      {
-        "parameters": {
-          "operation": "executeQuery",
-          "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('outreach', CURRENT_DATE, $1, $2, 0, 0);",
-          "options": {
-            "queryBatching": "single",
-            "queryReplacement": "={{ [ $('Map Sequences → Fact Rows').all().length, $('Map Sequences → Fact Rows').all().length ] }}"
-          }
-        },
-        "id": "482ad312-b5ad-412b-9223-7af73cef0de1",
-        "name": "Write data_quality_log",
-        "type": "n8n-nodes-base.postgres",
-        "typeVersion": 2.6,
-        "position": [
-          960,
-          464
-        ],
-        "executeOnce": true,
-        "credentials": {
-          "postgres": {
-            "id": "ch1cQkzV21w5Wpxf",
-            "name": "CWSI"
-          }
-        }
-      }
-    ],
-    "connections": {
-      "Schedule: Daily": {
-        "main": [
-          [
-            {
-              "node": "Outreach: Get Sequences",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Outreach: Get Sequences": {
-        "main": [
-          [
-            {
-              "node": "Map Sequences → Fact Rows",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Map Sequences → Fact Rows": {
-        "main": [
-          [
-            {
-              "node": "Upsert fact_outreach_sequence_daily",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Upsert fact_outreach_sequence_daily": {
-        "main": [
-          [
-            {
-              "node": "Write data_quality_log",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
       }
     },
-    "pinData": {},
-    "meta": {
-      "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
+    {
+      "parameters": {
+        "jsCode": "// Outreach sequences -> fact_outreach_sequence_daily  (SNAPSHOT per run).\n// Sequence-object counters are LIFETIME totals -> activity_date = run date (upserts in place).\n// Funnel uses PROSPECT-LEVEL unique counts (so rates read as \"% of prospects\"):\n//   prospects = numContactedProspects, opens = prospectOpenCount,\n//   clicks = prospectClickCount, replies = numRepliedProspects.\n// Region/pillar are derived from the CWSI naming convention; SEQUENCE_MAP overrides everything.\n// Meetings/SQL/pipeline are NOT in the Outreach API (they come from Salesforce) -> meetings = 0.\n\n// =====================================================================\n// OPTIONAL manual overrides — only for sequences the parser gets wrong.\n//   region: 'UKI' | 'BeLux' | 'NL' | 'UNASSIGNED'\n//   pillar: one of the 5 Secure areas, or null\nconst SEQUENCE_MAP = {\n  // '173': { region: 'UKI', pillar: 'Secure Operations' },\n};\n// =====================================================================\n\nconst REGIONS = ['UKI', 'BeLux', 'NL', 'UNASSIGNED'];\nconst PILLARS = ['Secure AI', 'Secure Data', 'Secure Endpoints', 'Secure Identity', 'Secure Operations'];\nconst SKIP = /dummy|(^|[^a-z])test\\b|test of sales|test sales|test \\d/i;   // drop test/dummy sequences\n\nfunction regionFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/belux/.test(n)) return 'BeLux';\n  if (/(^|[^a-z])nl([^a-z]|$)|netherlands|gemeente/.test(n)) return 'NL';\n  if (/uk&i|uk & i|\\buki\\b|united kingdom|\\buk\\b|ireland|dublin/.test(n)) return 'UKI';\n  return 'UNASSIGNED';\n}\nfunction pillarFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/secure ai|copilot|(^|[^a-z])ai([^a-z]|$)|agents? 365/.test(n)) return 'Secure AI';\n  if (/secure data|data security|data is an asset/.test(n)) return 'Secure Data';\n  if (/secure endpoint|endpoint|\\buem\\b|device/.test(n)) return 'Secure Endpoints';\n  if (/secure identity|identity/.test(n)) return 'Secure Identity';\n  if (/secure operations|secops|threat protection|frontline operations/.test(n)) return 'Secure Operations';\n  return null;\n}\nfunction pick(a, names) { for (const k of names) { if (a[k] != null) return Number(a[k]) || 0; } return 0; }\n\nconst today = new Date().toISOString().slice(0, 10);\nconst out = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const seq of list) {\n    if (!seq || seq.id == null) continue;\n    const a = seq.attributes || {};\n    const id = String(seq.id);\n    const name = a.name || '';\n    if (SKIP.test(name)) continue;\n\n    let region = null, pillar = null;\n    if (SEQUENCE_MAP[id]) { region = SEQUENCE_MAP[id].region; pillar = SEQUENCE_MAP[id].pillar; }\n    if (!region) region = regionFromName(name);\n    if (!pillar) pillar = pillarFromName(name);\n    if (REGIONS.indexOf(region) < 0) region = 'UNASSIGNED';\n    if (pillar && PILLARS.indexOf(pillar) < 0) pillar = null;\n\n    out.push({ json: {\n      activity_date: today,\n      sequence_id: id,\n      sequence_name: name,\n      region_code: region,\n      pillar_name: pillar,                                   // null allowed\n      prospects: pick(a, ['numContactedProspects', 'prospectContactedCount', 'scheduleCount']),\n      opens:     pick(a, ['prospectOpenCount', 'openCount']),\n      clicks:    pick(a, ['prospectClickCount', 'clickCount']),\n      replies:   pick(a, ['numRepliedProspects', 'prospectReplyCount', 'replyCount']),\n      meetings:  0,\n      enabled:   a.enabled === true\n    } });\n  }\n}\nif (out.length === 0) {\n  throw new Error('Outreach: no sequences after parse - check the OAuth2 credential, scope read_sequences, and the Accept header.');\n}\nreturn out;"
+      },
+      "id": "7e9f62a1-becc-4d91-879a-b887704096b7",
+      "name": "Map Sequences → Fact Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_outreach_sequence_daily\n  (activity_date, sequence_id, sequence_name, region_id, pillar_id,\n   prospects, opens, clicks, replies, meetings, enabled, source)\nVALUES (\n  $1, $2, $3,\n  (SELECT region_id FROM dim_region WHERE region_code = $4),\n  (SELECT pillar_id FROM dim_practice_pillar WHERE pillar_name = $5),\n  $6, $7, $8, $9, $10, $11::boolean, 'outreach')\nON CONFLICT ON CONSTRAINT uq_outreach_seq_grain DO UPDATE SET\n  sequence_name = EXCLUDED.sequence_name,\n  region_id     = EXCLUDED.region_id,\n  pillar_id     = EXCLUDED.pillar_id,\n  prospects     = EXCLUDED.prospects,\n  opens         = EXCLUDED.opens,\n  clicks        = EXCLUDED.clicks,\n  replies       = EXCLUDED.replies,\n  meetings      = EXCLUDED.meetings,\n  enabled       = EXCLUDED.enabled,\n  loaded_at     = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.activity_date, $json.sequence_id, $json.sequence_name, $json.region_code, $json.pillar_name, $json.prospects, $json.opens, $json.clicks, $json.replies, $json.meetings, $json.enabled] }}"
+        }
+      },
+      "id": "cd4c04d5-4b7c-44ae-b081-88354b19078b",
+      "name": "Upsert fact_outreach_sequence_daily",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        720,
+        464
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO data_quality_log (source, run_date, rows_in, rows_written, issues, issue_pct)\nVALUES ('outreach', CURRENT_DATE, $1, $2, 0, 0);",
+        "options": {
+          "queryBatching": "single",
+          "queryReplacement": "={{ [ $('Map Sequences → Fact Rows').all().length, $('Map Sequences → Fact Rows').all().length ] }}"
+        }
+      },
+      "id": "482ad312-b5ad-412b-9223-7af73cef0de1",
+      "name": "Write data_quality_log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        464
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## CC-6 prospect membership -> fact_outreach_prospect (BATCHED)\n\nADDITIVE branch (sequence-engagement branch untouched).\nGet Sequences -> Pick Marketing Sequences (1 item per non-test seq WITH prospects)\n-> Loop Over Sequences (batch 20) -> Get Sequence States -> Map -> Upsert -> back to Loop.\n\nMEMORY: batching + sparse fieldset `fields[prospect]=emails` keep RAM flat\n(the unbatched full-prospect fetch OOMs on 121 sequences).\nPer HTTP call = ONE sequence (filter[sequence][id]), single page[size]=1000 (no sequence\nhas >1000 prospects, so no pagination needed -> no loop risk).\n\nVERIFY: scope prospects.read; prospect email at attributes.emails[0].",
+        "height": 320,
+        "width": 540
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e0",
+      "name": "Sticky Note CC-6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// CC-6: emit one item per real (non-test) sequence that has contacted prospects. These feed\n// a BATCH LOOP so we never hold all sequences' prospects in memory at once (OOM otherwise).\n// Covers every marketing/outbound sequence; the dashboard categorises by name (OR4).\nfunction pick(a, names){ for (const k of names){ if (a[k] != null) return Number(a[k]) || 0; } return 0; }\nconst SKIP = /dummy|(^|[^a-z])test\\b|test of sales|test sales|test \\d/i;\nconst ids = [];\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const seq of list) {\n    if (!seq || seq.id == null) continue;\n    const a = seq.attributes || {};\n    if (SKIP.test(a.name || '')) continue;\n    if (pick(a, ['numContactedProspects','prospectContactedCount','scheduleCount']) > 0) ids.push(String(seq.id));\n  }\n}\nreturn ids.map((id) => ({ json: { seq_id: id } }));"
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e1",
+      "name": "Pick Marketing Sequences",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 20,
+        "options": {}
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e2",
+      "name": "Loop Over Sequences",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        700,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.outreach.io/api/v2/sequenceStates?filter[sequence][id]={{ $json.seq_id }}&include=prospect&fields[prospect]=emails&page[size]=1000",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.api+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e3",
+      "name": "Outreach: Get Sequence States",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        920,
+        760
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "GyVW4j5ZbEKjDTRQ",
+          "name": "Outreach Sequence"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// CC-6: map one batch of /sequenceStates responses -> fact_outreach_prospect rows.\n// Sparse fieldset means prospects carry only `emails`. Sequence NAMES come from the\n// already-fetched 'Outreach: Get Sequences' node. Empty batch -> [] (do NOT throw; we loop).\nfunction regionFromName(nm) {\n  const n = String(nm || '').toLowerCase();\n  if (/belux/.test(n)) return 'BeLux';\n  if (/(^|[^a-z])nl([^a-z]|$)|netherlands|gemeente/.test(n)) return 'NL';\n  if (/uk&i|uk & i|\\buki\\b|united kingdom|\\buk\\b|ireland|dublin/.test(n)) return 'UKI';\n  return 'UNASSIGNED';\n}\nfunction firstEmail(p) {\n  const a = (p && p.attributes) || {};\n  if (Array.isArray(a.emails) && a.emails.length) return String(a.emails[0] || '');\n  if (Array.isArray(a.emailContacts) && a.emailContacts.length) {\n    const e = a.emailContacts[0]; return String((e && (e.email || e.value)) || '');\n  }\n  return '';\n}\nconst seqNameById = {};\nfor (const item of $('Outreach: Get Sequences').all()) {\n  const body = item.json || {};\n  const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : [body]);\n  for (const s of list) { if (s && s.id != null) seqNameById[String(s.id)] = (s.attributes && s.attributes.name) || null; }\n}\nconst rows = new Map();\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  const data = Array.isArray(body.data) ? body.data : [];\n  const included = Array.isArray(body.included) ? body.included : [];\n  const prospectById = {};\n  for (const inc of included) { if (inc.type === 'prospect') prospectById[String(inc.id)] = inc; }\n  for (const ss of data) {\n    const rel = ss.relationships || {};\n    const pid = rel.prospect && rel.prospect.data && String(rel.prospect.data.id);\n    const sid = rel.sequence && rel.sequence.data && String(rel.sequence.data.id);\n    if (!pid || !sid) continue;\n    const email = firstEmail(prospectById[pid]).trim().toLowerCase();\n    if (!email) continue;\n    const seqName = seqNameById[sid] || null;\n    const attrs = ss.attributes || {};\n    rows.set(pid + '|' + sid, { json: {\n      prospect_id: pid, sequence_id: sid, email: email,\n      sequence_name: seqName, region_code: regionFromName(seqName),\n      state: attrs.state || null, added_at: attrs.createdAt || null\n    }});\n  }\n}\nreturn [...rows.values()];"
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e4",
+      "name": "Map Prospect Memberships",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_outreach_prospect\n  (prospect_id, sequence_id, email, sequence_name, region_id, state, added_at, loaded_at)\nVALUES (\n  $1, $2, $3, $4,\n  (SELECT region_id FROM dim_region WHERE region_code = $5),\n  $6, $7, now())\nON CONFLICT ON CONSTRAINT pk_outreach_prospect DO UPDATE SET\n  email = EXCLUDED.email,\n  sequence_name = EXCLUDED.sequence_name,\n  region_id = EXCLUDED.region_id,\n  state = EXCLUDED.state,\n  added_at = EXCLUDED.added_at,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.prospect_id, $json.sequence_id, $json.email, $json.sequence_name, $json.region_code, $json.state, $json.added_at] }}"
+        }
+      },
+      "id": "cc600000-0000-4000-8000-0000000000e5",
+      "name": "Upsert fact_outreach_prospect",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1360,
+        760
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
     }
+  ],
+  "connections": {
+    "Schedule: Daily": {
+      "main": [
+        [
+          {
+            "node": "Outreach: Get Sequences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outreach: Get Sequences": {
+      "main": [
+        [
+          {
+            "node": "Map Sequences → Fact Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pick Marketing Sequences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Sequences → Fact Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_outreach_sequence_daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert fact_outreach_sequence_daily": {
+      "main": [
+        [
+          {
+            "node": "Write data_quality_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Marketing Sequences": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Sequences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Sequences": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Outreach: Get Sequence States",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outreach: Get Sequence States": {
+      "main": [
+        [
+          {
+            "node": "Map Prospect Memberships",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Prospect Memberships": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_outreach_prospect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert fact_outreach_prospect": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Sequences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "a95cb778eae0663b4dfe0798e4303eb96d7283a0fa7c7bd7d64566afea813e43"
   }
+}

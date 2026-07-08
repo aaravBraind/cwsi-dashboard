@@ -28,10 +28,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO fact_channel_daily\n  (campaign_key, region_id, channel_id, pillar_id, activity_date, source,\n   spend, impressions, leads, mql_count, sql_count, pipeline_value, closed_won_value, margin_value, opp_count, closed_won_count)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  (SELECT channel_id FROM dim_channel WHERE channel_name = $3),\n  NULL,\n  $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\nON CONFLICT ON CONSTRAINT uq_fact_grain DO UPDATE SET\n  channel_id = EXCLUDED.channel_id,   -- 15 Jun: propagate re-mapped channel (was frozen; channel_id not in uq_fact_grain)\n  spend = EXCLUDED.spend,\n  impressions = EXCLUDED.impressions,\n  leads = EXCLUDED.leads,\n  mql_count = EXCLUDED.mql_count,\n  sql_count = EXCLUDED.sql_count,\n  pipeline_value = EXCLUDED.pipeline_value,\n  closed_won_value = EXCLUDED.closed_won_value,\n  margin_value = EXCLUDED.margin_value,\n  opp_count = EXCLUDED.opp_count,\n  closed_won_count = EXCLUDED.closed_won_count,\n  loaded_at = now();",
+        "query": "INSERT INTO fact_channel_daily\n  (campaign_key, region_id, channel_id, pillar_id, activity_date, source,\n   spend, impressions, leads, mql_count, sql_count, pipeline_value, closed_won_value, margin_value, opp_count, closed_won_count, created_opp_count)\nVALUES (\n  $1,\n  (SELECT region_id FROM dim_region WHERE region_code = $2),\n  (SELECT channel_id FROM dim_channel WHERE channel_name = $3),\n  NULL,\n  $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\nON CONFLICT ON CONSTRAINT uq_fact_grain DO UPDATE SET\n  channel_id = EXCLUDED.channel_id,   -- 15 Jun: propagate re-mapped channel (was frozen; channel_id not in uq_fact_grain)\n  spend = EXCLUDED.spend,\n  impressions = EXCLUDED.impressions,\n  leads = EXCLUDED.leads,\n  mql_count = EXCLUDED.mql_count,\n  sql_count = EXCLUDED.sql_count,\n  pipeline_value = EXCLUDED.pipeline_value,\n  closed_won_value = EXCLUDED.closed_won_value,\n  margin_value = EXCLUDED.margin_value,\n  opp_count = EXCLUDED.opp_count,\n  closed_won_count = EXCLUDED.closed_won_count,\n  created_opp_count = EXCLUDED.created_opp_count,\n  loaded_at = now();",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ $json.campaign_key }},{{ $json.region_code }},{{ $json.channel_name }},{{ $json.activity_date }},{{ $json.source }},{{ $json.spend }},{{ $json.impressions }},{{ $json.leads }},{{ $json.mql_count }},{{ $json.sql_count }},{{ $json.pipeline_value }},{{ $json.closed_won_value }},{{ $json.margin_value }},{{ $json.opp_count }},{{ $json.closed_won_count }}"
+          "queryReplacement": "={{ $json.campaign_key }},{{ $json.region_code }},{{ $json.channel_name }},{{ $json.activity_date }},{{ $json.source }},{{ $json.spend }},{{ $json.impressions }},{{ $json.leads }},{{ $json.mql_count }},{{ $json.sql_count }},{{ $json.pipeline_value }},{{ $json.closed_won_value }},{{ $json.margin_value }},{{ $json.opp_count }},{{ $json.closed_won_count }},{{ $json.created_opp_count }}"
         }
       },
       "id": "c2577b9c-86b8-4923-8ee1-f25f41771c1b",
@@ -116,7 +116,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Aggregate Salesforce sources into fact_channel_daily rows at campaign + region + date grain.\n// MQL FIX (15 Jun): include CONVERTED leads. On lead conversion Salesforce rewrites the\n// CampaignMember to carry ContactId (LeadId becomes null), so the old `WHERE LeadId != null`\n// filter dropped ~574 of 580 MQLs. We now resolve members via LeadId OR ConvertedContactId.\nconst campaigns = $('SF: Get Campaigns').all().map((i) => i.json);\nconst opps = $('SF: Get Opportunities').all().map((i) => i.json);\nconst leads = $('SF: Get Leads').all().map((i) => i.json);\nconst members = $('SF: Get CampaignMembers').all().map((i) => i.json);\n\n// REGION (15 Jun): resolve off SF Lead.Lead_Region__c (leads) / Opportunity.Account.Region__c (opps),\n// fallback to Country/BillingCountry. Real region fields are ~86-99% populated vs dirty Country.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\n\nconst CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// MQL = 'reached MQL or beyond'. No MQL-date field exists in SF and Lead.Status is a snapshot, so a\n// lead that advanced past MQL would vanish from the count (this caused SQL>MQL). We count any status\n// that is NOT pre-MQL/disqualified. PROPOSED buckets — confirm w/ Margot (changes a board metric).\nconst PRE_MQL = new Set(['New','Not Contacted','Nurture','Wrong Contact','Dead-Disqualified','LinkedIn invite sent','LinkedIn contacted']);\nfunction isMql(status) { return !!status && !PRE_MQL.has(status); }\nconst UNQUALIFIED = ['Unqualified opp']; // 5% stage = not a real SQL\n\nconst campaignTypeById = {};\nfor (const c of campaigns) campaignTypeById[c.Id] = c.Type;\n\n// Lead lookup by Lead.Id AND by ConvertedContactId so converted leads stay attributed.\nconst leadById = {};\nconst leadByContactId = {};\nfor (const l of leads) {\n  const v = { status: l.Status, region: l.Lead_Region__c || l.Country };\n  leadById[l.Id] = v;\n  if (l.ConvertedContactId) leadByContactId[l.ConvertedContactId] = v;\n}\n\nconst agg = {};\nfunction rowFor(campaignKey, region, date) {\n  const key = campaignKey + '|' + region + '|' + date;\n  if (!agg[key]) {\n    agg[key] = {\n      campaign_key: campaignKey, region_code: region,\n      channel_name: channelForType(campaignTypeById[campaignKey]),\n      pillar_name: '', // TODO: pillar not derivable from Campaign.Type; needs name parse or custom field\n      activity_date: date, source: 'salesforce',\n      spend: 0, impressions: 0, leads: 0, mql_count: 0,\n      sql_count: 0, pipeline_value: 0, closed_won_value: 0, margin_value: 0, margin_incomplete: false, opp_count: 0, closed_won_count: 0\n    };\n  }\n  return agg[key];\n}\n\n// LEADS + MQL <- CampaignMember joined to Lead (incl. converted leads via ContactId)\nfor (const m of members) {\n  if (!m.CampaignId) continue;\n  const date = String(m.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const lead = (m.LeadId && leadById[m.LeadId]) || (m.ContactId && leadByContactId[m.ContactId]);\n  if (!lead) continue; // membership for a pure contact (never a lead) -> not a marketing lead\n  const r = rowFor(m.CampaignId, regionFromField(lead.region), date);\n  r.leads += 1;\n  if (isMql(lead.status)) r.mql_count += 1;\n}\n\n// SQL + PIPELINE + CLOSED-WON <- Opportunities\nfor (const o of opps) {\n  if (!o.CampaignId) continue;\n  // closed opps dated by CloseDate; open opps by CreatedDate\n  const date = String((o.IsClosed ? o.CloseDate : o.CreatedDate) || o.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const region = o.Account && (o.Account.Region__c || o.Account.BillingCountry);\n  const r = rowFor(o.CampaignId, regionFromField(region), date);\n  if (!UNQUALIFIED.includes(o.StageName) && (o.IsWon || !o.IsClosed)) r.opp_count += 1; // Opportunities = qualified & (open OR won); excludes unqualified + closed-lost -> subset of SQL\n  const amount = Number(o.Amount) || 0;\n  const qualified = !UNQUALIFIED.includes(o.StageName);\n  if (qualified) r.sql_count += 1;                 // every qualified opp = an SQL\n  if (o.IsWon) {\n    r.closed_won_value += amount; r.closed_won_count += 1;\n    // MARGIN FIX (23 Jun): a BLANK Vendor_Cost_Price__c must NOT be read as 0 (that made\n    // margin = full revenue on ~83% of won deals). Only count margin when a cost is present;\n    // a missing cost makes the row's margin UNKNOWN -> emitted as NULL, never full revenue.\n    const _cost = o.Vendor_Cost_Price__c;\n    const _hasCost = _cost !== null && _cost !== undefined && _cost !== '' && !Number.isNaN(Number(_cost));\n    if (_hasCost) r.margin_value += amount - Number(_cost); else r.margin_incomplete = true;\n  }\n  else if (qualified && !o.IsClosed) r.pipeline_value += amount; // open qualified pipeline\n}\n\n// spend & impressions are NOT in Salesforce -> stay 0 here (filled by T-3: spend sheet / LinkedIn)\n// Strip the internal margin_incomplete flag; any won deal with a blank vendor cost makes the\n// row's margin_value NULL (pending cost input) rather than overstated as full revenue.\nreturn Object.values(agg).map(({ margin_incomplete, ...json }) => ({ json: { ...json, margin_value: margin_incomplete ? null : json.margin_value } }));"
+        "jsCode": "// Aggregate Salesforce sources into fact_channel_daily rows at campaign + region + date grain.\n// MQL FIX (15 Jun): include CONVERTED leads. On lead conversion Salesforce rewrites the\n// CampaignMember to carry ContactId (LeadId becomes null), so the old `WHERE LeadId != null`\n// filter dropped ~574 of 580 MQLs. We now resolve members via LeadId OR ConvertedContactId.\nconst campaigns = $('SF: Get Campaigns').all().map((i) => i.json);\nconst opps = $('SF: Get Opportunities').all().map((i) => i.json);\nconst leads = $('SF: Get Leads').all().map((i) => i.json);\nconst members = $('SF: Get CampaignMembers').all().map((i) => i.json);\n\n// CURRENCY -> EUR (multi-currency org). Convert every amount from its record currency to EUR\n// using the org's CurrencyType rates, per-opp BEFORE aggregation. record->corporate = amount /\n// rate[iso]; corporate->EUR = x rate['EUR']. Unknown currency -> left as-is. Static (non-dated) rates.\nconst _rates = {};\nfor (const c of $('SF: Get Currency Rates').all().map((i) => i.json)) { _rates[c.IsoCode] = Number(c.ConversionRate); }\nconst _eurRate = _rates['EUR'] || 1;\nfunction toEur(amount, iso) { const a = Number(amount) || 0; const r = _rates[iso]; return (r && isFinite(r)) ? a / r * _eurRate : a; }\n\n// REGION (15 Jun): resolve off SF Lead.Lead_Region__c (leads) / Opportunity.Account.Region__c (opps),\n// fallback to Country/BillingCountry. Real region fields are ~86-99% populated vs dirty Country.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\n\nconst CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// MQL = reached the 'Marketing Qualified Lead' status OR beyond (Margot, Jul 2026 — replaces the\n// earlier 'not pre-MQL' exclusion guess). SF has no MQL-date field and Lead.Status is a snapshot, so a\n// lead that advanced past MQL keeps a later status — hence 'or beyond'. Statuses at/after MQL on the\n// CWSI ladder (per Phase-0 Q2): Marketing Qualified Lead, Meeting Booked, Trial. Converted/qualified\n// leads that carry a downstream status are additionally floored up in the app (MQL >= SQL). If CWSI\n// adds new post-MQL statuses, list them here.\nconst MQL_OR_BEYOND = new Set(['Marketing Qualified Lead','Meeting Booked','Trial']);\nfunction isMql(status) { return MQL_OR_BEYOND.has(status); }\nconst UNQUALIFIED = ['Unqualified opp']; // 5% stage = not a real SQL\n\nconst campaignTypeById = {};\nfor (const c of campaigns) campaignTypeById[c.Id] = c.Type;\n\n// Lead lookup by Lead.Id AND by ConvertedContactId so converted leads stay attributed.\nconst leadById = {};\nconst leadByContactId = {};\nfor (const l of leads) {\n  const v = { status: l.Status, region: l.Lead_Region__c || l.Country };\n  leadById[l.Id] = v;\n  if (l.ConvertedContactId) leadByContactId[l.ConvertedContactId] = v;\n}\n\nconst agg = {};\nfunction rowFor(campaignKey, region, date) {\n  const key = campaignKey + '|' + region + '|' + date;\n  if (!agg[key]) {\n    agg[key] = {\n      campaign_key: campaignKey, region_code: region,\n      channel_name: channelForType(campaignTypeById[campaignKey]),\n      pillar_name: '', // TODO: pillar not derivable from Campaign.Type; needs name parse or custom field\n      activity_date: date, source: 'salesforce',\n      spend: 0, impressions: 0, leads: 0, mql_count: 0,\n      sql_count: 0, pipeline_value: 0, closed_won_value: 0, margin_value: 0, margin_covered: 0, opp_count: 0, closed_won_count: 0, created_opp_count: 0\n    };\n  }\n  return agg[key];\n}\n\n// LEADS + MQL <- CampaignMember joined to Lead (incl. converted leads via ContactId)\nfor (const m of members) {\n  if (!m.CampaignId) continue;\n  const date = String(m.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const lead = (m.LeadId && leadById[m.LeadId]) || (m.ContactId && leadByContactId[m.ContactId]);\n  if (!lead) continue; // membership for a pure contact (never a lead) -> not a marketing lead\n  const r = rowFor(m.CampaignId, regionFromField(lead.region), date);\n  r.leads += 1;\n  if (isMql(lead.status)) r.mql_count += 1;\n}\n\n// SQL + PIPELINE + CLOSED-WON <- Opportunities\nfor (const o of opps) {\n  if (!o.CampaignId) continue;\n  // closed opps dated by CloseDate; open opps by CreatedDate\n  const date = String((o.IsClosed ? o.CloseDate : o.CreatedDate) || o.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const region = o.Account && (o.Account.Region__c || o.Account.BillingCountry);\n  const r = rowFor(o.CampaignId, regionFromField(region), date);\n  // CREATED OPPORTUNITIES (X3): every opp created in the period, marketing-attributed,\n  // regardless of stage/qualification, dated by CreatedDate (its own row if the opp later\n  // closed on a different date). Distinct from opp_count (qualified, open/won) and sql_count.\n  const createdDate = String(o.CreatedDate || '').slice(0, 10);\n  if (createdDate) rowFor(o.CampaignId, regionFromField(region), createdDate).created_opp_count += 1;\n  if (!UNQUALIFIED.includes(o.StageName) && (o.IsWon || !o.IsClosed)) r.opp_count += 1; // Opportunities = qualified & (open OR won); excludes unqualified + closed-lost -> subset of SQL\n  const amount = toEur(o.Amount, o.CurrencyIsoCode); // EUR\n  const qualified = !UNQUALIFIED.includes(o.StageName);\n  if (qualified) r.sql_count += 1;                 // every qualified opp = an SQL\n  if (o.IsWon) {\n    r.closed_won_value += amount; r.closed_won_count += 1;\n    // MARGIN (GP): use Gross Profit in EUR. Prefer Gross_Profit_Value__c (profit amount); else\n    // Amount x Gross_Profit_Margin__c. Blank both -> incomplete (NULL, never full revenue).\n    const _gpv = o.Gross_Profit_Value__c;\n    const _gpm = o.Gross_Profit_Margin__c;\n    const _hasGpv = _gpv !== null && _gpv !== undefined && _gpv !== '' && !Number.isNaN(Number(_gpv));\n    const _hasGpm = _gpm !== null && _gpm !== undefined && _gpm !== '' && !Number.isNaN(Number(_gpm));\n    if (_hasGpv) { r.margin_value += toEur(_gpv, o.CurrencyIsoCode); r.margin_covered += 1; }\n    else if (_hasGpm) { const _p = Number(_gpm); r.margin_value += amount * (_p > 1 ? _p / 100 : _p); r.margin_covered += 1; }\n    // else: this won opp has no gross profit in SF -> it contributes 0 to margin but does NOT void the row (other opps' GP is still used).\n  }\n  else if (qualified && !o.IsClosed) r.pipeline_value += amount; // open qualified pipeline\n}\n\n// spend & impressions are NOT in Salesforce -> stay 0 here (filled by T-3: spend sheet / LinkedIn)\n// Use whatever gross profit Salesforce holds (Gross_Profit_Value__c else Amount x Gross_Profit_Margin__c),\n// summed per won opp. A won opp with no GP contributes 0; the row's margin is NULL only if NO won opp in it\n// carried GP (so partial coverage is kept, not discarded). Zero-cost/100%-margin deals are faithful to SF -> flag to CWSI.\nreturn Object.values(agg).map(({ margin_covered, ...json }) => ({ json: { ...json, margin_value: (json.closed_won_count > 0 && margin_covered === 0) ? null : json.margin_value } }));"
       },
       "id": "6cda4e07-6a97-4955-b560-91d45d64d11d",
       "name": "Build Fact Rows",
@@ -130,7 +130,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, StageName, IsClosed, IsWon, Amount, Vendor_Cost_Price__c, CloseDate, CreatedDate, CampaignId, Account.BillingCountry, Account.Region__c FROM Opportunity WHERE CampaignId != null"
+        "query": "SELECT Id, StageName, IsClosed, IsWon, Amount, CurrencyIsoCode, Gross_Profit_Value__c, Gross_Profit_Margin__c, CloseDate, CreatedDate, CampaignId, Account.BillingCountry, Account.Region__c FROM Opportunity WHERE CampaignId != null"
       },
       "id": "9e3f568a-861b-41c3-90ba-9c82f76ee03c",
       "name": "SF: Get Opportunities",
@@ -151,10 +151,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, campaign_type, source_system, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, $5, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  campaign_type = EXCLUDED.campaign_type,\n  channel_id = EXCLUDED.channel_id;",
+        "query": "INSERT INTO dim_campaign (campaign_key, channel_id, campaign_name, campaign_type, source_system, start_date, parent_id, parent_name, valid_from, is_current)\nVALUES ($1, (SELECT channel_id FROM dim_channel WHERE channel_name = $2), $3, $4, $5, $6, $7, $8, CURRENT_DATE, true)\nON CONFLICT (campaign_key) WHERE is_current DO UPDATE SET\n  campaign_name = EXCLUDED.campaign_name,\n  campaign_type = EXCLUDED.campaign_type,\n  channel_id = EXCLUDED.channel_id,\n  start_date = EXCLUDED.start_date,\n  parent_id = EXCLUDED.parent_id,\n  parent_name = EXCLUDED.parent_name;",
         "options": {
           "queryBatching": "independently",
-          "queryReplacement": "={{ [$json.campaign_key, $json.channel_name, $json.campaign_name, $json.campaign_type, $json.source_system] }}"
+          "queryReplacement": "={{ [$json.campaign_key, $json.channel_name, $json.campaign_name, $json.campaign_type, $json.source_system, $json.start_date, $json.parent_id, $json.parent_name] }}"
         }
       },
       "id": "db1031f6-0e0c-4a19-8d13-90191bbe75ca",
@@ -174,7 +174,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// Map Salesforce Campaign records to dim_campaign rows.\nreturn $input.all().map((i) => {\n  const c = i.json;\n  return { json: {\n    campaign_key: c.Id,\n    campaign_name: c.Name || null,\n    channel_name: channelForType(c.Type),\n    campaign_type: c.Type || null,\n    source_system: 'salesforce'\n  }};\n});"
+        "jsCode": "const CHANNEL_BY_TYPE = {\n  'Event': 'Events & Webinars',\n  'Webinar': 'Events & Webinars',\n  'Seminar / Conference': 'Events & Webinars',\n  'Email': 'Email',\n  'Inbound Web': 'Organic SEO',\n  'Content/White Paper': 'Organic SEO',\n  // TODO(confirm w/ Margot): paid social vs paid search vs organic social\n  'Advertisement': 'LinkedIn Paid',\n  'Banner Ads': 'LinkedIn Paid',\n  'Social Media': 'LinkedIn Paid',\n  // 15 Jun (user-approved): non-marketing-channel / unmapped SF Campaign.Type\n  // values route to an explicit 'Other / Unmapped' bucket, NOT Organic SEO.\n  'Other': 'Other / Unmapped',\n  'Telemarketing': 'Other / Unmapped',\n  'Partners': 'Other / Unmapped',\n  'Referral Program': 'Other / Unmapped'\n};\n// CHANNEL FIX (15 Jun): all 14 SF Campaign.Type values mapped; unmapped/non-channel -> 'Other / Unmapped' (never Organic SEO). Paid Search has no SF type (no Google Ads campaigns).\nfunction channelForType(type) { return CHANNEL_BY_TYPE[type] || 'Other / Unmapped'; }\n\n// Map Salesforce Campaign records to dim_campaign rows.\nreturn $input.all().map((i) => {\n  const c = i.json;\n  return { json: {\n    campaign_key: c.Id,\n    campaign_name: c.Name || null,\n    channel_name: channelForType(c.Type),\n    campaign_type: c.Type || null,\n    start_date: c.StartDate || null,\n    parent_id: c.ParentId || null,\n    parent_name: (c.Parent && c.Parent.Name) || null,\n    source_system: 'salesforce'\n  }};\n});"
       },
       "id": "eaa0b168-e1e6-40c2-bfff-d143d5ae3c01",
       "name": "Map Campaigns to dim_campaign",
@@ -188,7 +188,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, Name, Type, Status, NumberSent FROM Campaign"
+        "query": "SELECT Id, Name, Type, Status, NumberSent, StartDate, ParentId, Parent.Name FROM Campaign"
       },
       "id": "0e523f35-88e8-4c7d-8d18-407316e31ab6",
       "name": "SF: Get Campaigns",
@@ -306,7 +306,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, Type, IsWon, IsClosed, StageName, Amount, CloseDate, CreatedDate, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE Type IN ('Renewal','Upsell','Cross-Sell')"
+        "query": "SELECT Id, Type, IsWon, IsClosed, StageName, Amount, CurrencyIsoCode, CloseDate, CreatedDate, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE Type IN ('Renewal','Upsell','Cross-Sell')"
       },
       "id": "a1f0e2c3-2222-4aaa-8bbb-000000000003",
       "name": "SF: Get Renewals",
@@ -326,7 +326,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// B3 (19 Jun): Retention/expansion snapshot. Opportunity.Type in\n// Renewal/Upsell/Cross-Sell. Renewals are account-based, NOT campaign-attributed,\n// so they get their own region+date fact (never fact_channel_daily). Won deals\n// (IsWon) = contracts retained/expanded; open qualified deals = renewal pipeline.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst UNQUALIFIED = ['Unqualified opp'];\nconst TYPES = ['Renewal','Upsell','Cross-Sell'];\nconst opps = $input.all().map((i) => i.json);\nconst agg = {};\nfunction rowFor(region, date, type) {\n  const key = region + '|' + date + '|' + type;\n  if (!agg[key]) agg[key] = { region_code: region, activity_date: date, opp_type: type, won_count: 0, won_value: 0, open_count: 0, open_value: 0 };\n  return agg[key];\n}\nfor (const o of opps) {\n  if (!TYPES.includes(o.Type)) continue;\n  const date = String((o.IsClosed ? o.CloseDate : o.CreatedDate) || o.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const region = o.Account && (o.Account.Region__c || o.Account.BillingCountry);\n  const r = rowFor(regionFromField(region), date, o.Type);\n  const amount = Number(o.Amount) || 0;\n  if (o.IsWon) { r.won_count += 1; r.won_value += amount; }\n  else if (!o.IsClosed && !UNQUALIFIED.includes(o.StageName)) { r.open_count += 1; r.open_value += amount; }\n}\nreturn Object.values(agg).map((json) => ({ json }));"
+        "jsCode": "// B3 (19 Jun): Retention/expansion snapshot. Opportunity.Type in\n// Renewal/Upsell/Cross-Sell. Renewals are account-based, NOT campaign-attributed,\n// so they get their own region+date fact (never fact_channel_daily). Won deals\n// (IsWon) = contracts retained/expanded; open qualified deals = renewal pipeline.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst UNQUALIFIED = ['Unqualified opp'];\nconst TYPES = ['Renewal','Upsell','Cross-Sell'];\nconst opps = $input.all().map((i) => i.json);\n\n// CURRENCY -> EUR (multi-currency org). Convert every amount from its record currency to EUR\n// using the org's CurrencyType rates, per-opp BEFORE aggregation. record->corporate = amount /\n// rate[iso]; corporate->EUR = x rate['EUR']. Unknown currency -> left as-is. Static (non-dated) rates.\nconst _rates = {};\nfor (const c of $('SF: Get Currency Rates').all().map((i) => i.json)) { _rates[c.IsoCode] = Number(c.ConversionRate); }\nconst _eurRate = _rates['EUR'] || 1;\nfunction toEur(amount, iso) { const a = Number(amount) || 0; const r = _rates[iso]; return (r && isFinite(r)) ? a / r * _eurRate : a; }\nconst agg = {};\nfunction rowFor(region, date, type) {\n  const key = region + '|' + date + '|' + type;\n  if (!agg[key]) agg[key] = { region_code: region, activity_date: date, opp_type: type, won_count: 0, won_value: 0, open_count: 0, open_value: 0 };\n  return agg[key];\n}\nfor (const o of opps) {\n  if (!TYPES.includes(o.Type)) continue;\n  const date = String((o.IsClosed ? o.CloseDate : o.CreatedDate) || o.CreatedDate || '').slice(0, 10);\n  if (!date) continue;\n  const region = o.Account && (o.Account.Region__c || o.Account.BillingCountry);\n  const r = rowFor(regionFromField(region), date, o.Type);\n  const amount = toEur(o.Amount, o.CurrencyIsoCode); // EUR\n  if (o.IsWon) { r.won_count += 1; r.won_value += amount; }\n  else if (!o.IsClosed && !UNQUALIFIED.includes(o.StageName)) { r.open_count += 1; r.open_value += amount; }\n}\nreturn Object.values(agg).map((json) => ({ json }));"
       },
       "id": "a1f0e2c3-2222-4aaa-8bbb-000000000004",
       "name": "Build Renewal Rows",
@@ -364,7 +364,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, Subject, ActivityDate, OwnerId, WhoId, WhatId, TYPEOF What WHEN Account THEN Region__c, BillingCountry WHEN Opportunity THEN Account.Region__c, Account.BillingCountry END FROM Event WHERE Type = 'Meeting' AND ActivityDate >= 2026-01-01"
+        "query": "SELECT Id, Subject, ActivityDate, OwnerId, WhoId, WhatId, TYPEOF Who WHEN Contact THEN Email WHEN Lead THEN Email END, TYPEOF What WHEN Account THEN Region__c, BillingCountry WHEN Opportunity THEN Account.Region__c, Account.BillingCountry END FROM Event WHERE Type = 'Meeting' AND ActivityDate >= 2026-01-01"
       },
       "id": "a1f0e2c3-3333-4aaa-8bbb-000000000006",
       "name": "SF: Get Meetings",
@@ -422,7 +422,7 @@
     {
       "parameters": {
         "resource": "search",
-        "query": "SELECT Id, StageName, Probability, Amount, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE IsClosed = false AND CreatedDate >= 2026-01-01T00:00:00Z"
+        "query": "SELECT Id, StageName, Probability, Amount, CurrencyIsoCode, Account.Region__c, Account.BillingCountry FROM Opportunity WHERE IsClosed = false AND CampaignId != null AND CreatedDate >= 2026-01-01T00:00:00Z"
       },
       "id": "a1f0e2c3-4444-4aaa-8bbb-000000000009",
       "name": "SF: Get Open Opps",
@@ -442,7 +442,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// fact_opportunity_stage (Option 1, 20 Jun): OPEN-pipeline snapshot. Count + sum(Amount)\n// of open opportunities grouped by StageName x region, as of today. Closed deals are\n// excluded here (already covered by the funnel's closed-won). Region via Account.Region__c\n// (fixed hop, fallback BillingCountry), UNASSIGNED otherwise. One snapshot per run\n// (snapshot_date = today); the upsert grain keeps a row per region x date x stage so\n// older snapshots persist (a stepping stone to Option-2 trends later).\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst today = new Date().toISOString().slice(0, 10);\nconst opps = $input.all().map((i) => i.json);\nconst agg = {};\nfor (const o of opps) {\n  const stage = o.StageName || 'Unknown';\n  const region = regionFromField(o.Account && (o.Account.Region__c || o.Account.BillingCountry));\n  const key = region + '|' + stage;\n  if (!agg[key]) agg[key] = { region_code: region, snapshot_date: today, stage_name: stage, probability: (o.Probability == null ? null : Number(o.Probability)), opp_count: 0, opp_value: 0 };\n  if (o.Probability != null) agg[key].probability = Number(o.Probability); // constant per stage\n  agg[key].opp_count += 1;\n  agg[key].opp_value += Number(o.Amount) || 0;\n}\nreturn Object.values(agg).map((json) => ({ json }));"
+        "jsCode": "// fact_opportunity_stage (Option 1, 20 Jun): OPEN-pipeline snapshot. Count + sum(Amount)\n// of open opportunities grouped by StageName x region, as of today. Closed deals are\n// excluded here (already covered by the funnel's closed-won). Region via Account.Region__c\n// (fixed hop, fallback BillingCountry), UNASSIGNED otherwise. One snapshot per run\n// (snapshot_date = today); the upsert grain keeps a row per region x date x stage so\n// older snapshots persist (a stepping stone to Option-2 trends later).\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst today = new Date().toISOString().slice(0, 10);\nconst opps = $input.all().map((i) => i.json);\n\n// CURRENCY -> EUR (multi-currency org). Convert every amount from its record currency to EUR\n// using the org's CurrencyType rates, per-opp BEFORE aggregation. record->corporate = amount /\n// rate[iso]; corporate->EUR = x rate['EUR']. Unknown currency -> left as-is. Static (non-dated) rates.\nconst _rates = {};\nfor (const c of $('SF: Get Currency Rates').all().map((i) => i.json)) { _rates[c.IsoCode] = Number(c.ConversionRate); }\nconst _eurRate = _rates['EUR'] || 1;\nfunction toEur(amount, iso) { const a = Number(amount) || 0; const r = _rates[iso]; return (r && isFinite(r)) ? a / r * _eurRate : a; }\nconst agg = {};\nfor (const o of opps) {\n  const stage = o.StageName || 'Unknown';\n  const region = regionFromField(o.Account && (o.Account.Region__c || o.Account.BillingCountry));\n  const key = region + '|' + stage;\n  if (!agg[key]) agg[key] = { region_code: region, snapshot_date: today, stage_name: stage, probability: (o.Probability == null ? null : Number(o.Probability)), opp_count: 0, opp_value: 0 };\n  if (o.Probability != null) agg[key].probability = Number(o.Probability); // constant per stage\n  agg[key].opp_count += 1;\n  agg[key].opp_value += toEur(o.Amount, o.CurrencyIsoCode); // EUR\n}\nreturn Object.values(agg).map((json) => ({ json }));"
       },
       "id": "a1f0e2c3-4444-4aaa-8bbb-000000000010",
       "name": "Build Opp Stage Rows",
@@ -464,6 +464,64 @@
       },
       "id": "a1f0e2c3-4444-4aaa-8bbb-000000000011",
       "name": "Upsert fact_opportunity_stage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        1536
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT IsoCode, ConversionRate, IsCorporate FROM CurrencyType"
+      },
+      "id": "b7c2d1e0-9f3a-4a1b-8c22-0a1b2c3d4e5f",
+      "name": "SF: Get Currency Rates",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        528,
+        560
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// CC-6: SF meetings at per-CONTACT identity grain -> fact_meeting (carries the contact\n// email so meetings can be joined to Outreach prospects). ADDITIVE: the aggregated\n// fact_meeting_daily branch (Build Meeting Rows) is untouched and keeps running.\n// One row per Event.Id; email lowercased for the join. Region reuses the SAME polymorphic\n// What/Who resolution as Build Meeting Rows so both branches agree.\nfunction regionFromField(v) {\n  const c = String(v || '').trim().toLowerCase();\n  if (['united kingdom','uk','gb','great britain','england','scotland','wales','northern ireland','ireland','ie','guernsey','jersey','isle of man'].includes(c)) return 'UKI';\n  if (['belgium','bel','be','luxembourg','lux','lu'].includes(c)) return 'BeLux';\n  if (['netherlands','nl','the netherlands','holland'].includes(c)) return 'NL';\n  return 'UNASSIGNED';\n}\nconst meetings = $('SF: Get Meetings').all().map((i) => i.json);\nconst leadRegionById = {};\nfor (const l of $('SF: Get Leads').all().map((i) => i.json)) leadRegionById[l.Id] = l.Lead_Region__c || l.Country;\nfunction regionForMeeting(m) {\n  const w = m.What;\n  if (w) {\n    if (w.Region__c || w.BillingCountry) return regionFromField(w.Region__c || w.BillingCountry);\n    if (w.Account && (w.Account.Region__c || w.Account.BillingCountry)) return regionFromField(w.Account.Region__c || w.Account.BillingCountry);\n  }\n  if (m.WhoId && leadRegionById[m.WhoId]) return regionFromField(leadRegionById[m.WhoId]);\n  return 'UNASSIGNED';\n}\nconst out = [];\nconst seen = {};\nfor (const m of meetings) {\n  if (!m.Id || seen[m.Id]) continue;\n  seen[m.Id] = true;\n  const day = String(m.ActivityDate || '').slice(0, 10) || null;\n  // TYPEOF Who returns the email nested on the Who object for the matched type.\n  const email = (m.Who && m.Who.Email ? String(m.Who.Email) : '').trim().toLowerCase() || null;\n  out.push({ json: {\n    meeting_id: String(m.Id),\n    subject: m.Subject || null,\n    activity_date: day,\n    who_id: m.WhoId || null,\n    contact_email: email,\n    region_code: regionForMeeting(m)\n  }});\n}\nreturn out;"
+      },
+      "id": "a1f0e2c3-3333-4aaa-8bbb-0000000000c6",
+      "name": "Build Meeting Identity Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_meeting (meeting_id, subject, activity_date, who_id, contact_email, region_id, loaded_at)\nVALUES ($1, $2, $3, $4, $5, (SELECT region_id FROM dim_region WHERE region_code = $6), now())\nON CONFLICT (meeting_id) DO UPDATE SET\n  subject = EXCLUDED.subject,\n  activity_date = EXCLUDED.activity_date,\n  who_id = EXCLUDED.who_id,\n  contact_email = EXCLUDED.contact_email,\n  region_id = EXCLUDED.region_id,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.meeting_id, $json.subject, $json.activity_date, $json.who_id, $json.contact_email, $json.region_code] }}"
+        }
+      },
+      "id": "a1f0e2c3-3333-4aaa-8bbb-0000000000c7",
+      "name": "Upsert fact_meeting",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
@@ -611,6 +669,11 @@
             "node": "Build Meeting Rows",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Build Meeting Identity Rows",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -663,7 +726,7 @@
       "main": [
         [
           {
-            "node": "SF: Get Campaigns",
+            "node": "SF: Get Currency Rates",
             "type": "main",
             "index": 0
           }
@@ -701,6 +764,28 @@
           },
           {
             "node": "SF: Get Open Opps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Currency Rates": {
+      "main": [
+        [
+          {
+            "node": "SF: Get Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Meeting Identity Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_meeting",
             "type": "main",
             "index": 0
           }

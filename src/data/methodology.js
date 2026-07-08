@@ -1,0 +1,195 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// METHODOLOGY REGISTRY — client-facing "how we got this number" explanations.
+//
+// One entry per metric, keyed by a stable id. The <Explain> eye-button renders
+// these into a callout so the client can, anywhere on the dashboard, click the
+// eye next to a figure and see exactly what it counts, where it comes from, and
+// any caveat. Keep the language plain (this is read by the client, not by us).
+//
+// Each entry:
+//   label   – short human name of the metric (popover heading)
+//   what    – one line: what the number represents
+//   source  – where the raw data lives (Salesforce object/field, GA4, etc.)
+//   calc    – how we turn the source into the figure shown
+//   caveat  – (optional) the honest limitation the client should know
+//
+// The funnel counts (leads / MQL / SQL) are computed once, at ingest, in the
+// Salesforce workflow ("Build Fact Rows") and stored on fact_channel_daily.
+// These notes describe that derivation. When a definition changes it changes
+// there + a re-ingest — update the matching note here in the same change.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const METHODOLOGY = {
+  // ── Funnel definitions (the client's core question: "what is a lead / MQL / SQL?")
+  leads: {
+    label: 'Leads',
+    what: 'People who entered a marketing campaign in the period.',
+    source: 'Salesforce campaign membership — every record is tied to a campaign, so every figure is marketing-attributed.',
+    calc: 'We count each campaign member that resolves to a Lead or Contact: form fills, gated-content downloads, event registrants, uploaded audience lists and email recipients.',
+    caveat:
+      'This is campaign membership, not net-new people. A single bulk list-upload or email audience can add hundreds of members at once, so “Leads” is deliberately top-of-funnel and larger than the number of new prospects. MQL and SQL below are the qualified subsets.',
+  },
+  mql: {
+    label: 'Marketing Qualified Leads (MQL)',
+    what: 'Leads that reached the “Marketing Qualified Lead” stage — marketing did its job and handed a qualified lead to sales.',
+    source: 'the lead’s status in Salesforce.',
+    calc:
+      'A lead whose status is “Marketing Qualified Lead” or a later stage (Meeting Booked, Trial). Leads that qualified into an opportunity are also counted, so MQL is never less than SQL.',
+    caveat:
+      'Salesforce has no single “MQL” flag, so MQL is read from the lead’s status. This status-based definition is agreed with CWSI; it takes effect at the next data refresh.',
+  },
+  campaignTheme: {
+    label: 'Campaign themes',
+    what: 'Each quarterly theme (an overarching campaign) rolled up as a whole, with the individual activities that make it up shown beneath.',
+    source: 'Salesforce campaigns, grouped by a naming rule that assigns every campaign to a theme.',
+    calc: 'A campaign joins a theme when its name matches that theme (e.g. anything mentioning “Agent 365” or “Becoming Frontier” rolls into the Becoming Frontier theme). The rule covers the whole campaign book — sibling activities (on-demand replays, language/region variants, the LinkedIn promotion of a whitepaper) are pulled in automatically. Anything that matches no theme sits under “Other activities” so nothing is hidden.',
+    caveat:
+      'This is a proposed grouping for you to confirm — a name-based rule occasionally mis-files a campaign (e.g. the 10.06 event is stored in Salesforce as “Microsoft E7”, though it was referred to as the IE “Protect Data” event). Per-campaign theme reassignment is a fast follow. Once Salesforce campaign start dates + hierarchy are re-ingested we can anchor themes on the native hierarchy and split current-quarter vs ongoing impact.',
+  },
+  currentVsOngoing: {
+    label: 'Current-quarter activity vs ongoing impact',
+    what: 'Splits this period’s pipeline and revenue by whether the campaign that drove it started this period or in an earlier one — showing marketing’s long tail.',
+    source: 'Salesforce Campaign Start Date, against the opportunity/close dates behind each figure.',
+    calc: 'Each figure is bucketed by its campaign’s Start Date: “this period” if the campaign started in the selected quarter/window, “earlier activities” if it started before. The average sales-cycle is the mean days from a campaign’s start to a won deal’s close.',
+    caveat: 'A €0 for "this period" closed-won is a genuine zero, not missing data — newly-started campaigns generate pipeline first and their revenue lands in later quarters (the lag this view is built to show). Campaigns with no Start Date in Salesforce can’t be classified and are shown separately. Proposed view — the same split can be applied per channel once confirmed.',
+  },
+  opportunities: {
+    label: 'Opportunities',
+    what: 'Qualified opportunities that are still open or already won — the live + won marketing book.',
+    source: 'Salesforce Opportunity (linked to a marketing campaign).',
+    calc: 'Count of opportunities at a genuine sales stage (any stage except “Unqualified opp”) that are still open or won. Closed-lost deals are excluded, so this is narrower than SQL (which counts every qualified opportunity).',
+    caveat: 'This is not “Created Opportunities” (every opp created in the period, including those later lost) — that is a separate metric being added.',
+  },
+  sql: {
+    label: 'Sales Qualified Leads (SQL)',
+    what: 'Leads that sales accepted and turned into a real opportunity.',
+    source: 'Salesforce Opportunity (linked to the marketing campaign).',
+    calc: 'We count opportunities that reached a genuine sales stage — i.e. any stage other than “Unqualified opp”.',
+    caveat: 'A lead can generate an opportunity without first being tagged MQL, so we stop later stages from showing more than earlier ones (Leads ≥ MQL ≥ SQL).',
+  },
+  createdOpps: {
+    label: 'Created Opportunities',
+    what: 'Every opportunity created in the period — regardless of whether it qualified.',
+    source: 'Salesforce opportunities, by the date each was created (marketing-attributed).',
+    calc: 'Count of all opportunities created in the reporting window, including those still unqualified.',
+    caveat: 'New headline metric. Lands at the next data refresh; shown as “—” until then.',
+  },
+
+  // ── Money
+  pipeline: {
+    label: 'Influenced Pipeline',
+    what: 'The value of open, qualified opportunities that marketing touched.',
+    source: 'the value of open, campaign-attributed opportunities in Salesforce.',
+    calc: 'Sum of the value of open qualified opportunities, converted to EUR when the data is synced using the Salesforce corporate exchange rate.',
+    caveat: 'Only opportunities attributed to a marketing campaign are included — this is not the whole sales pipeline.',
+  },
+  closedWon: {
+    label: 'Closed Won',
+    what: 'Revenue from won opportunities that marketing touched.',
+    source: 'won, campaign-attributed opportunities in Salesforce.',
+    calc: 'Sum of won deal values, converted to EUR when the data is synced using the Salesforce corporate exchange rate.',
+  },
+  margin: {
+    label: 'Influenced Margin',
+    what: 'The gross profit on the marketing-attributed won deals.',
+    source: 'the opportunity’s Gross Profit field in Salesforce (or amount × gross-profit-margin % where only the % is set).',
+    calc: 'Sum of gross profit (EUR) across won deals. A deal with neither field filled is excluded — never counted as full revenue.',
+    caveat:
+      'Heads-up: as currently entered in Salesforce, most 2026 won deals show gross profit equal to the full deal value (no cost deducted), so influenced margin presently tracks close to revenue rather than true profit. This has been flagged with CWSI to confirm whether cost data is missing on those deals.',
+  },
+  retention: {
+    label: 'Retained Contracts',
+    what: 'Renewal opportunities won in the period.',
+    source: 'Salesforce renewal opportunities.',
+    calc: 'Count and value of won renewals, in EUR.',
+    caveat:
+      'Currently the whole renewal book, not only marketing-influenced renewals (renewals carry no CampaignId). The marketing-specific scope is pending confirmation with CWSI.',
+  },
+
+  // ── Currency & attribution (cross-cutting)
+  currency: {
+    label: 'Currency (EUR)',
+    what: 'All Salesforce money on the dashboard is shown in euros.',
+    source: 'Salesforce is multi-currency (EUR / GBP / USD deals); each opportunity’s value is in its own currency.',
+    calc: 'Every amount is converted to EUR when the data is synced using the Salesforce corporate exchange rate, then summed. We never add across currencies.',
+    caveat: 'LinkedIn delivery spend is billed in GBP and shown as GBP (a separate feed); it is always labelled £ and never mixed into the EUR totals.',
+  },
+
+  // ── Channels
+  linkedinRoi: {
+    label: 'LinkedIn ROI',
+    what: 'Return on LinkedIn ad spend.',
+    source: 'Salesforce-attributed pipeline (EUR) ÷ LinkedIn delivery spend (GBP).',
+    calc: 'Influenced pipeline attributed to LinkedIn, divided by LinkedIn spend.',
+    caveat: 'This ratio mixes EUR pipeline with GBP spend and uses lifetime LinkedIn spend from a single snapshot — treat it as indicative, not exact. Reconciliation against the LinkedIn Ads export is pending.',
+  },
+  linkedinSpend: {
+    label: 'LinkedIn Spend',
+    what: 'Money spent delivering LinkedIn campaigns.',
+    source: 'LinkedIn delivery snapshot, in GBP.',
+    calc: 'Cumulative spend across the LinkedIn campaigns in the snapshot.',
+    caveat: 'A single lifetime snapshot dated 2026-06-12 — not yet reconciled against the LinkedIn Ads Manager export, and per-campaign budgets are not yet loaded.',
+  },
+  organicTraffic: {
+    label: 'Organic Traffic',
+    what: 'Sessions from organic search to the CWSI sites.',
+    source: 'Google Analytics 4 (cwsisecurity.com + insights.cwsisecurity.com).',
+    calc: 'GA4 organic sessions for the reporting window.',
+  },
+  otherChannel: {
+    label: 'Other / Unmapped',
+    what: 'Campaigns whose Salesforce type has no dedicated channel of its own.',
+    source: 'Salesforce campaign types Other, Telemarketing, Partners or Referral (or a blank / unmapped type).',
+    calc: 'Everything not mapped to a named channel (LinkedIn, Email, Events, Organic SEO) is grouped here.',
+    caveat: 'Some Outreach activity currently lands here or in Email/LinkedIn via its campaign type — a dedicated Outreach channel is being added.',
+  },
+
+  // ── Events
+  webinarAttendance: {
+    label: 'Webinar Attendance',
+    what: 'People who attended a webinar out of those who registered.',
+    source: 'GoToWebinar registration/attendance feed.',
+    calc: 'Attendees ÷ registrants across the webinars in scope.',
+    caveat: 'Webinars are group-wide, so attendance is not split by region. In-person event attendance is not yet available — Salesforce only records whether an invite was sent or responded to, not whether the person actually attended.',
+  },
+  conversion: {
+    label: 'Conversion rate',
+    what: 'The share of one funnel stage that reaches the next.',
+    source: 'Derived from the two stage counts shown.',
+    calc: 'Later stage ÷ earlier stage (e.g. MQL ÷ Leads), expressed as a percentage.',
+  },
+
+  // ── Outreach.io
+  outreachProspects: {
+    label: 'Prospects in cadence',
+    what: 'Unique people being worked through Outreach.io sales cadences.',
+    source: 'Outreach.io sequence snapshot.',
+    calc: 'Distinct prospects across the sequences in scope (cumulative lifetime snapshot, filtered to the selected region).',
+    caveat: 'A cumulative snapshot, not a daily trend. Currently includes all sequences; a marketing-only, defined list of sequences is planned.',
+  },
+  outreachReplyRate: {
+    label: 'Reply rate',
+    what: 'How often prospects reply to outreach.',
+    source: 'Outreach.io engagement snapshot.',
+    calc: 'Replies ÷ prospects across the sequences in scope.',
+  },
+  marketingSpend: {
+    label: 'Marketing Spend (actual)',
+    what: 'Actual marketing spend recorded to date.',
+    source: 'The marketing budget tracker (EUR-native).',
+    calc: 'Sum of spend line items, net of correction rows (negative adjustments are subtracted, not counted as events).',
+    caveat: 'This is actual spend. The planned budget (for budget-vs-actual and MDF split) is client-gated and shows “not set” until CWSI provides it.',
+  },
+  outreachMeetings: {
+    label: 'Meetings booked (Outreach-attributed)',
+    what: 'Salesforce meetings whose contact is a member of a marketing Outreach sequence — the agreed attribution method.',
+    source: 'Salesforce meetings joined to Outreach sequence membership by the contact’s email address.',
+    calc: 'A meeting is credited to a sequence when the meeting’s contact email matches a prospect email in that sequence. Sequences are grouped into three tiers — Outbound prospecting (SoPro / Microsoft TUM / Historic Data Reactivation), Events & campaigns, and Broadcast/newsletter — and each tier counts DISTINCT meetings (a meeting can relate to several sequences, so per-sequence counts overlap).',
+    caveat: 'The match is email-based, so coverage is partial — a contact who used a different email in Outreach vs Salesforce won’t match. “Broadcast/newsletter” matches (e.g. monthly updates everyone is on) indicate correlation, not that the sequence generated the meeting; the Outbound tier is the strict, defensible figure and is what the 100-meetings target measures.',
+  },
+}
+
+// Look up an entry; returns null if the id is unknown (so <Explain> can no-op safely).
+export function methodologyOf(id) {
+  return METHODOLOGY[id] || null
+}

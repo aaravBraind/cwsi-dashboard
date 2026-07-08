@@ -8,14 +8,20 @@ import {
   getKpiTracker,
   getKpiTargets,
   updateKpiTarget,
+  getCampaignOverrides,
+  upsertCampaignOverride,
   getPipeline,
+  getCurrentVsOngoing,
   getOpportunityStage,
   getChannel,
+  getEmailReport,
   getCampaignsForChannel,
+  getCampaignThemes,
   getLinkedInSnapshot,
   getEmailEngagement,
   getMarketingSpend,
   getOutreach,
+  getOutreachAttributedMeetings,
   getOutreachSteps,
   getEvents,
   getEventTypeFunnel,
@@ -65,6 +71,33 @@ export function usePipeline() {
   return useQuery({ queryKey: ['pipeline', filters], queryFn: () => getPipeline(filters) })
 }
 
+// Current-quarter activity vs ongoing impact of prior-quarter activities (X6) — region +
+// quarter scoped. Optional `channel` override scopes it to one channel (EV5: Events page).
+export function useCurrentVsOngoing(channel = null) {
+  const { filters } = useFilters()
+  const scoped = channel ? { ...filters, channel } : filters
+  return useQuery({ queryKey: ['current-vs-ongoing', scoped], queryFn: () => getCurrentVsOngoing(scoped) })
+}
+
+// Editable campaign overrides (campaign_overrides table). Filter-independent — one
+// map for the whole dashboard, keyed by campaign_key; components apply the friendly
+// name/region over the Salesforce value. Cached; a rename invalidates it so every
+// surface re-renders with the new label. Persists across re-ingests.
+export function useCampaignOverrides() {
+  return useQuery({ queryKey: ['campaign-overrides'], queryFn: getCampaignOverrides, staleTime: 5 * 60 * 1000 })
+}
+
+export function useUpdateCampaignOverride() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ campaignKey, field, value }) => upsertCampaignOverride(campaignKey, field, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaign-overrides'] })
+      qc.invalidateQueries({ queryKey: ['campaign-themes'] }) // a theme re-assignment regroups the rollup
+    },
+  })
+}
+
 // Pipeline stage distribution — open-pipeline snapshot, region-scoped only (quarter
 // intentionally excluded; it's a current-state snapshot, not a quarter slice).
 export function useOpportunityStage() {
@@ -75,14 +108,35 @@ export function useOpportunityStage() {
   })
 }
 
-export function useChannel(channelName) {
+export function useChannel(channelName, campaign = 'all', excludeTypes = null) {
   const { filters } = useFilters()
-  // channel page owns its channel; strip any global channel filter.
-  const { channel, ...rest } = filters
+  // The channel page owns its channel *and* its campaign selection (passed in as
+  // page-local state). Strip the global `channel` and `campaign` so a campaign
+  // picked on one channel page can never leak onto another channel page, the SEO
+  // page (also uses useChannel), or any applyFilters-based page (Overview,
+  // Pipeline, Board…). Region + quarter still come from the global filters.
+  // excludeTypes (optional) drops rows by campaign_type — e.g. SEO excludes
+  // "Content/White Paper" (those are reported on the Email page).
+  const { channel, campaign: _globalCampaign, ...rest } = filters
+  const scoped = { ...rest, campaign }
   return useQuery({
-    queryKey: ['channel', channelName, rest],
-    queryFn: () => getChannel(channelName, rest),
+    queryKey: ['channel', channelName, scoped, excludeTypes],
+    queryFn: () => getChannel(channelName, scoped, excludeTypes),
   })
+}
+
+// Email page — the named whitepaper/workflow campaigns, scoped by campaign_key.
+// Region + quarter only (the campaigns span SEO + Email channels).
+export function useEmailReport() {
+  const { filters } = useFilters()
+  const scoped = { region: filters.region, quarter: filters.quarter }
+  return useQuery({ queryKey: ['email-report', scoped], queryFn: () => getEmailReport(scoped) })
+}
+
+// Campaign-level theme rollup (X4/G3) — region + quarter scoped.
+export function useCampaignThemes() {
+  const { filters } = useFilters()
+  return useQuery({ queryKey: ['campaign-themes', filters], queryFn: () => getCampaignThemes(filters) })
 }
 
 export function useCampaigns(channelId) {
@@ -124,11 +178,21 @@ export function useMarketingSpend() {
 // Outreach engagement snapshot — region (global) + pillar scoped. Pillar is
 // passed in as PAGE-LOCAL state (not the global filter) because pillar_name is
 // null across v_fact_enriched, so a global pillar would empty the other pages.
-export function useOutreach(pillar = null) {
+export function useOutreach(workstream = null, marketingOnly = true) {
   const { filters } = useFilters()
   return useQuery({
-    queryKey: ['outreach', filters.region, pillar],
-    queryFn: () => getOutreach({ region: filters.region, pillar }),
+    queryKey: ['outreach', filters.region, workstream, marketingOnly],
+    queryFn: () => getOutreach({ region: filters.region, workstream, marketingOnly }),
+  })
+}
+
+// Outreach → SF meeting attribution (CC-6) — region + quarter (global) scoped.
+// Pillar does NOT apply (meetings aren't practice-area tagged), so it's excluded.
+export function useOutreachAttributedMeetings() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['outreach-attributed-meetings', filters.region, filters.quarter],
+    queryFn: () => getOutreachAttributedMeetings({ region: filters.region, quarter: filters.quarter }),
   })
 }
 

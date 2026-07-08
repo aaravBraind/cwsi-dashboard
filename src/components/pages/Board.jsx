@@ -4,6 +4,19 @@ import { Loading, ErrorState, EmptyState } from '../States'
 import { useBoardPack, useGenerateBoardPack, useSavedBoardPack } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { I } from '../icons'
+import Explain from '../Explain'
+
+// Board metric key → methodology-registry id, so each card's eye-button explains
+// the right figure to the client.
+const METRIC_EXPLAIN = {
+  mqls: 'mql',
+  sqls: 'sql',
+  createdOpps: 'createdOpps',
+  mqlToSql: 'conversion',
+  closedOpps: 'closedWon',
+  pipeline: 'pipeline',
+  margin: 'margin',
+}
 
 // T-7 — AI Insights & Board Pack Generator (trace-to-data enforced).
 // The app computes every figure (useBoardPack); the AI layer narrates only those
@@ -32,7 +45,7 @@ export default function Board() {
       <div className="page-head">
         <div>
           <div className="page-title">Board <span className="accent">Pack</span></div>
-          <div className="page-sub">AI insights · trace-to-data enforced · agreed metric order · FY2026</div>
+          <div className="page-sub">AI insights · every figure checked against the source data · FY2026</div>
         </div>
         <QuarterPills />
       </div>
@@ -46,7 +59,7 @@ export default function Board() {
 }
 
 function Body({ pack, gen, saved }) {
-  const { metrics, levers, meta, conversion, channels, regions, pipelineHealth, retention } = pack
+  const { metrics, meta, conversion, channels, regions, pipelineHealth, retention } = pack
   return (
     <>
       {/* Targets are client-gated → flagged provisional everywhere they surface. */}
@@ -54,7 +67,7 @@ function Body({ pack, gen, saved }) {
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
           <strong>Targets are provisional.</strong> Actuals are live from the source data; the FY targets
-          shown are placeholders until Paul + Claire deliver the formal register. The AI narrative cites these targets flagged as provisional and never invents a number.
+          shown are placeholders until the formal target register is delivered. The AI narrative cites these targets flagged as provisional and never invents a number.
         </div>
       </div>
 
@@ -91,30 +104,7 @@ function Body({ pack, gen, saved }) {
       {meta.scopeIsAllRegions && regions.length > 0 && <RegionSection regions={regions} />}
       {retention.hasData && <RetentionSection r={retention} meta={meta} />}
 
-      {/* 3. Gaps-to-close — app-computed, ranked by estimated pipeline impact */}
-      <div className="panel">
-        <div className="panel-head">
-          <div className="left">
-            <div className="panel-title">Gaps to Close — ranked by estimated pipeline impact</div>
-            <div className="panel-sub">Levers computed from current yields · {meta.regionLabel} · {meta.quarterLabel}</div>
-          </div>
-          <span className="chip blue">{levers.length} lever{levers.length === 1 ? '' : 's'}</span>
-        </div>
-        <div className="panel-body">
-          {levers.length === 0 ? (
-            <div className="callout" style={{ marginBottom: 0 }}>
-              <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
-              <div className="callout-body">No gap to close in this scope — every metric with a live actual is at or above its (provisional) target.</div>
-            </div>
-          ) : (
-            <div className="bar-list">
-              {levers.map((l, i) => <LeverRow key={l.id} l={l} max={levers[0].impactValue} rank={i + 1} />)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 4. AI narrative + recommendations */}
+      {/* 3. AI narrative + recommendations */}
       <NarrativePanel pack={pack} gen={gen} saved={saved} />
     </>
   )
@@ -125,15 +115,13 @@ function MetricCard({ m, prevQ }) {
   const pending = m.status === 'pending'
   return (
     <div className="kpi">
-      <div className="kpi-head">
-        <div className={`kpi-icn${pending ? ' amber' : m.status === 'behind' ? '' : ''}`}>
-          <svg className="icon icon-lg" viewBox="0 0 24 24">{I.target}</svg>
-        </div>
+      {/* Icons removed (per client — they carried no meaning); traffic-light pill kept, label enlarged with the freed space. */}
+      <div className="kpi-head" style={{ justifyContent: 'flex-end' }}>
         <span className={`tl ${tl}`}>
           <span className="tl-dot" />{pending ? 'pending' : m.pctOfTargetDisplay !== 'n/a' ? `${m.pctOfTargetDisplay} of FY` : 'no target'}
         </span>
       </div>
-      <div className="kpi-label">{m.order} · {m.label}</div>
+      <div className="kpi-label" style={{ fontSize: 15, letterSpacing: 0 }}>{m.order} · {m.label} {METRIC_EXPLAIN[m.key] && <Explain id={METRIC_EXPLAIN[m.key]} />}</div>
       <div className="kpi-val">{m.valueDisplay}</div>
       <div className="kpi-sub">
         <span className="kpi-target">{m.targetDisplay} <em style={{ opacity: 0.6 }}>· provisional</em></span>
@@ -193,12 +181,12 @@ function ChannelSection({ channels, meta }) {
       sub={`Pipeline & MQL share by channel · ${meta.regionLabel} · ${meta.quarterLabel}`}
       chip={<span className="chip blue">{channels.length} channel{channels.length === 1 ? '' : 's'}</span>}
     >
+      <ShareDonut title="Pipeline share" items={channels.map((c) => ({ label: c.channel, share: c.pipelineShare, display: c.pipelineShareDisplay }))} />
       <div className="tbl-scroll">
         <table className="tbl">
           <thead>
             <tr>
-              <th>Channel</th><th className="r">MQLs</th><th className="r">Pipeline</th>
-              <th className="r">Share</th><th className="r">Closed-Won</th>
+              <th>Channel <Explain id="otherChannel" /></th><th className="r">MQLs <Explain id="mql" /></th><th className="r">Pipeline <Explain id="pipeline" /></th><th className="r">Closed-Won <Explain id="closedWon" /></th>
             </tr>
           </thead>
           <tbody>
@@ -207,7 +195,6 @@ function ChannelSection({ channels, meta }) {
                 <td>{c.channel}</td>
                 <td className="r">{c.mqlDisplay}</td>
                 <td className="r">{c.pipelineDisplay}</td>
-                <td className="r">{c.pipelineShareDisplay}</td>
                 <td className="r">{c.closedWonDisplay}</td>
               </tr>
             ))}
@@ -225,7 +212,7 @@ function ConversionSection({ conversion }) {
     <Expandable
       icon={I.trend}
       title="Funnel Conversion"
-      sub="Stage-to-stage conversion across the funnel"
+      sub="Leads → MQL → SQL → Created Opps → Closed-Won · stage-to-stage"
       chip={<span className="chip neu">{conversion.filter((c) => c.rate != null).length} steps</span>}
     >
       <div className="bar-list">
@@ -238,6 +225,18 @@ function ConversionSection({ conversion }) {
             <div className="bar-val">{c.display}</div>
           </div>
         ))}
+      </div>
+      <div className="callout" style={{ marginTop: 12 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
+          These are <strong>stage-to-stage ratios for the selected period</strong>, not a single group of
+          deals followed end to end: each stage is dated differently in Salesforce (leads by lead date,
+          opportunities by their created/close dates), so a deal can sit in different quarters at each stage.
+          Read them as "what share of this period's leads/MQLs/etc. reached the next stage", and use YTD for
+          the fullest picture.
+        </div>
       </div>
     </Expandable>
   )
@@ -277,7 +276,7 @@ function PipelineHealthSection({ ph }) {
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
           Probability-weighted (forecast) pipeline: <strong>{ph.weightedDisplay}</strong>. This is a
-          current-state open-pipeline snapshot (region-scoped), not a quarter slice. A <strong>"—"</strong> in
+          current-state open-pipeline snapshot for the selected region, not limited to one quarter. A <strong>"—"</strong> in
           the Probability column means that stage has no win-probability set in Salesforce yet, so it isn't
           weighted into the forecast (the Total row shows "—" because a total has no single probability).
         </div>
@@ -295,24 +294,45 @@ function RegionSection({ regions }) {
       sub="Pipeline & MQL contribution by region"
       chip={<span className="chip neu">{regions.length} region{regions.length === 1 ? '' : 's'}</span>}
     >
+      <ShareDonut title="Pipeline share" items={regions.map((r) => ({ label: r.region, share: r.pipelineShare, display: r.pipelineShareDisplay }))} />
       <div className="tbl-scroll">
         <table className="tbl">
           <thead>
-            <tr><th>Region</th><th className="r">MQLs</th><th className="r">Pipeline</th><th className="r">Share</th><th className="r">Closed-Won</th></tr>
+            <tr>
+              <th>Region</th>
+              <th className="r">MQLs <Explain id="mql" /></th>
+              <th className="r">SQLs <Explain id="sql" /></th>
+              <th className="r">Created Opps <Explain id="createdOpps" /></th>
+              <th className="r">Pipeline <Explain id="pipeline" /></th>
+              <th className="r">Closed-Won <Explain id="closedWon" /></th>
+            </tr>
           </thead>
           <tbody>
             {regions.map((r) => (
               <tr key={r.region}>
                 <td>{r.region}</td>
                 <td className="r">{r.mqlDisplay}</td>
+                <td className="r">{r.sqlDisplay}</td>
+                <td className="r">{r.createdOppsDisplay}</td>
                 <td className="r">{r.pipelineDisplay}</td>
-                <td className="r">{r.pipelineShareDisplay}</td>
                 <td className="r">{r.closedWonDisplay}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {regions.some((r) => /unassign/i.test(r.region)) && (
+        <div className="callout" style={{ marginTop: 12 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>Unassigned</strong> = records whose region couldn't be resolved from Salesforce — the
+            Account has no <em>Region</em> or billing country set, so we can't place them in UK&I / BeLux / NL.
+            It's a data-completeness gap in Salesforce, not a real region.
+          </div>
+        </div>
+      )}
     </Expandable>
   )
 }
@@ -328,9 +348,9 @@ function RetentionSection({ r, meta }) {
     >
       <div className="kpis cols-4" style={{ marginBottom: 0 }}>
         <RetStat label="Retained contracts" value={r.retainedCountDisplay} sub="won renewals" />
-        <RetStat label="Retained value" value={r.retainedValueDisplay} sub="won renewal £" />
+        <RetStat label="Retained value" value={r.retainedValueDisplay} sub="won renewal €" />
         <RetStat label="Expansion deals" value={r.expansionCountDisplay} sub="upsell + cross-sell" />
-        <RetStat label="Expansion value" value={r.expansionValueDisplay} sub="won expansion £" />
+        <RetStat label="Expansion value" value={r.expansionValueDisplay} sub="won expansion €" />
       </div>
     </Expandable>
   )
@@ -344,13 +364,44 @@ const RetStat = ({ label, value, sub }) => (
   </div>
 )
 
-function LeverRow({ l, max, rank }) {
-  const w = max > 0 ? Math.max(4, (l.impactValue / max) * 100) : 0
+// Share as a donut (client asked for Share as a pie/donut, not a number). Each
+// slice is a stroke arc on one ring; slices with no/zero share are dropped.
+const DONUT_COLORS = ['#2f6df6', '#1c8a4a', '#5fa1ff', '#f5a623', '#8e7cc3', '#e0574a', '#7b8794', '#3bbfad']
+
+function ShareDonut({ items, title }) {
+  const slices = items.filter((s) => s.share != null && s.share > 0)
+  if (slices.length === 0) return null
+  const R = 54
+  const C = 2 * Math.PI * R
+  let acc = 0
   return (
-    <div className="bar-row">
-      <div className="bar-label" title={l.title}><strong>{rank}.</strong> {l.title}</div>
-      <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${w}%` }} /></div>
-      <div className="bar-val" title={l.basis}>{l.impactDisplay}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap', marginBottom: 16 }}>
+      <svg viewBox="0 0 140 140" width="124" height="124" role="img" aria-label={title}>
+        <g transform="rotate(-90 70 70)">
+          {slices.map((s, i) => {
+            const dash = s.share * C
+            const seg = (
+              <circle
+                key={s.label}
+                cx="70" cy="70" r={R} fill="none"
+                stroke={DONUT_COLORS[i % DONUT_COLORS.length]} strokeWidth="18"
+                strokeDasharray={`${dash} ${C - dash}`} strokeDashoffset={-acc * C}
+              />
+            )
+            acc += s.share
+            return seg
+          })}
+        </g>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 10.5, fill: 'var(--text-3)' }}>{title}</text>
+      </svg>
+      <div className="seg-legend" style={{ marginTop: 0, flexDirection: 'column', gap: 8 }}>
+        {slices.map((s, i) => (
+          <div className="leg" key={s.label}>
+            <span className="dot" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+            {s.label} · <strong style={{ marginLeft: 4 }}>{s.display}</strong>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -394,8 +445,9 @@ function NarrativePanel({ pack, gen, saved }) {
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.board}</svg></div>
             <div className="callout-body">
               Generate an AI-written board narrative + prioritised recommendations from the figures above.
-              The app sends only the computed figure set to Claude; every number in the result is then
-              checked against the source data and any untraceable figure blocks publish.
+              The app sends only the calculated figures to the AI, then checks every number in the result
+              against those figures — if a number doesn't match the source data it's blocked, so the AI can't
+              invent or drift a figure.
             </div>
           </div>
         )}
@@ -441,9 +493,9 @@ function ValidationBadge({ v }) {
       <div className="callout" style={{ marginTop: 0 }}>
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.target}</svg></div>
         <div className="callout-body">
-          <strong style={{ color: 'var(--green, #1c8a4a)' }}>✓ Trace-to-data passed.</strong>{' '}
-          All {v.claimCount} numeric claim{v.claimCount === 1 ? '' : 's'} across {v.checked} checked figure
-          {v.checked === 1 ? '' : 's'} trace to a source-data value. Safe to publish.
+          <strong style={{ color: 'var(--green, #1c8a4a)' }}>✓ Checked against source data.</strong>{' '}
+          All {v.claimCount} number{v.claimCount === 1 ? '' : 's'} in the narrative match the {v.checked} figure
+          {v.checked === 1 ? '' : 's'} on this page. Safe to publish.
         </div>
       </div>
     )
@@ -452,8 +504,8 @@ function ValidationBadge({ v }) {
     <div className="callout amber" style={{ marginTop: 0 }}>
       <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
       <div className="callout-body">
-        <strong>⚠ Publish blocked — {v.flags.length} untraceable figure{v.flags.length === 1 ? '' : 's'}.</strong>{' '}
-        The narrative below is held for review: it contains numbers that don't match any source-data value.
+        <strong>⚠ Publish blocked — {v.flags.length} figure{v.flags.length === 1 ? '' : 's'} don't match the source.</strong>{' '}
+        The narrative below is held for review because it contains numbers that don't match the figures on this page.
         Regenerate, or correct the flagged figures before publishing.
       </div>
     </div>
@@ -464,7 +516,7 @@ function FlagLog({ flags }) {
   return (
     <div className="panel" style={{ marginTop: 16, marginBottom: 0 }}>
       <div className="panel-head">
-        <div className="left"><div className="panel-title">Review flags — untraceable numbers</div></div>
+        <div className="left"><div className="panel-title">Review flags — numbers that don't match the source</div></div>
         <span className="chip neu">{flags.length}</span>
       </div>
       <div className="panel-body">

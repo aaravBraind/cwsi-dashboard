@@ -1,7 +1,8 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
 import { useWebTraffic, useSeo, useChannel } from '../../hooks/useDashboardData'
-import { num, gbp, isNA } from '../../data/format'
+import { num, eur, isNA } from '../../data/format'
+import Explain from '../Explain'
 
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
 const pos = (p) => (isNA(p) || p == null ? 'n/a' : Number(p).toFixed(1))
@@ -39,8 +40,8 @@ export default function Seo() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>Sessions &amp; engagement</strong> come from GA4 (owned properties only — dev,
-          staging, translate-proxy and form-preview hosts are excluded). <strong>Clicks,
+          <strong>Sessions &amp; engagement</strong> come from GA4 (our public sites only — internal
+          test and preview sites are excluded). <strong>Clicks,
           impressions, CTR and position</strong> come from Search Console. <strong>Key events</strong>{' '}
           (GA4 conversions) feed the <strong>Visitor → MQL</strong> tile. Region &amp; quarter scope every figure.
         </div>
@@ -72,7 +73,7 @@ function WebBody({ data }) {
   return (
     <>
       <div className="kpis cols-4">
-        <Kpi label="Sessions · scoped" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} />
+        <Kpi label="Sessions · current view" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} explainId="organicTraffic" />
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
         <Kpi label="Engagement rate" val={ratePct(totals.engagementRate)} />
         <Kpi
@@ -86,7 +87,7 @@ function WebBody({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Traffic by Property</div>
-            <div className="panel-sub">Owned hostnames · sessions &amp; engagement · region/quarter scoped</div>
+            <div className="panel-sub">Our public sites · sessions &amp; engagement · region &amp; quarter</div>
           </div>
           <span className="chip blue">{byHostname.length} properties</span>
         </div>
@@ -118,7 +119,7 @@ function WebBody({ data }) {
       {byRegion.length > 1 && (
         <div className="info-pill" style={{ marginBottom: 18 }}>
           By region: {byRegion.map((r) => `${r.region === 'UNASSIGNED' ? 'Other' : r.region} ${num(r.sessions)}`).join(' · ')}
-          {' '}— main-domain traffic GA4 can’t country-split lands in “Other”.
+          {' '}— main-domain traffic that GA4 can’t split by country is shown under “Other”.
         </div>
       )}
     </>
@@ -126,21 +127,17 @@ function WebBody({ data }) {
 }
 
 function SeoBody({ data }) {
-  const { totals, topPages, topQueries = [] } = data
+  // SEO6 (Margot, Jul 2026): the GA4-vs-GSC discrepancy confused the read, so the
+  // Search Console section is trimmed to Top Performing Pages (+ top-10 keywords).
+  // The summary clicks/impressions/CTR/position tiles are dropped here.
+  const { topPages, topQueries = [] } = data
   return (
     <>
-      <div className="kpis cols-4">
-        <Kpi label="Clicks · scoped" val={num(totals.clicks)} />
-        <Kpi label="Impressions · scoped" val={num(totals.impressions)} />
-        <Kpi label="CTR" val={ratePct(totals.ctr, 2)} />
-        <Kpi label="Avg. position" val={pos(totals.avgPosition)} sub="lower is better" />
-      </div>
-
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Top Organic Pages</div>
-            <div className="panel-sub">By clicks · Search Console · quarter-scoped (page grain has no region)</div>
+            <div className="panel-sub">By clicks · Search Console · current quarter (this data isn’t split by region)</div>
           </div>
           <span className="chip blue">top {topPages.length}</span>
         </div>
@@ -169,7 +166,7 @@ function SeoBody({ data }) {
           <div className="panel-head">
             <div className="left">
               <div className="panel-title">Top Keywords</div>
-              <div className="panel-sub">By clicks · Search Console query data · quarter-scoped (query grain has no region)</div>
+              <div className="panel-sub">By clicks · Search Console search terms · current quarter (this data isn’t split by region)</div>
             </div>
             <span className="chip blue">top {topQueries.length}</span>
           </div>
@@ -198,26 +195,33 @@ function SeoBody({ data }) {
 }
 
 // Salesforce-attributed funnel for the Organic SEO channel (leads/MQL/SQL/pipeline).
+// Whitepaper-download campaigns (campaign_type "Content/White Paper") are excluded —
+// they're reported on the Email page, and counting them here inflated the leads/MQL.
 function FunnelBody() {
-  const q = useChannel('Organic SEO')
+  const q = useChannel('Organic SEO', 'all', ['Content/White Paper'])
   if (q.isLoading) return <Loading label="Loading funnel…" />
   if (q.isError) return <ErrorState error={q.error} />
   if (!q.data || !q.data.hasData)
-    return <EmptyState message="No Salesforce-attributed Organic SEO rows for this region / quarter yet." />
+    return <EmptyState message="No Salesforce-attributed Organic SEO data for this region / quarter yet." />
   const t = q.data.totals
   return (
-    <div className="kpis cols-4">
-      <Kpi label="Leads · scoped" val={num(t.leads)} />
-      <Kpi label="MQLs · scoped" val={num(t.mql)} />
-      <Kpi label="SQLs · scoped" val={num(t.sql)} />
-      <Kpi label="Pipeline £ · scoped" val={gbp(t.pipeline)} />
-    </div>
+    <>
+      <div className="kpis cols-4">
+        <Kpi label="Leads · current view" val={num(t.leads)} explainId="leads" />
+        <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
+        <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
+        <Kpi label="Pipeline € · current view" val={eur(t.pipeline)} explainId="pipeline" />
+      </div>
+      <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
+        Whitepaper-download campaigns are reported on the <strong>Email</strong> page, so they're not counted here.
+      </p>
+    </>
   )
 }
 
-const Kpi = ({ label, val, sub }) => (
+const Kpi = ({ label, val, sub, explainId }) => (
   <div className="kpi">
-    <div className="kpi-label">{label}</div>
+    <div className="kpi-label">{label}{explainId && <Explain id={explainId} />}</div>
     <div className="kpi-val">{val}</div>
     {sub ? <div className="kpi-sub"><span className="kpi-target">{sub}</span></div> : null}
   </div>

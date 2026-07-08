@@ -126,22 +126,22 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
 
           {report === 'board' && format === 'BRANDED' && (
             <div className="modal-note">
-              Renders the <strong>CWSI-branded board pack</strong> (matches the on-screen design) via headless Chrome and downloads a PDF — figures, detail sections and the saved AI narrative. Generate the narrative on the Board Pack page first for this scope so it's included.
+              Renders the <strong>CWSI-branded board pack</strong> (matches the on-screen design) and downloads a PDF — figures, detail sections and the saved AI narrative. Generate the narrative on the Board Pack page first for this scope so it's included.
             </div>
           )}
           {report === 'board' && format === 'PPTX' && (
             <div className="modal-note">
-              Renders an <strong>attractive, editable Gamma deck</strong> (.pptx) from the live figures + the latest trace-passed AI narrative — kept verbatim, never paraphrased. Generate the narrative on the Board Pack page first for this scope so it's included.
+              Renders an <strong>editable PowerPoint deck</strong> (.pptx) from the live figures + the latest source-checked AI narrative — kept verbatim, never paraphrased. Generate the narrative on the Board Pack page first for this scope so it's included.
             </div>
           )}
           {report !== 'board' && format === 'PDF' && (
             <div className="modal-note">
-              Renders a <strong>CWSI-branded PDF</strong> (matches the on-screen design) via headless Chrome — figures are pulled fresh for this scope and trace-to-data verified.
+              Renders a <strong>CWSI-branded PDF</strong> (matches the on-screen design) — figures are pulled fresh for this scope and checked against the source data.
             </div>
           )}
           {report !== 'board' && format === 'PPTX' && (
             <div className="modal-note">
-              Renders an <strong>attractive, editable Gamma deck</strong> (.pptx) from the live figures — kept verbatim, never paraphrased. This calls Gamma and can take a minute or two.
+              Renders an <strong>editable PowerPoint deck</strong> (.pptx) from the live figures — kept verbatim, never paraphrased. This can take a minute or two.
             </div>
           )}
           {err && <div className="modal-err">{err}</div>}

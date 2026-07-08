@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
+import { themeForCampaign, THEME_ORDER, themeMeta } from './themes'
 import {
   REPORTING_YEAR,
   HISTORY_START_YEAR,
@@ -20,7 +21,7 @@ import {
 // absent — it lives on base fact_channel_daily, not on v_fact_enriched, so we
 // never request it (see MAPPING.md).
 const FACT_COLS =
-  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,pillar_name,activity_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,opp_count,pipeline_value,closed_won_value,closed_won_count,margin_value'
+  'fact_id,campaign_key,campaign_name,region_code,region_name,channel_name,campaign_type,pillar_name,activity_date,campaign_start_date,year,quarter,source,spend,impressions,leads,mql_count,sql_count,opp_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count,margin_value'
 
 // Translate the shared filter object into PostgREST predicates. Every active
 // filter is applied here, so every figure derived from fetchFacts re-scopes.
@@ -109,6 +110,10 @@ function funnelOf(rows) {
   const sqlRaw = sum(rows, 'sql_count')
   const oppRaw = sum(rows, 'opp_count')
   const wonRaw = sum(rows, 'closed_won_count')
+  // Created Opportunities (X3): ALL opps created in the period (marketing-attributed),
+  // regardless of qualification. NOT part of the monotonic floor — it's a parallel count
+  // that can exceed SQL (which is qualified only). 0 until the re-ingest populates it → NA.
+  const createdRaw = sum(rows, 'created_opp_count')
 
   // "Reached this stage OR BEYOND" floor: anyone who reached a deeper stage must
   // have passed through the shallower ones, so each stage is at least as large
@@ -122,10 +127,11 @@ function funnelOf(rows) {
   const mql = Math.max(mqlRaw, sql)
   const leads = Math.max(leadsRaw, mql)
 
-  // Influenced margin coverage: blank vendor cost now reads NULL in v_fact_enriched
-  // (never full revenue), so it drops out of the margin sum. Surface how many won
-  // deals still lack a cost so the UI can caveat "covers X of Y deals" rather than
-  // silently reporting margin over a sliver of deals.
+  // Influenced margin coverage: margin is gross profit (EUR) — Gross_Profit_Value__c,
+  // else Amount × Gross_Profit_Margin__c; a deal with neither reads NULL in
+  // v_fact_enriched (never full revenue), so it drops out of the margin sum. Surface
+  // how many won deals still lack gross profit so the UI can caveat "covers X of Y
+  // deals" rather than silently reporting margin over a sliver of deals.
   const wonValueRows = rows.filter((r) => Number(r.closed_won_value) > 0)
   const dealsOf = (rs) => rs.reduce((a, r) => a + (Number(r.closed_won_count) || 1), 0)
   const marginPendingDeals = dealsOf(wonValueRows.filter((r) => r.margin_value == null))
@@ -139,27 +145,45 @@ function funnelOf(rows) {
     // there is genuinely no opp/won signal in scope; if any deal is won we know
     // at least that many reached opp, so the floor applies.
     opp: oppRaw > 0 || won > 0 ? opp : NA,
+    // Created Opportunities — all opps created in period; NA until re-ingest populates it.
+    createdOpps: createdRaw > 0 ? createdRaw : NA,
     pipeline: sum(rows, 'pipeline_value'),
     closedWon: sum(rows, 'closed_won_value'),
     // Count of won deals (terminal funnel stage). NA (not 0) until the SF
     // workflow re-runs to populate closed_won_count.
     closedWonCount: wonRaw > 0 ? won : NA,
-    margin: naIfAllZero(rows, 'margin_value'), // influenced margin = won amount − vendor cost (blank cost → NULL, excluded)
-    marginPendingDeals, // won deals with no vendor cost yet (margin not counted)
+    margin: naIfAllZero(rows, 'margin_value'), // influenced margin = gross profit EUR (GP value, else Amount × GP margin; blank → NULL, excluded)
+    marginPendingDeals, // won deals with no gross profit yet (margin not counted)
     marginKnownDeals, // won deals whose margin is counted
     spend: naIfAllZero(rows, 'spend'),
     impressions: naIfAllZero(rows, 'impressions'),
   }
 }
 
+// key may be a column name (string) or a per-row derivation function — the latter
+// lets callers group on a computed value (e.g. the split display channel below).
 function groupBy(rows, key) {
+  const keyFn = typeof key === 'function' ? key : (r) => r[key] ?? null
   const m = new Map()
   for (const r of rows) {
-    const k = r[key] ?? null
+    const k = keyFn(r)
     if (!m.has(k)) m.set(k, [])
     m.get(k).push(r)
   }
   return m
+}
+
+// Presentation channel (Margot X8 / OV6 / BP5): Salesforce collapses all event
+// campaign types into ONE channel ("Events & Webinars"), but the client wants
+// Webinars and in-person Events reported as two distinct channels. We split at
+// the read layer using campaign_type (already on v_fact_enriched) — no re-ingest,
+// dim_channel stays a single row so the channel FILTER/selector and the dedicated
+// Events page (which fetches channel='Events & Webinars' and splits internally)
+// are untouched. Every OTHER channel passes through unchanged.
+const EVENTS_CHANNEL = 'Events & Webinars'
+function displayChannel(row) {
+  if (row.channel_name !== EVENTS_CHANNEL) return row.channel_name
+  return row.campaign_type === 'Webinar' ? 'Webinars' : 'In-person Events'
 }
 
 // ---- Surface query functions (each returns view-ready, aggregated data) ----
@@ -233,7 +257,7 @@ export async function getMeetings(filters = {}) {
 export async function getOverview(filters) {
   const [rows, retention] = await Promise.all([fetchFacts(filters), getRetention(filters)])
   const funnel = funnelOf(rows)
-  const byChannel = [...groupBy(rows, 'channel_name')]
+  const byChannel = [...groupBy(rows, displayChannel)]
     .map(([channel, rs]) => ({
       channel,
       pipeline: sum(rs, 'pipeline_value'),
@@ -284,7 +308,7 @@ export async function getBoardPackData(filters = {}) {
 
   // Channel contribution — who drove the pipeline. Dropped if a channel has no
   // signal in scope (keeps the board pack to channels that actually contributed).
-  const byChannel = [...groupBy(rows, 'channel_name')]
+  const byChannel = [...groupBy(rows, displayChannel)]
     .map(([channel, rs]) => ({
       channel: channel ?? 'Unattributed',
       leads: sum(rs, 'leads'),
@@ -304,6 +328,7 @@ export async function getBoardPackData(filters = {}) {
       region: rs[0]?.region_name ?? code ?? 'Unassigned',
       mql: sum(rs, 'mql_count'),
       sql: sum(rs, 'sql_count'),
+      createdOpps: sum(rs, 'created_opp_count'),
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
     }))
@@ -351,19 +376,114 @@ export async function updateKpiTarget(kpiKey, period, value) {
   return data
 }
 
+// ---- Editable campaign overrides (B4 / CC-4) ------------------------------
+// Friendly display names + regions for campaigns, keyed by campaign_key (the SF
+// campaign Id). Dashboard-side only — Salesforce stays canonical. Lives in its
+// own table, so renames PERSIST across every re-ingest (ingestion never touches
+// it). RLS: authenticated read+write. Returns a map keyed by campaign_key.
+export async function getCampaignOverrides() {
+  const { data, error } = await supabase.from('campaign_overrides').select('*')
+  if (error) throw error
+  const byKey = {}
+  for (const r of data || []) byKey[r.campaign_key] = r
+  return byKey
+}
+
+// Upsert one field of a campaign override. field ∈ 'display_name'|'display_region'|
+// 'hidden'. Empty string clears the label (→ null, falls back to the SF value).
+// Partial upsert: only the given column changes; others are preserved.
+export async function upsertCampaignOverride(campaignKey, field, value) {
+  if (!['display_name', 'display_region', 'hidden', 'theme'].includes(field)) throw new Error(`bad field: ${field}`)
+  if (!campaignKey) throw new Error('campaignKey required')
+  const v = field === 'hidden'
+    ? !!value
+    : value == null || String(value).trim() === '' ? null : String(value).trim()
+  const { data, error } = await supabase
+    .from('campaign_overrides')
+    .upsert({ campaign_key: campaignKey, [field]: v, updated_at: new Date().toISOString() }, { onConflict: 'campaign_key' })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function getPipeline(filters) {
   const rows = await fetchFacts(filters)
-  const bySource = [...groupBy(rows, 'channel_name')]
+  const bySource = [...groupBy(rows, displayChannel)]
     .map(([channel, rs]) => ({
       channel,
       leads: sum(rs, 'leads'),
       mql: sum(rs, 'mql_count'),
       sql: sum(rs, 'sql_count'),
+      createdOpps: sum(rs, 'created_opp_count'),
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
     }))
     .sort((a, b) => b.pipeline - a.pipeline)
   return { funnel: funnelOf(rows), bySource, hasData: rows.length > 0, rowCount: rows.length }
+}
+
+// Current-quarter activity vs ongoing impact of prior-quarter activities (X6, Margot).
+// Buckets the period's marketing outcomes by WHEN the campaign STARTED (dim_campaign
+// StartDate, exposed as campaign_start_date):
+//   • current — campaign started within the selected period → activities we ran now + results to date
+//   • prior   — campaign started before the period → pipeline/revenue older activities are STILL generating now
+//   • undated — campaign has no StartDate in Salesforce (can't classify; surfaced honestly)
+// Also derives an implied average sales-cycle = days from campaign start to a won deal's close
+// (won rows are dated by CloseDate) — the "length of our sales cycle / long-term impact" story.
+// Region + quarter scoped like everything else (facts already filtered to the period by activity_date).
+export async function getCurrentVsOngoing(filters = {}) {
+  const rows = await fetchFacts(filters)
+  const y = REPORTING_YEAR
+  const qStart = { q1: `${y}-01-01`, q2: `${y}-04-01`, q3: `${y}-07-01`, q4: `${y}-10-01` }
+  const periodStart =
+    filters.quarter && filters.quarter !== 'ytd' ? qStart[filters.quarter] : `${HISTORY_START_YEAR}-01-01`
+
+  const blank = () => ({ leads: 0, pipeline: 0, closedWon: 0, wonCount: 0, campaigns: new Set(), cycleDays: 0, cycleWon: 0 })
+  const cur = blank()
+  const prior = blank()
+  const undated = blank()
+  const DAY = 86400000
+
+  for (const r of rows) {
+    const start = r.campaign_start_date // 'YYYY-MM-DD' | null
+    const bucket = start == null ? undated : start >= periodStart ? cur : prior
+    bucket.leads += Number(r.leads) || 0
+    bucket.pipeline += Number(r.pipeline_value) || 0
+    bucket.closedWon += Number(r.closed_won_value) || 0
+    const won = Number(r.closed_won_count) || 0
+    bucket.wonCount += won
+    if (r.campaign_key) bucket.campaigns.add(r.campaign_key)
+    // Sales cycle per bucket: campaign start → won close (won rows carry CloseDate in activity_date).
+    if (won > 0 && start && r.activity_date) {
+      const days = Math.round((new Date(r.activity_date) - new Date(start)) / DAY)
+      if (days >= 0) {
+        bucket.cycleDays += days * won
+        bucket.cycleWon += won
+      }
+    }
+  }
+
+  const shape = (b) => ({
+    leads: b.leads,
+    pipeline: b.pipeline,
+    closedWon: b.closedWon,
+    wonCount: b.wonCount,
+    campaigns: b.campaigns.size,
+    avgCycleDays: b.cycleWon > 0 ? Math.round(b.cycleDays / b.cycleWon) : NA, // days from campaign start to won close
+  })
+  const totCycleDays = cur.cycleDays + prior.cycleDays
+  const totCycleWon = cur.cycleWon + prior.cycleWon
+  return {
+    periodStart,
+    current: shape(cur),
+    prior: shape(prior),
+    undated: shape(undated),
+    avgSalesCycleDays: totCycleWon > 0 ? Math.round(totCycleDays / totCycleWon) : NA,
+    incrementalRevenue: prior.closedWon, // revenue prior-period activities generated IN this period
+    incrementalPipeline: prior.pipeline,
+    hasData: rows.length > 0,
+  }
 }
 
 // Pipeline stage distribution (B, 20 Jun, Option 1). Open-pipeline snapshot: count
@@ -395,8 +515,12 @@ export async function getOpportunityStage(filters = {}) {
 }
 
 // Channel page: totals for one channel_name + per-campaign drill-down.
-export async function getChannel(channelName, filters) {
-  const rows = await fetchFacts({ ...filters, channel: channelName })
+// excludeTypes: optional read-layer exclusion by campaign_type — the SEO page passes
+// ['Content/White Paper'] so whitepaper-download campaigns (reported on the Email
+// page) don't also inflate Organic SEO's leads/MQL.
+export async function getChannel(channelName, filters, excludeTypes = null) {
+  let rows = await fetchFacts({ ...filters, channel: channelName })
+  if (excludeTypes && excludeTypes.length) rows = rows.filter((r) => !excludeTypes.includes(r.campaign_type))
   const campaigns = [...groupBy(rows, 'campaign_key')]
     .map(([key, rs]) => ({
       campaignKey: key,
@@ -404,6 +528,7 @@ export async function getChannel(channelName, filters) {
       leads: sum(rs, 'leads'),
       mql: sum(rs, 'mql_count'),
       sql: sum(rs, 'sql_count'),
+      createdOpps: sum(rs, 'created_opp_count'),
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
       spend: naIfAllZero(rs, 'spend'),
@@ -415,6 +540,50 @@ export async function getChannel(channelName, filters) {
     campaigns,
     hasData: rows.length > 0,
     rowCount: rows.length,
+  }
+}
+
+// Email page (Margot, Jul 2026): the whitepaper-download + workflow campaigns she
+// named, scoped by explicit campaign_key — NOT by channel/type. Three are stored in
+// Salesforce as "Content / White Paper" (so they otherwise sit under Organic SEO) and
+// one as "Email"; scoping by type showed the wrong set. All the fact data already
+// exists in v_fact_enriched (no re-ingest needed) — we just read these keys. There are
+// NO email-engagement metrics: this org has no send/open data (NumberSent = 0, no
+// Account Engagement), so the page shows the COMMERCIAL funnel only. Editable list —
+// add a key here if CWSI adds a campaign to the programme.
+export const EMAIL_CAMPAIGN_KEYS = [
+  '701Si00000V3LvjIAF', // Q1 2026 - Data That Moves Your Business Forward Whitepaper
+  '701Tm00000cHsHgIAK', // 2026 - Apple for Enterprise Tech Deep Dive - Whitepaper
+  '701Tm00000c9ygeIAA', // 2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
+  '701Tm00000az9RSIAY', // 2026 - Microsoft E7 Offering Workflow
+]
+
+export async function getEmailReport(filters = {}) {
+  // region + quarter only — never the global channel/campaign/pillar (these campaigns
+  // span the SEO + Email channels; the scoping is by campaign_key below).
+  const scoped = { region: filters.region, quarter: filters.quarter }
+  const rows = await fetchAll(
+    () => applyFilters(supabase.from('v_fact_enriched').select(FACT_COLS), scoped).in('campaign_key', EMAIL_CAMPAIGN_KEYS),
+    ['fact_id'],
+  )
+  const campaigns = [...groupBy(rows, 'campaign_key')]
+    .map(([key, rs]) => ({
+      campaignKey: key,
+      campaignName: rs[0]?.campaign_name ?? key,
+      leads: sum(rs, 'leads'),
+      mql: sum(rs, 'mql_count'),
+      sql: sum(rs, 'sql_count'),
+      createdOpps: sum(rs, 'created_opp_count'),
+      oppValue: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }))
+    .sort((a, b) => b.leads - a.leads)
+  return {
+    totals: funnelOf(rows),
+    campaigns,
+    hasData: rows.length > 0,
+    targetCount: EMAIL_CAMPAIGN_KEYS.length,
+    matchedCount: campaigns.length,
   }
 }
 
@@ -464,11 +633,15 @@ export async function getLinkedInSnapshot(filters = {}) {
     leads: sum(rows, 'leads'), // LinkedIn lead-gen FORM leads (delivery rows)
   }
 
-  // SF-attributed pipeline + revenue for the LinkedIn Paid CHANNEL (region-scoped,
-  // lifetime — same timeframe as the lifetime spend snapshot, so ROI compares
-  // like-for-like). The delivery rows carry £0 pipeline; the attributed value sits
-  // on the channel's SF campaign rows. Best-effort: ROI is omitted (NA) if this read
-  // fails. Quarter is intentionally NOT applied (matches the lifetime snapshot).
+  // SF-attributed pipeline + revenue for the LinkedIn Paid CHANNEL (region-scoped).
+  // The delivery rows carry £0 pipeline; the attributed value sits on the channel's
+  // SF campaign rows. Best-effort: ROI is omitted (NA) if this read fails.
+  // 2026 SCOPE (1 Jul): this was previously UNSCOPED by year ("lifetime, to match
+  // the lifetime spend snapshot"), which pulled attributed pipeline/revenue back to
+  // 2021 and inflated ROI (all-time £170.6k pipeline / £268.2k won vs 2026 £31.0k /
+  // £32.1k). Now bounded to the 2026 reporting window (year >= 2026, capped at Q2
+  // close) like every other funnel figure. The quarter pill is still not applied —
+  // this pairs with the cumulative delivery snapshot, so it's the full-2026 total.
   let attributed = { pipeline: NA, closedWon: NA }
   try {
     const chRows = await fetchAll(() => {
@@ -476,6 +649,8 @@ export async function getLinkedInSnapshot(filters = {}) {
         .from('v_fact_enriched')
         .select('fact_id,region_code,pipeline_value,closed_won_value')
         .eq('channel_name', 'LinkedIn Paid')
+        .gte('year', HISTORY_START_YEAR)
+        .lte('activity_date', toDateCapIso())
       if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
       return q
     }, ['fact_id'])
@@ -714,7 +889,7 @@ export async function getEventsDetail(filters = {}) {
     () => applyFilters(
       supabase
         .from('v_fact_enriched')
-        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,pipeline_value,closed_won_value'),
+        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,created_opp_count,pipeline_value,closed_won_value'),
       { ...filters, channel: 'Events & Webinars' },
     ),
     ['fact_id'],
@@ -728,6 +903,7 @@ export async function getEventsDetail(filters = {}) {
       leads: sum(rs, 'leads'),
       mql: sum(rs, 'mql_count'),
       sql: sum(rs, 'sql_count'),
+      createdOpps: sum(rs, 'created_opp_count'),
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
     }))
@@ -746,6 +922,79 @@ export async function getEventsDetail(filters = {}) {
   return { campaigns, types, byType, hasData: rows.length > 0 }
 }
 
+// Campaign-level THEME rollup (Margot, Jul 2026 — X4 / G3). Groups every marketing
+// campaign into its overarching quarterly theme (see themes.js — a rule that covers
+// the whole book, not just the campaigns Margot named) and returns per-theme rollups
+// with the child activities beneath. Region + quarter scoped like the rest of the app
+// (selecting a quarter naturally hides the other quarter's themes). Metrics are the
+// SF-attributed funnel we already hold; Created Opportunities as a distinct metric
+// arrives with the funnel-definition work (X3).
+export async function getCampaignThemes(filters = {}) {
+  const [rows, overrides] = await Promise.all([
+    fetchAll(
+      () => applyFilters(
+        supabase
+          .from('v_fact_enriched')
+          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,leads,mql_count,sql_count,pipeline_value,closed_won_value,closed_won_count'),
+        filters,
+      ),
+      ['fact_id'],
+    ),
+    getCampaignOverrides(), // map by campaign_key → { theme, display_name, ... }
+  ])
+
+  // Collapse to one row per campaign, tagged with its theme. A manual override
+  // (campaign_overrides.theme) wins over the name-based auto rule; we keep the auto
+  // theme too so the UI can show "Auto · <name-rule theme>" and offer a revert.
+  const campaigns = [...groupBy(rows, 'campaign_key')].map(([key, rs]) => {
+    const name = rs[0]?.campaign_name || key || 'Unattributed'
+    const autoTheme = themeForCampaign(name)
+    const pinned = overrides[key]?.theme || null
+    return {
+      campaignKey: key,
+      campaignName: name,
+      campaignType: rs[0]?.campaign_type || null,
+      channel: rs[0]?.channel_name || null,
+      leads: sum(rs, 'leads'),
+      mql: sum(rs, 'mql_count'),
+      sql: sum(rs, 'sql_count'),
+      pipeline: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+      wonCount: sum(rs, 'closed_won_count'),
+      theme: pinned ? themeMeta(pinned) : autoTheme,
+      autoTheme,
+      themeOverridden: !!pinned,
+    }
+  })
+
+  // Group campaigns by theme, roll up totals, emit in THEME_ORDER (Other last).
+  const byTheme = new Map()
+  for (const c of campaigns) {
+    if (!byTheme.has(c.theme.key)) byTheme.set(c.theme.key, [])
+    byTheme.get(c.theme.key).push(c)
+  }
+
+  const themes = THEME_ORDER.filter((k) => byTheme.has(k)).map((k) => {
+    const cs = byTheme
+      .get(k)
+      .sort((a, b) => b.pipeline - a.pipeline || b.closedWon - a.closedWon || b.leads - a.leads)
+    const totals = cs.reduce(
+      (a, c) => ({
+        leads: a.leads + c.leads,
+        mql: a.mql + c.mql,
+        sql: a.sql + c.sql,
+        pipeline: a.pipeline + c.pipeline,
+        closedWon: a.closedWon + c.closedWon,
+        wonCount: a.wonCount + c.wonCount,
+      }),
+      { leads: 0, mql: 0, sql: 0, pipeline: 0, closedWon: 0, wonCount: 0 },
+    )
+    return { ...themeMeta(k), campaigns: cs, totals, activityCount: cs.length }
+  })
+
+  return { themes, hasData: campaigns.length > 0 }
+}
+
 // ---- Outreach.io engagement SNAPSHOT -------------------------------------
 // Reads v_outreach_sequence_current (latest snapshot only — counters are
 // lifetime-to-date, NOT a daily series). Region + pillar scope it. meetings come
@@ -753,8 +1002,45 @@ export async function getEventsDetail(filters = {}) {
 // pending the Outreach meetings sync, NOT a Salesforce thing); SQL / pipeline are
 // Salesforce outcomes pending the Outreach↔SF attribution link → pending, never
 // fabricated. Rates are computed here, never stored.
+// OR7/OR8 — the three marketing workstreams Margot set up, parsed from the CWSI naming
+// convention (her feedback confirms the set + labels). By elimination the data has exactly
+// three systematic families and she named exactly three workstreams:
+//   "CWSI Secure <pillar> Outbound …"  → Historic Data Reactivation   (her "Workstream 3")
+//   "CWSI - SoPro <region> <product> …" → Outbound Prospecting · SoPro
+//   "CWSI - Microsoft <region> <product> …" → Outbound Prospecting · Microsoft TUM
+// Anything else (events, webinar/campaign follow-ups, single-account sales sequences) → "Other".
+export const OUTREACH_WORKSTREAM_ORDER = [
+  'Historic Data Reactivation',
+  'Outbound Prospecting · SoPro',
+  'Outbound Prospecting · Microsoft TUM',
+  'Other sequences',
+]
+export function outreachWorkstream(name) {
+  const n = String(name || '').toLowerCase()
+  if (/^cwsi secure .*outbound/.test(n)) return 'Historic Data Reactivation'
+  if (/^cwsi - sopro/.test(n)) return 'Outbound Prospecting · SoPro'
+  if (/^cwsi - microsoft/.test(n)) return 'Outbound Prospecting · Microsoft TUM'
+  return 'Other sequences'
+}
+
+// OR4 — Margot: "this view should ONLY include the marketing sequences we set up together:
+// Workstream 3, Microsoft TUM, and SoPro. The sales sequences should be excluded." So a
+// marketing sequence is exactly one of the three workstreams above; everything else (events,
+// campaigns, one-off account/sales sequences) is excluded from the marketing-only view.
+export function isMarketingSequence(name) { return outreachWorkstream(name) !== 'Other sequences' }
+// The product/flow promoted within a workstream (e.g. "M365 Review", "Copilot Accelerator",
+// "Secure Data"). null for campaign/event sequences (shown by their own name instead).
+export function outreachProduct(name) {
+  const n = String(name || '')
+  let m = n.match(/^CWSI - (?:SoPro|Microsoft)\s+(?:UK&I|UK & I|BeLux|NL)\s+(.+?)\s*-\s*[^-]*$/i)
+  if (m) return m[1].replace(/\s+/g, ' ').trim()
+  m = n.match(/^CWSI Secure\s+(AI|Data|Endpoints|Identity|Operations)\s+Outbound/i)
+  if (m) return 'Secure ' + m[1]
+  return null
+}
+
 export async function getOutreach(filters = {}) {
-  const rows = await fetchAll(() => {
+  const allRows = await fetchAll(() => {
     let q = supabase
       .from('v_outreach_sequence_current')
       .select('sequence_id,activity_date,region_code,pillar_name,sequence_name,prospects,opens,clicks,replies,meetings,enabled')
@@ -765,6 +1051,13 @@ export async function getOutreach(filters = {}) {
     }
     return q
   }, ['sequence_id']) // unique per current snapshot
+
+  // OR4: default to marketing sequences only (the 3 workstreams; toggle-able from the page).
+  const marketingOnly = filters.marketingOnly !== false
+  const marketingCount = allRows.filter((r) => isMarketingSequence(r.sequence_name)).length
+  let rows = marketingOnly ? allRows.filter((r) => isMarketingSequence(r.sequence_name)) : allRows
+  // OR2: "Type of Outreach" filter — narrow to one workstream when selected.
+  if (filters.workstream) rows = rows.filter((r) => outreachWorkstream(r.sequence_name) === filters.workstream)
 
   const snapshotDate = rows.reduce((mx, r) => (r.activity_date > mx ? r.activity_date : mx), null)
   const prospects = sum(rows, 'prospects')
@@ -829,14 +1122,158 @@ export async function getOutreach(filters = {}) {
     }
   })
 
+  // OR7/OR8 — group by workstream (with product + region per sequence). Provisional labels.
+  const byWs = groupBy(rows, (r) => outreachWorkstream(r.sequence_name))
+  const workstreams = OUTREACH_WORKSTREAM_ORDER.filter((w) => byWs.has(w)).map((ws) => {
+    const rs = byWs.get(ws)
+    // aggregate by (product/flow × region) — collapses the same product across reps
+    const agg = new Map()
+    for (const r of rs) {
+      const product = outreachProduct(r.sequence_name)
+      const label = product || r.sequence_name // "Other" sequences show their own name
+      const key = label + '|' + (r.region_code || '')
+      if (!agg.has(key)) agg.set(key, { label, region: r.region_code, prospects: 0, opens: 0, clicks: 0, replies: 0, sequences: 0 })
+      const x = agg.get(key)
+      x.prospects += r.prospects || 0; x.opens += r.opens || 0; x.clicks += r.clicks || 0; x.replies += r.replies || 0; x.sequences += 1
+    }
+    return {
+      workstream: ws,
+      subtotal: {
+        sequences: rs.length, prospects: sum(rs, 'prospects'),
+        opens: sum(rs, 'opens'), clicks: sum(rs, 'clicks'), replies: sum(rs, 'replies'),
+      },
+      // show only product×region rows that actually contacted prospects (drops empty flows)
+      rows: [...agg.values()].filter((r) => r.prospects > 0).sort((a, b) => b.prospects - a.prospects),
+    }
+  }).filter((g) => g.rows.length > 0) // drop a workstream entirely if it has no active flows in scope
+
   return {
     snapshotDate,
     kpis,
     funnel: { prospects, opens: kpis.opens, clicks: kpis.clicks, replies: kpis.replies },
     groups,
+    workstreams,
     pillarCoverage,
+    marketingOnly,
+    seqCounts: { marketing: marketingCount, total: allRows.length }, // OR4: shown vs all
     hasData: rows.length > 0,
     rowCount: rows.length,
+  }
+}
+
+// ---- Outreach → SF meeting attribution (CC-6, Paul's method) -----------------
+// A meeting is attributed to a marketing Outreach sequence when the meeting's SF
+// contact email matches a prospect email that is a member of that sequence
+// (v_outreach_attributed_meetings joins fact_meeting.contact_email = prospect email).
+// The join is EMAIL-based, so coverage is partial (a contact may use different
+// emails in Outreach vs Salesforce) — we surface matched-vs-total honestly.
+//
+// Sequences fall into three tiers (Margot OR4 is the open question of which "count"):
+//   • Outbound prospecting — the cold workstreams (SoPro / Microsoft TUM / Secure X
+//     Outbound). This is Paul's "outbound-generated" 100-meetings definition.
+//   • Events & campaigns   — event/webinar follow-ups, named-account campaigns.
+//   • Broadcast/newsletter — monthly updates + manual follow-ups that ~every contact
+//     is on; a match here is correlation, not causation (over-attributes).
+// A single meeting can match MANY sequences, so per-sequence counts overlap and do
+// NOT sum to the tier totals — every tier count is DISTINCT meetings.
+const OUTREACH_OUTBOUND_RE = /^cwsi - sopro|^cwsi - microsoft|^cwsi secure .*outbound/i
+const OUTREACH_BROADCAST_RE = /monthly update|^cw monthly|^follow-up manual/i
+export function outreachSeqCategory(name) {
+  const n = name || ''
+  if (OUTREACH_OUTBOUND_RE.test(n)) return 'Outbound prospecting'
+  if (OUTREACH_BROADCAST_RE.test(n)) return 'Broadcast / newsletter'
+  return 'Events & campaigns'
+}
+
+export async function getOutreachAttributedMeetings(filters = {}) {
+  // dateCol differs: meetings by activity_date, opps by created_date (Created Opps dating).
+  const scope = (q, dateCol) => {
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+    } else {
+      q = q.eq('year', REPORTING_YEAR)
+    }
+    q = q.lte(dateCol, toDateCapIso()) // to-date cap (Q2 2026 close)
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }
+  const [attr, meetings, opps] = await Promise.all([
+    fetchAll(() => scope(supabase
+      .from('v_outreach_attributed_meetings')
+      .select('meeting_id,region_code,year,quarter,activity_date,sequence_id,sequence_name'), 'activity_date'), ['meeting_id', 'sequence_id']),
+    fetchAll(() => scope(supabase
+      .from('v_meeting')
+      .select('meeting_id,region_code,year,quarter,activity_date,contact_email'), 'activity_date'), ['meeting_id']),
+    fetchAll(() => scope(supabase
+      .from('v_outreach_attributed_opps')
+      .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_id']),
+  ])
+
+  const outbound = new Set(), exclBroadcast = new Set(), any = new Set()
+  const perSeq = new Map()
+  for (const r of attr) {
+    const cat = outreachSeqCategory(r.sequence_name)
+    any.add(r.meeting_id)
+    if (cat !== 'Broadcast / newsletter') exclBroadcast.add(r.meeting_id)
+    if (cat === 'Outbound prospecting') outbound.add(r.meeting_id)
+    const key = r.sequence_name || '(unnamed sequence)'
+    if (!perSeq.has(key)) perSeq.set(key, { sequence: key, category: cat, region: r.region_code, ids: new Set() })
+    perSeq.get(key).ids.add(r.meeting_id)
+  }
+  // ---- Opportunities (OR9): distinct opps per tier + per sequence; pipeline = open &
+  //      qualified, won = IsWon. Per-opp value counted once (an opp can span sequences). ----
+  const UNQ = 'Unqualified opp'
+  const oppVal = new Map()             // opp_id -> { pipeline, won }
+  const oppOut = new Set(), oppExcl = new Set(), oppAny = new Set()
+  const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
+  for (const o of opps) {
+    const amt = Number(o.amount_eur) || 0
+    const pipe = (!o.is_closed && o.stage_name !== UNQ) ? amt : 0
+    const won = o.is_won ? amt : 0
+    if (!oppVal.has(o.opp_id)) oppVal.set(o.opp_id, { pipeline: pipe, won })
+    const cat = outreachSeqCategory(o.sequence_name)
+    oppAny.add(o.opp_id)
+    if (cat !== 'Broadcast / newsletter') oppExcl.add(o.opp_id)
+    if (cat === 'Outbound prospecting') oppOut.add(o.opp_id)
+    const key = o.sequence_name || '(unnamed sequence)'
+    if (!perSeqOpp.has(key)) perSeqOpp.set(key, { region: o.region_code, opps: new Set(), pipeline: 0, won: 0 })
+    const ps = perSeqOpp.get(key)
+    if (!ps.opps.has(o.opp_id)) { ps.opps.add(o.opp_id); ps.pipeline += pipe; ps.won += won }
+  }
+  const sumTier = (set) => {
+    let p = 0, w = 0
+    for (const id of set) { const v = oppVal.get(id); p += v.pipeline; w += v.won }
+    return { createdOpps: set.size, pipeline: p, won: w }
+  }
+
+  // ---- Merge meetings ∪ opps into one per-sequence row set ----
+  const names = new Set([...perSeq.keys(), ...perSeqOpp.keys()])
+  const bySequence = [...names].map((name) => {
+    const m = perSeq.get(name)
+    const o = perSeqOpp.get(name)
+    return {
+      sequence: name,
+      category: m?.category || outreachSeqCategory(name),
+      region: m?.region || o?.region || null,
+      meetings: m ? m.ids.size : 0,
+      createdOpps: o ? o.opps.size : 0,
+      oppValue: o ? o.pipeline : 0,
+      closedWon: o ? o.won : 0,
+    }
+  }).sort((a, b) => (b.meetings - a.meetings) || (b.createdOpps - a.createdOpps))
+
+  const totalMeetings = new Set(meetings.map((m) => m.meeting_id)).size
+  const withEmail = new Set(meetings.filter((m) => m.contact_email).map((m) => m.meeting_id)).size
+
+  return {
+    // DISTINCT meetings per tier (nested: outbound ⊆ exclBroadcast ⊆ any)
+    tiers: { outbound: outbound.size, exclBroadcast: exclBroadcast.size, any: any.size },
+    // DISTINCT opps per tier + pipeline/won (OR9)
+    oppTiers: { outbound: sumTier(oppOut), exclBroadcast: sumTier(oppExcl), any: sumTier(oppAny) },
+    bySequence,
+    // Coverage for the honesty note: how many meetings we could even attempt to match
+    coverage: { attributed: any.size, withEmail, totalMeetings },
+    hasData: attr.length > 0 || totalMeetings > 0 || opps.length > 0,
   }
 }
 
@@ -954,7 +1391,11 @@ export async function getWebTraffic(filters = {}) {
     () => applyWebFilters(
       supabase
         .from('v_web_daily')
-        .select('activity_date,region_code,region_name,hostname,channel_group,sessions,engaged_sessions,key_events'),
+        .select('activity_date,region_code,region_name,hostname,channel_group,sessions,engaged_sessions,key_events')
+        // SEO3 (Margot, Jul 2026): report only the cwsisecurity.com domain family
+        // (apex + www + insights.cwsisecurity.com). The view already strips
+        // dev/preview/proxy hosts; this narrows to the two client-named domains.
+        .ilike('hostname', '%cwsisecurity.com'),
       filters,
     ),
     ['activity_date', 'region_code', 'hostname', 'channel_group'], // grain key (date × region × hostname × channel)
@@ -1025,7 +1466,7 @@ export async function getSeo(filters = {}) {
     p_quarter: qn,
     p_year: REPORTING_YEAR,
     p_history_start: HISTORY_START_YEAR,
-    p_limit: 15,
+    p_limit: 10, // SEO7/SEO8 (Margot, Jul 2026): top 10 only
   })
   // Top keywords/queries — same server-side top-N RPC over fact_seo_query_daily
   // (~1M rows). Query grain has no region, so quarter/year-scoped only. Scoped to
@@ -1034,7 +1475,7 @@ export async function getSeo(filters = {}) {
     p_quarter: qn,
     p_year: REPORTING_YEAR,
     p_history_start: HISTORY_START_YEAR,
-    p_limit: 15,
+    p_limit: 10, // SEO8 (Margot, Jul 2026): top 10 keywords only
   })
 
   const [daily, { data: pData, error: pErr }, { data: qData, error: qErr }] = await Promise.all([

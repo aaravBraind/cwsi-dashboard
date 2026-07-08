@@ -25,9 +25,9 @@
 // flagged provisional everywhere they surface. See docs/KPI_REGISTER.md.
 
 import { getBoardPackData, getKpiTargets } from './queries'
-import { FY_TARGETS, CONVERSION_TARGETS, CPL_TARGET_GBP } from './thresholds'
+import { FY_TARGETS, CONVERSION_TARGETS } from './thresholds'
 import { isNA, REGIONS, QUARTER_PILLS } from './constants'
-import { gbp, num } from './format'
+import { eur, num } from './format'
 
 // A real, finite number (not the NA sentinel, not null/undefined).
 const real = (v) => !isNA(v) && v != null && Number.isFinite(Number(v))
@@ -84,7 +84,6 @@ export async function getBoardPack(filters = {}) {
     closedWonCount: fyTgt('closedWonCount', FY_TARGETS.closedWonCount),
     pipeline: fyTgt('influencedPipeline', FY_TARGETS.influencedPipeline),
     margin: fyTgt('influencedMargin', FY_TARGETS.influencedMargin),
-    cpl: fyTgt('costPerLead', CPL_TARGET_GBP),
   }
 
   const mql = funnel.mql
@@ -94,6 +93,7 @@ export async function getBoardPack(filters = {}) {
   const closedWonCount = funnel.closedWonCount
   const leads = funnel.leads
   const opp = funnel.opp
+  const createdOpps = funnel.createdOpps
 
   const mqlToSql = real(sql) && mql ? sql / mql : null // 0..1
 
@@ -104,10 +104,10 @@ export async function getBoardPack(filters = {}) {
     mqls: prevFunnel ? prevFunnel.mql : null,
     sqls: prevFunnel ? prevFunnel.sql : null,
     mqlToSql: prevRate,
+    createdOpps: prevFunnel ? prevFunnel.createdOpps : null,
     closedOpps: prevFunnel ? prevFunnel.closedWonCount : null,
     pipeline: prevFunnel ? prevFunnel.pipeline : null,
     margin: prevFunnel ? prevFunnel.margin : null,
-    cpl: null,
   }
 
   // ---- 1. Metrics in the agreed order ------------------------------------
@@ -125,44 +125,42 @@ export async function getBoardPack(filters = {}) {
       trace: 'Σ v_fact_enriched.sql_count (scoped)',
     },
     {
-      key: 'mqlToSql', order: 3, label: 'MQL → SQL Rate', unit: 'rate',
+      key: 'createdOpps', order: 3, label: 'Created Opportunities', unit: 'count',
+      value: createdOpps, valueDisplay: real(createdOpps) ? num(createdOpps) : 'n/a',
+      target: null, targetDisplay: 'no target set',
+      trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opps created in period, marketing-attributed, any stage)',
+      note: real(createdOpps) ? null : 'pending Salesforce data refresh',
+    },
+    {
+      key: 'mqlToSql', order: 4, label: 'MQL → SQL Rate', unit: 'rate',
       value: mqlToSql, valueDisplay: mqlToSql == null ? 'n/a' : `${(mqlToSql * 100).toFixed(1)}%`,
       target: TGT.mqlToSql,
       targetDisplay: `FY ${(TGT.mqlToSql * 100).toFixed(0)}%`,
       trace: 'sql_count ÷ mql_count (derived)',
     },
     {
-      key: 'closedOpps', order: 4, label: 'Closed Opportunities', unit: 'count',
+      key: 'closedOpps', order: 5, label: 'Closed Opportunities', unit: 'count',
       value: closedWonCount, valueDisplay: real(closedWonCount) ? num(closedWonCount) : 'n/a',
       target: TGT.closedWonCount, targetDisplay: `FY ${num(TGT.closedWonCount)}`,
       trace: 'Σ v_fact_enriched.closed_won_count (scoped)',
       note: real(closedWonCount) ? null : 'pending Salesforce data refresh',
     },
     {
-      key: 'pipeline', order: 5, label: 'Influenced Pipeline', unit: 'gbp',
-      value: pipeline, valueDisplay: real(pipeline) ? gbp(pipeline) : 'n/a',
-      target: TGT.pipeline, targetDisplay: `FY ${gbp(TGT.pipeline)}`,
+      key: 'pipeline', order: 6, label: 'Influenced Pipeline', unit: 'gbp',
+      value: pipeline, valueDisplay: real(pipeline) ? eur(pipeline) : 'n/a',
+      target: TGT.pipeline, targetDisplay: `FY ${eur(TGT.pipeline)}`,
       trace: 'Σ v_fact_enriched.pipeline_value (scoped)',
     },
     {
-      key: 'margin', order: 6, label: 'Influenced Margin', unit: 'gbp',
-      value: margin, valueDisplay: real(margin) ? gbp(margin) : 'n/a',
-      target: TGT.margin, targetDisplay: `FY ${gbp(TGT.margin)}`,
-      trace: 'Σ v_fact_enriched.margin_value (won Amount − vendor cost, scoped; blank/invalid cost → NULL, excluded — never counted as full revenue)',
+      key: 'margin', order: 7, label: 'Influenced Margin', unit: 'gbp',
+      value: margin, valueDisplay: real(margin) ? eur(margin) : 'n/a',
+      target: TGT.margin, targetDisplay: `FY ${eur(TGT.margin)}`,
+      trace: 'Σ v_fact_enriched.margin_value (gross profit in EUR — Salesforce Gross_Profit_Value__c, else Amount × Gross_Profit_Margin__c; scoped; blank/invalid → NULL, excluded — never counted as full revenue)',
       note: real(margin)
         ? (funnel.marginPendingDeals > 0
-            ? `${funnel.marginKnownDeals}/${funnel.marginKnownDeals + funnel.marginPendingDeals} won deals costed; rest pending cost input`
+            ? `${funnel.marginKnownDeals}/${funnel.marginKnownDeals + funnel.marginPendingDeals} won deals have gross profit; rest pending in Salesforce`
             : null)
-        : 'vendor cost pending on all won deals',
-    },
-    {
-      key: 'cpl', order: 7, label: 'Cost per Lead', unit: 'gbp',
-      // CPL is NOT computable yet — no per-channel spend mapping (spend is NA).
-      // Surface as pending; never fabricate. Target stays as context.
-      value: null, valueDisplay: 'n/a',
-      target: TGT.cpl, targetDisplay: `FY ≤ ${gbp(TGT.cpl)}`,
-      trace: 'spend ÷ leads — spend not yet mapped to channel',
-      note: 'pending per-channel spend mapping',
+        : 'gross profit pending on all won deals',
     },
   ].map((m) => ({
     ...m,
@@ -187,7 +185,7 @@ export async function getBoardPack(filters = {}) {
       id: 'mql-gap', title: 'Close the MQL volume gap to FY target',
       gap, gapDisplay: `${num(gap)} more MQLs`,
       impactValue: gap * yieldPerMql,
-      basis: `${num(gap)} MQLs × ${gbp(yieldPerMql)} pipeline/MQL`,
+      basis: `${num(gap)} MQLs × ${eur(yieldPerMql)} pipeline/MQL`,
     })
   }
   if (yieldPerSql && real(mql) && mql > 0 && real(sql)) {
@@ -198,7 +196,7 @@ export async function getBoardPack(filters = {}) {
         id: 'mqlsql-lift', title: `Lift MQL→SQL conversion to FY ${(TGT.mqlToSql * 100).toFixed(0)}%`,
         gap: extra, gapDisplay: `${num(Math.round(extra))} more SQLs`,
         impactValue: extra * yieldPerSql,
-        basis: `${num(Math.round(extra))} SQLs × ${gbp(yieldPerSql)} pipeline/SQL`,
+        basis: `${num(Math.round(extra))} SQLs × ${eur(yieldPerSql)} pipeline/SQL`,
       })
     }
   }
@@ -206,21 +204,26 @@ export async function getBoardPack(filters = {}) {
     const gap = TGT.pipeline - pipeline
     levers.push({
       id: 'pipeline-gap', title: 'Close the influenced-pipeline gap to FY target',
-      gap, gapDisplay: `${gbp(gap)} to FY target`,
+      gap, gapDisplay: `${eur(gap)} to FY target`,
       impactValue: gap,
-      basis: `FY ${gbp(TGT.pipeline)} − current ${gbp(pipeline)}`,
+      basis: `FY ${eur(TGT.pipeline)} − current ${eur(pipeline)}`,
     })
   }
   levers.sort((a, b) => b.impactValue - a.impactValue)
-  levers.forEach((l) => { l.impactDisplay = gbp(l.impactValue) })
+  levers.forEach((l) => { l.impactDisplay = eur(l.impactValue) })
 
-  // ---- 3. Funnel stage-to-stage conversion -------------------------------
-  const convRate = (a, b) => (real(a) && real(b) && b > 0 ? a / b : null)
+  // ---- 3. Funnel stage-to-stage conversion (BP8) -------------------------
+  // Aligned to Margot's funnel: Leads → MQL → SQL → Created Opps → Closed-Won
+  // (was Leads→MQL→SQL→Opp→Won using opp_count, a qualified subset — confusing and
+  // near-100% at SQL→Opp). Rate capped at 100% for display since stages are event-dated
+  // differently (leads by lead date, SQL by opp activity, created-opps by created date,
+  // won by close date) so this is a PERIOD-SCOPED ratio, not a same-cohort flow.
+  const convRate = (a, b) => (real(a) && real(b) && b > 0 ? Math.min(a / b, 1) : null)
   const conversion = [
     { from: 'Leads', to: 'MQL', rate: convRate(mql, leads) },
     { from: 'MQL', to: 'SQL', rate: convRate(sql, mql) },
-    { from: 'SQL', to: 'Opp', rate: convRate(opp, sql) },
-    { from: 'Opp', to: 'Won', rate: convRate(closedWonCount, opp) },
+    { from: 'SQL', to: 'Created Opp', rate: convRate(createdOpps, sql) },
+    { from: 'Created Opp', to: 'Won', rate: convRate(closedWonCount, createdOpps) },
   ].map((c) => ({ ...c, display: c.rate == null ? 'n/a' : `${(c.rate * 100).toFixed(1)}%` }))
 
   // ---- 4. Channel contribution (share of pipeline / MQL) -----------------
@@ -228,8 +231,8 @@ export async function getBoardPack(filters = {}) {
   const channels = byChannel.map((c) => ({
     channel: c.channel,
     mql: c.mql, mqlDisplay: num(c.mql),
-    pipeline: c.pipeline, pipelineDisplay: gbp(c.pipeline),
-    closedWon: c.closedWon, closedWonDisplay: gbp(c.closedWon),
+    pipeline: c.pipeline, pipelineDisplay: eur(c.pipeline),
+    closedWon: c.closedWon, closedWonDisplay: eur(c.closedWon),
     pipelineShare: totalPipe > 0 ? c.pipeline / totalPipe : null,
     pipelineShareDisplay: totalPipe > 0 ? `${((c.pipeline / totalPipe) * 100).toFixed(0)}%` : 'n/a',
   }))
@@ -241,12 +244,16 @@ export async function getBoardPack(filters = {}) {
     ? byRegion.map((r) => ({
         region: r.region,
         mql: r.mql, mqlDisplay: num(r.mql),
-        pipeline: r.pipeline, pipelineDisplay: gbp(r.pipeline),
-        closedWon: r.closedWon, closedWonDisplay: gbp(r.closedWon),
+        sql: r.sql, sqlDisplay: num(r.sql),
+        createdOpps: r.createdOpps, createdOppsDisplay: real(r.createdOpps) ? num(r.createdOpps) : 'n/a',
+        pipeline: r.pipeline, pipelineDisplay: eur(r.pipeline),
+        closedWon: r.closedWon, closedWonDisplay: eur(r.closedWon),
         pipelineShare: totalRegionPipe > 0 ? r.pipeline / totalRegionPipe : null,
         pipelineShareDisplay: totalRegionPipe > 0 ? `${((r.pipeline / totalRegionPipe) * 100).toFixed(0)}%` : 'n/a',
       }))
     : []
+  // BP11: is any region the "Unassigned" bucket? (drives the explanatory note)
+  const regionsHaveUnassigned = regions.some((r) => /unassign/i.test(r.region))
 
   // ---- 6. Open-pipeline health (stage distribution snapshot) -------------
   // Region-scoped current-state snapshot (NOT a quarter slice) — labelled as such.
@@ -265,20 +272,20 @@ export async function getBoardPack(filters = {}) {
       stage: s.stage,
       probability: s.probability,
       count: s.count, countDisplay: num(s.count),
-      value: s.value, valueDisplay: gbp(s.value),
+      value: s.value, valueDisplay: eur(s.value),
     })),
     openCount, openCountDisplay: num(openCount),
-    openValue, openValueDisplay: gbp(openValue),
-    weighted, weightedDisplay: gbp(weighted),
+    openValue, openValueDisplay: eur(openValue),
+    weighted, weightedDisplay: eur(weighted),
   }
 
   // ---- 7. Retention (retained contracts + expansion) --------------------
   const retention = {
     hasData: !!ret?.hasData,
     retainedCount: ret?.retainedCount, retainedCountDisplay: num(ret?.retainedCount),
-    retainedValue: ret?.retainedValue, retainedValueDisplay: gbp(ret?.retainedValue),
+    retainedValue: ret?.retainedValue, retainedValueDisplay: eur(ret?.retainedValue),
     expansionCount: ret?.expansionCount, expansionCountDisplay: num(ret?.expansionCount),
-    expansionValue: ret?.expansionValue, expansionValueDisplay: gbp(ret?.expansionValue),
+    expansionValue: ret?.expansionValue, expansionValueDisplay: eur(ret?.expansionValue),
   }
 
   // ---- 8. Trace table — the single source of allowed numbers -------------
@@ -344,6 +351,7 @@ export async function getBoardPack(filters = {}) {
     conversion,
     channels,
     regions,
+    regionsHaveUnassigned,
     pipelineHealth,
     retention,
     traceTable,
@@ -355,8 +363,8 @@ export async function getBoardPack(filters = {}) {
       mql: real(mql) ? num(mql) : 'n/a',
       sql: real(sql) ? num(sql) : 'n/a',
       opp: real(funnel.opp) ? num(funnel.opp) : 'n/a',
-      pipeline: real(pipeline) ? gbp(pipeline) : 'n/a',
-      closedWon: real(funnel.closedWon) ? gbp(funnel.closedWon) : 'n/a',
+      pipeline: real(pipeline) ? eur(pipeline) : 'n/a',
+      closedWon: real(funnel.closedWon) ? eur(funnel.closedWon) : 'n/a',
     },
     hasData,
   }

@@ -1,10 +1,11 @@
 import QuarterPills from '../QuarterPills'
-import { LoadingSkeleton, Loading, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
-import { useOverview, useEvents, useKpiTargets } from '../../hooks/useDashboardData'
+import { LoadingSkeleton, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
+import { useOverview, useKpiTargets } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
-import { gbp, num, pct, ratio, isNA } from '../../data/format'
+import { eur, num, pct, ratio, isNA } from '../../data/format'
 import { periodOf, scopeLabel, achievement, lightOf, targetAt, fmtTarget } from '../../data/kpiRegister'
 import { I } from '../icons'
+import Explain from '../Explain'
 import MarketingBudget from '../MarketingBudget'
 
 // Status lights + %-of-target follow the ACTIVE quarter pill (Q1..Q4 → that
@@ -45,12 +46,6 @@ function Body({ data }) {
   const { filters } = useFilters()
   const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
-  // Webinar attendance (real, scoped) — drives the Events panel + the health row.
-  const ev = useEvents()
-  const evt = ev.data?.hasData ? ev.data.totals : null
-  // Rate actuals (fractions) for status vs rate targets.
-  const mqlToSqlV = funnel.mql ? funnel.sql / funnel.mql : null
-  const attendanceV = evt && evt.registrants ? evt.attendees / evt.registrants : null
 
   // Editable targets from the kpi_targets DB table, resolved at the active quarter.
   const targets = useKpiTargets().data || {}
@@ -68,17 +63,31 @@ function Body({ data }) {
 
   return (
     <>
+      {/* 0. Marketing budget — at the very top (OV9): budget & spend before the funnel */}
+      <div className="panel">
+        <div className="panel-head">
+          <div className="left">
+            <div className="panel-title">Marketing Budget — Actual Spend</div>
+            <div className="panel-sub">From the budget tracker (EUR) · net of corrections · total budget &amp; MDF split pending from CWSI</div>
+          </div>
+          <span className="chip blue">EUR</span>
+        </div>
+        <div className="panel-body">
+          <MarketingBudget compact />
+        </div>
+      </div>
+
       {/* 1. Top-line summary — target + light follow the active quarter pill */}
       <div className="kpis cols-3">
         <div className="kpi">
           <div className="kpi-head">
-            <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.pound}</svg></div>
+            <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.euro}</svg></div>
             <span className={`tl ${lightFor(funnel.pipeline, 'influencedPipeline')}`}>
               <span className="tl-dot" />{pctOf(funnel.pipeline, 'influencedPipeline')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Pipeline · scoped</div>
-          <div className="kpi-val">{gbp(funnel.pipeline)}</div>
+          <div className="kpi-label">Influenced Pipeline · current view <Explain id="pipeline" /></div>
+          <div className="kpi-val">{eur(funnel.pipeline)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">{tgtSub('influencedPipeline')}</span>
           </div>
@@ -91,21 +100,21 @@ function Body({ data }) {
               <span className="tl-dot" />{isNA(funnel.margin) ? 'n/a' : pctOf(funnel.margin, 'influencedMargin')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Margin · scoped</div>
-          <div className="kpi-val">{isNA(funnel.margin) ? '—' : gbp(funnel.margin)}</div>
+          <div className="kpi-label">Influenced Margin · current view <Explain id="margin" /></div>
+          <div className="kpi-val">{isNA(funnel.margin) ? '—' : eur(funnel.margin)}</div>
           <div className="kpi-sub">
             {isNA(funnel.margin) ? (
               <NotAvailable
                 what="Influenced margin"
-                why={`vendor cost pending${funnel.marginPendingDeals ? ` for ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'}` : ''}`}
+                why={`gross profit pending${funnel.marginPendingDeals ? ` for ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'}` : ''}`}
               />
             ) : (
               <>
                 <span className="kpi-target">{tgtSub('influencedMargin')}</span>
                 <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  of {gbp(funnel.closedWon)} closed-won
+                  of {eur(funnel.closedWon)} closed-won
                   {funnel.marginPendingDeals > 0 &&
-                    ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals costed · rest pending cost input`}
+                    ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals have gross profit · rest pending in Salesforce`}
                 </span>
               </>
             )}
@@ -119,19 +128,19 @@ function Body({ data }) {
               <span className="tl-dot" />{retention.hasData ? pctOf(retention.retainedCount, 'retainedContracts') : 'n/a'}
             </span>
           </div>
-          <div className="kpi-label">Retained Contracts · scoped</div>
+          <div className="kpi-label">Retained Contracts · current view <Explain id="retention" /></div>
           <div className="kpi-val">{retention.hasData ? num(retention.retainedCount) : '—'}</div>
           <div className="kpi-sub">
             {retention.hasData ? (
               <>
-                <span className="kpi-target">{gbp(retention.retainedValue)} won · {num(retention.openCount)} open</span>
+                <span className="kpi-target">{eur(retention.retainedValue)} won · {num(retention.openCount)} open</span>
                 {retention.expansionCount > 0 && (
                   <span className="kpi-target" style={{ display: 'block' }}>
-                    + Expansion {num(retention.expansionCount)} ({gbp(retention.expansionValue)}) · Upsell / Cross-Sell
+                    + Expansion {num(retention.expansionCount)} ({eur(retention.expansionValue)}) · Upsell / Cross-Sell
                   </span>
                 )}
                 <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  {tgtSub('retainedContracts')} · whole-book scale; scope (Paul) pending
+                  {tgtSub('retainedContracts')} · whole-book scale; marketing-only scope pending
                 </span>
               </>
             ) : (
@@ -152,12 +161,12 @@ function Body({ data }) {
             </svg>
           </div>
           <div className="callout-body">
-            <strong>Influenced margin shows "—" because vendor cost is missing.</strong>{' '}
-            Margin = won amount − vendor cost.{' '}
+            <strong>Influenced margin shows "—" because Gross Profit isn't filled in Salesforce.</strong>{' '}
+            Margin = gross profit (Gross Profit Value, or Amount × Gross Profit Margin %).{' '}
             {funnel.marginPendingDeals
-              ? `The ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'} in this scope have no vendor cost entered`
-              : 'None of the won deals in this scope have a vendor cost entered'}
-            {' '}yet, so margin can't be calculated. Add the cost on those Salesforce opportunities and the figure will populate automatically.
+              ? `The ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'} in this scope have no Gross Profit entered`
+              : 'None of the won deals in this scope have Gross Profit entered'}
+            {' '}yet, so margin can't be calculated. Fill Gross Profit on those Salesforce opportunities and the figure will populate automatically.
           </div>
         </div>
       )}
@@ -169,15 +178,16 @@ function Body({ data }) {
             <div className="panel-title">Lead Conversion Funnel</div>
             <div className="panel-sub">Stage progression with conversion rates between each step</div>
           </div>
-          <span className="chip blue">scoped</span>
+          <span className="chip blue">current view</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Leads" val={num(funnel.leads)} extra="all sources" />
-            <Stage name="MQLs" val={num(funnel.mql)} extra={`${pct(funnel.mql, funnel.leads)} of leads`} />
-            <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} />
-            <Stage name="Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} />
-            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} />
+            <Stage name="Leads" val={num(funnel.leads)} extra="all sources" explainId="leads" />
+            <Stage name="MQLs" val={num(funnel.mql)} extra={`${pct(funnel.mql, funnel.leads)} of leads`} explainId="mql" />
+            <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
+            <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
+            <Stage name="Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
+            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
@@ -188,14 +198,14 @@ function Body({ data }) {
         </div>
       </div>
 
-      {/* 3. Pipeline by Channel */}
+      {/* 3. Pipeline vs Closed-Won by Channel */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
-            <div className="panel-title">Pipeline by Channel — Performance vs Spend</div>
-            <div className="panel-sub">Pipeline &amp; closed-won per channel · LinkedIn spend is a GBP snapshot; others pending</div>
+            <div className="panel-title">Pipeline vs Closed-Won by Channel</div>
+            <div className="panel-sub">Generated pipeline against the revenue it converted into · per channel · current view</div>
           </div>
-          <span className="chip blue">scoped</span>
+          <span className="chip blue">current view</span>
         </div>
         <div className="panel-body">
           <div className="tribar">
@@ -204,82 +214,33 @@ function Body({ data }) {
                 <div className="group-head">
                   <div className="group-name">{c.channel}</div>
                   <div className="group-roi">
-                    {isNA(c.spend)
-                      ? <>ROI n/a · Closed-won {gbp(c.closedWon)}</>
-                      : <>Closed-won {gbp(c.closedWon)}</>}
+                    {c.pipeline > 0
+                      ? <>{pct(c.closedWon, c.pipeline, 0)} converted to won</>
+                      : <>Closed-won {eur(c.closedWon)}</>}
                   </div>
                 </div>
                 <div className="stack">
                   <div className="bar-row">
                     <div className="bar-label">Pipeline generated</div>
                     <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.pipeline / maxPipe) * 100}%` }} /></div>
-                    <div className="bar-val">{gbp(c.pipeline)}</div>
+                    <div className="bar-val">{eur(c.pipeline)}</div>
                   </div>
                   <div className="bar-row">
                     <div className="bar-label">Closed-won</div>
                     <div className="bar-track"><div className="bar-fill bf-green" style={{ width: `${ratio(c.closedWon, maxPipe) * 100}%` }} /></div>
-                    <div className="bar-val">{gbp(c.closedWon)}</div>
-                  </div>
-                  <div className="bar-row">
-                    <div className="bar-label">Spend {isNA(c.spend) ? '' : '(GBP)'}</div>
-                    <div className="bar-track"><div className="bar-fill bf-neutral" style={{ width: isNA(c.spend) ? '0%' : `${(c.spend / maxPipe) * 100}%` }} /></div>
-                    <div className="bar-val">{isNA(c.spend) ? 'n/a' : gbp(c.spend)}</div>
+                    <div className="bar-val">{eur(c.closedWon)}</div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-
-          <div className="callout" style={{ marginTop: 18, marginBottom: 0 }}>
+          <div className="callout" style={{ marginTop: 14 }}>
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
             <div className="callout-body">
-              <strong>Currency:</strong> per-channel spend here is <strong>GBP</strong> (LinkedIn delivery,
-              a cumulative snapshot — see LinkedIn Paid). The <strong>EUR</strong> marketing budget below is
-              converted to GBP at a per-day-pinned ECB rate (labelled on the panel) — EUR and GBP are
-              converted before any comparison, never summed raw. Channels other than LinkedIn have no
-              delivery spend yet, so their ROI/CPL show "not available yet".
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Marketing budget — EUR, finance-grained, separate currency from channel spend */}
-      <div className="panel">
-        <div className="panel-head">
-          <div className="left">
-            <div className="panel-title">Marketing Budget — Actual Spend</div>
-            <div className="panel-sub">From the budget tracker (EUR) · shown in GBP at a pinned ECB rate · net of correction rows</div>
-          </div>
-          <span className="chip blue">GBP</span>
-        </div>
-        <div className="panel-body">
-          <MarketingBudget compact />
-        </div>
-      </div>
-
-      {/* 4. Webinar attendance (real, GTW → fact_event_daily) + quarter health */}
-      <div className="cols-2-3">
-        <WebinarAttendance ev={ev} />
-        <div className="panel" style={{ marginBottom: 0 }}>
-          <div className="panel-head">
-            <div className="left">
-              <div className="panel-title">Quarter Health</div>
-              <div className="panel-sub">Status vs the active-quarter target · provisional placeholders (client-gated)</div>
-            </div>
-          </div>
-          <div className="panel-body">
-            <div className="def-grid" style={{ gridTemplateColumns: '1fr', gap: 0 }}>
-              <HealthRow label="Influenced pipeline" cls={lightFor(funnel.pipeline, 'influencedPipeline')} val={pctOf(funnel.pipeline, 'influencedPipeline')} />
-              <HealthRow label="Closed-won value" cls={lightFor(funnel.closedWon, 'influencedMargin')} val={gbp(funnel.closedWon)} />
-              <HealthRow label="Lead → MQL rate" cls="neu" val={pct(funnel.mql, funnel.leads)} />
-              <HealthRow label="MQL → SQL rate" cls={lightFor(mqlToSqlV, 'mqlToSql')} val={pct(funnel.sql, funnel.mql)} />
-              <HealthRow label="CPL average" cls="neu" val="n/a" />
-              <HealthRow label="Event attendance" cls={evt ? lightFor(attendanceV, 'attendanceRate') : 'neu'} val={evt ? pct(evt.attendees, evt.registrants, 0) : 'n/a'} />
-            </div>
-            <div className="info-pill" style={{ marginTop: 14 }}>
-              <strong>CPL average</strong> is "n/a" — it needs per-channel spend, which is pending (only LinkedIn
-              delivery spend is available).
-              {!evt && ' Event attendance is "n/a" because there is no webinar (GoToWebinar) attendance in the selected region / quarter.'}
+              <strong>On Outreach &amp; Paid Search:</strong> <strong>Paid Search</strong> isn't shown because no
+              paid-search campaigns ran in the period (nothing to report — not a data gap). <strong>Outreach</strong>{' '}
+              is reported on its own page: its meetings and opportunities are attributed by contact (Paul's method),
+              which is a different basis to the campaign-attributed channels shown here, so it isn't merged into this chart.
             </div>
           </div>
         </div>
@@ -289,84 +250,16 @@ function Body({ data }) {
       <NotAvailablePanel
         title="Q3 Strategic Recommendations"
         what="AI-synthesised recommendations"
-        why="This panel is produced by the AI layer (not yet wired); left intact so it can slot in."
+        why="AI-written recommendations — coming soon."
       />
     </>
   )
 }
 
-// Webinar attendance — real GTW data (fact_event_daily), styled like the mockup's
-// Events Mix panel (seg-bar + legend + per-item bar-list). Owned/earned events +
-// per-type pipeline aren't tracked, so this shows webinar registration→attendance
-// only, and links out to the Events page for the per-webinar detail + SF funnel.
-function WebinarAttendance({ ev }) {
-  if (ev.isLoading)
-    return <div className="panel" style={{ marginBottom: 0 }}><div className="panel-body"><Loading label="Loading webinar attendance…" /></div></div>
-  if (ev.isError || !ev.data?.hasData)
-    return (
-      <NotAvailablePanel
-        title="Webinar Attendance"
-        what="Webinar registrations & attendance"
-        why="No webinar attendance for this region / quarter yet — run the GoToWebinar ingestion."
-      />
-    )
-  const { totals, webinars } = ev.data
-  const noShow = Math.max(0, totals.registrants - totals.attendees)
-  const attPct = pct(totals.attendees, totals.registrants, 0)
-  const noShowPct = pct(noShow, totals.registrants, 0)
-  const maxRate = Math.max(0.01, ...webinars.map((w) => (isNA(w.attendanceRate) ? 0 : w.attendanceRate)))
-  return (
-    <div className="panel" style={{ marginBottom: 0 }}>
-      <div className="panel-head">
-        <div className="left">
-          <div className="panel-title">Webinar Attendance</div>
-          <div className="panel-sub">Registrations → attendance · GoToWebinar · scoped</div>
-        </div>
-        <span className="chip blue">{totals.webinars} webinars</span>
-      </div>
-      <div className="panel-body">
-        <div className="seg-bar">
-          <div className="web" style={{ flex: Math.max(1, totals.attendees) }} title="Attended">{attPct}</div>
-          <div className="own" style={{ flex: Math.max(1, noShow) }} title="No-show">{noShow ? noShowPct : ''}</div>
-        </div>
-        <div className="seg-legend">
-          <div className="leg"><span className="dot" style={{ background: 'var(--cwsi-blue)' }} />Attended · {num(totals.attendees)}</div>
-          <div className="leg"><span className="dot" style={{ background: '#5fa1ff' }} />Registered · {num(totals.registrants)}</div>
-        </div>
-        <div className="bar-list" style={{ marginTop: 18 }}>
-          {webinars.map((w) => (
-            <div className="bar-row" key={w.eventKey}>
-              <div className="bar-label" title={w.eventName}>{w.eventName}</div>
-              <div className="bar-track">
-                <div className="bar-fill bf-blue" style={{ width: `${(isNA(w.attendanceRate) ? 0 : w.attendanceRate / maxRate) * 100}%` }} />
-              </div>
-              <div className="bar-val">{isNA(w.attendanceRate) ? 'n/a' : `${(w.attendanceRate * 100).toFixed(0)}%`}</div>
-            </div>
-          ))}
-        </div>
-        <div className="callout" style={{ marginTop: 16, marginBottom: 0 }}>
-          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
-          <div className="callout-body">
-            Webinars only (GoToWebinar, campaign-linked). Owned / earned in-person events and
-            per-event pipeline aren’t tracked yet — see the <strong>Events</strong> page for per-webinar detail + the SF funnel.
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const Stage = ({ name, val, extra }) => (
+const Stage = ({ name, val, extra, explainId }) => (
   <div className="h-funnel-stage">
-    <div className="stage-name">{name}</div>
+    <div className="stage-name">{name}{explainId && <Explain id={explainId} align="left" />}</div>
     <div className="stage-val">{val}</div>
     <div className="stage-extra">{extra}</div>
-  </div>
-)
-
-const HealthRow = ({ label, cls, val }) => (
-  <div className="def-row">
-    <span className="def-key">{label}</span>
-    <span className={`tl ${cls}`}><span className="tl-dot" />{val}</span>
   </div>
 )

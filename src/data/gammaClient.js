@@ -19,7 +19,7 @@ import { download, assembleKpiRegister, assemblePipeline } from './exporters'
 import { brand } from './brandKit'
 import { REGIONS } from './constants'
 import { scopeLabel, periodOf, achievement, fmtTarget } from './kpiRegister'
-import { gbp, num, isNA } from './format'
+import { eur, num, isNA } from './format'
 
 const WEBHOOK_URL = import.meta.env.VITE_GAMMA_WEBHOOK_URL
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -145,7 +145,7 @@ export function buildBoardPackPrompt(pack, generated) {
     cards.push(
       `## Pipeline Health\n\n${mdTable(['Open-pipeline stage', 'Probability', 'Open opps', 'Value'], rows)}\n\n_Current-state open-pipeline snapshot${
         ph.snapshotDate ? ` (${ph.snapshotDate})` : ''
-      }, region-scoped — not a quarter slice._`,
+      }, for the selected region — not limited to one quarter._`,
     )
   }
 
@@ -231,8 +231,8 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
         ['SQLs', real(f.sql, num)],
         ['Opportunities (open + won)', real(f.opp, num)],
         ['Closed-won (count)', real(f.closedWonCount, num)],
-        ['Influenced pipeline', real(f.pipeline, gbp)],
-        ['Closed-won value', real(f.closedWon, gbp)],
+        ['Influenced pipeline', real(f.pipeline, eur)],
+        ['Closed-won value', real(f.closedWon, eur)],
       ],
     )}`,
   )
@@ -241,7 +241,7 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
     cards.push(
       `## By Channel\n\n${mdTable(
         ['Channel', 'Leads', 'MQL', 'SQL', 'Pipeline', 'Closed-won'],
-        bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, gbp), real(c.closedWon, gbp)]),
+        bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
       )}`,
     )
   }

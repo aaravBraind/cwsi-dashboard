@@ -93,7 +93,7 @@ export function EmptyState({ message = 'No data for this region / quarter.' }) {
 // Never zero-filled.
 export function NotAvailable({ what = 'This measure', why }) {
   return (
-    <span className="info-pill" title={why || 'Not available in the current schema'}>
+    <span className="info-pill" title={why || 'Not available in the current data set'}>
       {what}: not available yet
     </span>
   )

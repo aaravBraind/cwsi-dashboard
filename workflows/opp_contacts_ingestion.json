@@ -1,0 +1,163 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## OR9 opp-contact attribution -> fact_opportunity_contact\n\nSTANDALONE (isolated from the big SF ingestion for memory). Chain:\nSchedule -> Currency Rates -> Opp Contacts (Opportunity grain + nested\nOpportunityContactRoles subquery, open-or-won, created 2026) -> Build (EUR) -> Upsert.\n\nFeeds v_outreach_attributed_opps (joined to Outreach prospect emails).\n'Created Opps' = created-and-(open or won); closed-lost excluded.",
+        "height": 260,
+        "width": 540
+      },
+      "id": "or900000-0000-4000-8000-000000000000",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "or900000-0000-4000-8000-000000000001",
+      "name": "Schedule: Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT IsoCode, ConversionRate, IsCorporate FROM CurrencyType"
+      },
+      "id": "or900000-0000-4000-8000-000000000002",
+      "name": "SF: Get Currency Rates",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        240,
+        320
+      ],
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "search",
+        "query": "SELECT Id, IsWon, IsClosed, StageName, Amount, CurrencyIsoCode, CreatedDate, (SELECT Contact.Email FROM OpportunityContactRoles) FROM Opportunity WHERE CreatedDate >= 2026-01-01T00:00:00Z AND (IsClosed = false OR IsWon = true)"
+      },
+      "id": "or900000-0000-4000-8000-000000000003",
+      "name": "SF: Get Opp Contacts",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [
+        480,
+        320
+      ],
+      "credentials": {
+        "salesforceOAuth2Api": {
+          "id": "gYo3bnVMVQ4AEg16",
+          "name": "Salesforce account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// OR9 (standalone): opps created 2026 (open or won) + their contact emails -> fact_opportunity_contact.\n// Isolated in its OWN workflow so it doesn't share memory with the big SF ingestion (which holds\n// campaigns/opps/leads/~100k members) — that cumulative load is what OOM'd n8n. Here it's just\n// rates + ~1,040 opps. Opportunity grain + nested OpportunityContactRoles subquery (a flat\n// OpportunityContactRole query fans out org-wide, ~13k rows -> OOM). Amount -> EUR via CurrencyType.\nconst _rates = {};\nfor (const c of $('SF: Get Currency Rates').all().map((i) => i.json)) { _rates[c.IsoCode] = Number(c.ConversionRate); }\nconst _eur = _rates['EUR'] || 1;\nfunction toEur(a, iso) { const x = Number(a) || 0; const r = _rates[iso]; return (r && isFinite(r)) ? x / r * _eur : x; }\nconst seen = {};\nconst out = [];\nfor (const o of $('SF: Get Opp Contacts').all().map((i) => i.json)) {\n  const oppId = o.Id;\n  if (!oppId) continue;\n  const roles = (o.OpportunityContactRoles && o.OpportunityContactRoles.records) || [];\n  const amt = toEur(o.Amount, o.CurrencyIsoCode);\n  const created = String(o.CreatedDate || '').slice(0, 10) || null;\n  for (const rc of roles) {\n    const email = String((rc.Contact && rc.Contact.Email) || '').trim().toLowerCase();\n    if (!email) continue;\n    const key = oppId + '|' + email;\n    if (seen[key]) continue;\n    seen[key] = true;\n    out.push({ json: {\n      opp_id: String(oppId), contact_email: email, created_date: created,\n      is_won: !!o.IsWon, is_closed: !!o.IsClosed, stage_name: o.StageName || null, amount_eur: amt,\n    }});\n  }\n}\nreturn out;"
+      },
+      "id": "or900000-0000-4000-8000-000000000004",
+      "name": "Build Opp Contact Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fact_opportunity_contact\n  (opp_id, contact_email, created_date, is_won, is_closed, stage_name, amount_eur, loaded_at)\nVALUES ($1, $2, $3, $4::boolean, $5::boolean, $6, $7, now())\nON CONFLICT ON CONSTRAINT pk_opp_contact DO UPDATE SET\n  created_date = EXCLUDED.created_date,\n  is_won = EXCLUDED.is_won,\n  is_closed = EXCLUDED.is_closed,\n  stage_name = EXCLUDED.stage_name,\n  amount_eur = EXCLUDED.amount_eur,\n  loaded_at = now();",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [$json.opp_id, $json.contact_email, $json.created_date, $json.is_won, $json.is_closed, $json.stage_name, $json.amount_eur] }}"
+        }
+      },
+      "id": "or900000-0000-4000-8000-000000000005",
+      "name": "Upsert fact_opportunity_contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "ch1cQkzV21w5Wpxf",
+          "name": "CWSI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule: Daily": {
+      "main": [
+        [
+          {
+            "node": "SF: Get Currency Rates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Currency Rates": {
+      "main": [
+        [
+          {
+            "node": "SF: Get Opp Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF: Get Opp Contacts": {
+      "main": [
+        [
+          {
+            "node": "Build Opp Contact Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Opp Contact Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert fact_opportunity_contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {}
+}

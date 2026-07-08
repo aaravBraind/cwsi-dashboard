@@ -163,7 +163,7 @@ function pipelineHealth(ph) {
           <tr class="total"><td>Weighted forecast (prob-adjusted)</td><td class="r">—</td><td class="r">—</td><td class="r">${esc(ph.weightedDisplay)}</td></tr>
         </tbody>
       </table>
-      <div class="note">Current-state open-pipeline snapshot${ph.snapshotDate ? ` (${esc(ph.snapshotDate)})` : ''}, region-scoped — not a quarter slice.</div>
+      <div class="note">Current-state open-pipeline snapshot${ph.snapshotDate ? ` (${esc(ph.snapshotDate)})` : ''}, for the selected region — not limited to one quarter.</div>
     </section>`
 }
 

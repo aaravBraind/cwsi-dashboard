@@ -7,9 +7,12 @@ import Sidebar from './components/Sidebar'
 import Topbar from './components/Topbar'
 import Overview from './components/pages/Overview'
 import KpiTracker from './components/pages/KpiTracker'
+import Budget from './components/pages/Budget'
 import Pipeline from './components/pages/Pipeline'
+import Campaigns from './components/pages/Campaigns'
 import Channel from './components/pages/Channel'
 import Seo from './components/pages/Seo'
+import Email from './components/pages/Email'
 import Events from './components/pages/Events'
 import Outreach from './components/pages/Outreach'
 import Board from './components/pages/Board'
@@ -31,9 +34,12 @@ export default function App() {
     switch (active) {
       case 'overview': return <Overview />
       case 'kpi': return <KpiTracker />
+      case 'budget': return <Budget />
       case 'pipeline': return <Pipeline />
+      case 'campaigns': return <Campaigns />
       case 'ch-outreach': return <Outreach />
       case 'ch-seo': return <Seo />
+      case 'ch-email': return <Email />
       case 'ch-events': return <Events />
       case 'board': return <Board />
       case 'salesforce': return <Salesforce />

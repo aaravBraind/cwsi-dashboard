@@ -11,7 +11,7 @@ import { pageShell, esc, tableRows, block } from './boardPackHtml'
 import { brand } from './brandKit'
 import { REGIONS } from './constants'
 import { scopeLabel, periodOf, achievement, fmtTarget } from './kpiRegister'
-import { gbp, num, isNA } from './format'
+import { eur, num, isNA } from './format'
 
 const regionLabelOf = (region) => (REGIONS.find((r) => r.key === region || r.code === region) || REGIONS[0]).label
 const scopeLineOf = (region, quarter) =>
@@ -86,8 +86,8 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
     ['SQLs', real(f.sql, num)],
     ['Opportunities', real(f.opp, num)],
     ['Closed-won (count)', real(f.closedWonCount, num)],
-    ['Influenced pipeline', real(f.pipeline, gbp)],
-    ['Closed-won value', real(f.closedWon, gbp)],
+    ['Influenced pipeline', real(f.pipeline, eur)],
+    ['Closed-won value', real(f.closedWon, eur)],
   ]
   const statCards = stats
     .map(([l, v]) => `<div class="stat"><div class="slabel">${esc(l)}</div><div class="sval${v === '—' ? ' na' : ''}">${esc(v)}</div></div>`)
@@ -100,7 +100,7 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
         `<table class="tbl">
           <thead><tr><th>Channel</th><th class="r">Leads</th><th class="r">MQL</th><th class="r">SQL</th><th class="r">Pipeline</th><th class="r">Closed-won</th></tr></thead>
           <tbody>${tableRows(
-            bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, gbp), real(c.closedWon, gbp)]),
+            bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
           )}</tbody>
         </table>`,
       )

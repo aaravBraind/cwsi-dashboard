@@ -10,10 +10,21 @@ import {
   useUpdateKpiTarget,
 } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
-import { gbp, num } from '../../data/format'
+import { eur, num } from '../../data/format'
 import { buildKpiRegisterRows, periodOf, scopeLabel, achievement } from '../../data/kpiRegister'
 import { I } from '../icons'
-import MarketingBudget from '../MarketingBudget'
+import Explain from '../Explain'
+
+// Register row key → methodology-registry id (client "how we got this" eye-button).
+const REGISTER_EXPLAIN = {
+  totalLeads: 'leads', totalMqls: 'mql', totalSqls: 'sql',
+  closedWonCount: 'closedWon', closedWonValue: 'closedWon',
+  influencedPipeline: 'pipeline', influencedMargin: 'margin',
+  retainedContracts: 'retention',
+  leadToMql: 'conversion', mqlToSql: 'conversion', sqlToWon: 'conversion',
+  visitorToMql: 'conversion', mqlToSqlEvents: 'conversion',
+  totalOrganicTraffic: 'organicTraffic', attendanceRate: 'webinarAttendance',
+}
 
 // The KPI register, in the agreed category order. `live` rows are computed from
 // v_fact_enriched (funnel) + GA4 + GoToWebinar; every other KPI depends on a
@@ -29,7 +40,7 @@ const rate = (x) => `${(Number(x) * 100).toFixed(1)}%`
 // Format a target value by its declared unit.
 function fmtByUnit(unit, t) {
   if (t == null) return null
-  if (unit === 'gbp') return gbp(t)
+  if (unit === 'gbp') return eur(t)
   if (unit === 'rate') return rate(t)
   if (unit === 'x') return `${Number(t).toFixed(1)}×`
   return num(t)
@@ -53,11 +64,7 @@ export default function KpiTracker() {
         <QuarterPills />
       </div>
 
-      {/* Budget vs actual + spend-by-category/region (EUR, fact_marketing_spend) */}
-      <div className="sec-divider"><span className="label">Marketing Budget · EUR</span><div className="line" /></div>
-      <MarketingBudget />
-
-      <div className="sec-divider"><span className="label">KPI Register</span><div className="line" /></div>
+      {/* Marketing Budget moved to its own page (Budget.jsx) per Margot, Jul 2026. */}
       {q.isLoading && <Loading />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState />}
@@ -95,7 +102,7 @@ function TargetCell({ kpiKey, row, period, scope }) {
   }
   const commit = () => {
     setEditing(false)
-    const raw = draft.trim().replace(/[,£×%\s]/g, '')
+    const raw = draft.trim().replace(/[,£€×%\s]/g, '')
     let value = raw === '' ? null : Number(raw)
     if (raw !== '' && Number.isNaN(value)) return // ignore garbage, keep old
     if (value != null && unit === 'rate') value = value / 100
@@ -106,7 +113,7 @@ function TargetCell({ kpiKey, row, period, scope }) {
   if (editing)
     return (
       <span className="tgt-edit">
-        {unit === 'gbp' && <span className="aff">£</span>}
+        {unit === 'gbp' && <span className="aff">€</span>}
         <input
           autoFocus
           value={draft}
@@ -161,7 +168,7 @@ function Register({ f, web, events, attendance, retention, quarter, targets }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Full KPI Register · FY2026</div>
-          <div className="panel-sub">{liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = not sourced yet · targets editable &amp; provisional</div>
+          <div className="panel-sub">{liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = data not available yet · targets editable &amp; provisional</div>
         </div>
         <span className="chip blue">{scope} scope</span>
       </div>
@@ -192,7 +199,7 @@ function Register({ f, web, events, attendance, retention, quarter, targets }) {
                 return (
                   <tr className="kpi-row" key={i}>
                     <td>
-                      <div className="metric-name">{r.label}</div>
+                      <div className="metric-name">{r.label}{REGISTER_EXPLAIN[r.key] && <Explain id={REGISTER_EXPLAIN[r.key]} align="left" />}</div>
                       {r.ctx && <div className="metric-ctx">{r.ctx}</div>}
                     </td>
                     <td className="r">

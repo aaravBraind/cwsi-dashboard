@@ -4,7 +4,8 @@ import { useFilters } from '../filters/FilterContext'
 import { useAuth, displayName } from '../auth/AuthContext'
 
 const CRUMB = {
-  overview: 'Overview', kpi: 'KPI Tracker', pipeline: 'Pipeline Report',
+  overview: 'Overview', kpi: 'KPI Tracker', budget: 'Marketing Budget',
+  pipeline: 'Pipeline Report', campaigns: 'Campaigns',
   'ch-linkedin': 'LinkedIn Paid', 'ch-search': 'Paid Search', 'ch-seo': 'Organic SEO',
   'ch-email': 'Email', 'ch-outreach': 'Outreach.io', 'ch-events': 'Events',
   board: 'Board Pack', salesforce: 'Salesforce Sync', export: 'Export',

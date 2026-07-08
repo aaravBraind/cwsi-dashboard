@@ -13,10 +13,12 @@ export function money(n, symbol = '£') {
   return `${sign}${symbol}${Math.round(a)}`
 }
 
-// "£290k" — GBP (LinkedIn delivery spend, pipeline/closed-won from Salesforce).
+// "£290k" — GBP. Now LinkedIn delivery spend ONLY (fact_channel_daily). Salesforce
+// pipeline/closed-won/margin are converted to EUR at ingest → use eur() for those.
 export const gbp = (n) => money(n, '£')
 
-// "€98k" — EUR (marketing budget tracker only).
+// "€98k" — EUR. The board's reporting currency: marketing budget + all Salesforce
+// money (pipeline, closed-won, margin, retention), which is EUR-native post-ingest.
 export const eur = (n) => money(n, '€')
 
 // Exact (non-compact) money with currency code suffix, for tooltips/tables.

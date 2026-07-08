@@ -299,6 +299,8 @@ body::before{
 /* KPI CARDS */
 .kpis{display:grid;gap:16px;margin-bottom:22px;}
 .kpis.cols-4{grid-template-columns:repeat(4,1fr);}
+.kpis.cols-5{grid-template-columns:repeat(5,1fr);}
+@media(max-width:1100px){.kpis.cols-5{grid-template-columns:repeat(2,1fr);}}
 .kpis.cols-3{grid-template-columns:repeat(3,1fr);}
 .kpis.cols-2{grid-template-columns:repeat(2,1fr);}
 @media(max-width:1100px){.kpis.cols-4{grid-template-columns:repeat(2,1fr);}}
@@ -516,6 +518,34 @@ body::before{
 }
 .tgt-edit .aff{color:var(--text-3);font-size:12.5px;}
 
+/* editable campaign name/region (B4) — plain selectable text + a separate pencil
+   button that only appears on hover. Clicking the TEXT does nothing (you can read
+   & select it normally); only the pencil enters edit mode. */
+.edit-name{display:inline-flex;align-items:center;gap:6px;max-width:100%;line-height:1.3;}
+.edit-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;}
+.edit-name.overridden .edit-name-text{color:var(--cwsi-blue-soft);font-weight:600;}
+.edit-name-pen{
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+  width:22px;height:22px;padding:0;border:1px solid transparent;border-radius:6px;
+  background:none;color:var(--text-4);cursor:pointer;opacity:0;
+  transition:opacity .14s,color .14s,border-color .14s,background .14s;
+}
+.edit-name-pen .icon{width:12px;height:12px;}
+/* reveal the pencil when hovering the cell/row or when it's focused (keyboard) */
+tr:hover .edit-name-pen,.edit-name:hover .edit-name-pen,.edit-name-pen:focus-visible{opacity:1;}
+.edit-name-pen:hover{color:var(--cwsi-blue);border-color:rgba(20,113,230,0.45);background:var(--bg-2);}
+.edit-name-pen:focus-visible{outline:none;color:var(--cwsi-blue);box-shadow:0 0 0 3px rgba(20,113,230,0.18);}
+.edit-name.overridden .edit-name-pen{opacity:.45;}
+.edit-name.saving{opacity:.55;pointer-events:none;}
+.theme-select{font-family:var(--sans);font-size:11.5px;color:var(--text-2);background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 6px;max-width:180px;cursor:pointer;}
+.theme-select:hover{border-color:var(--border-strong);}
+.theme-select:focus-visible{outline:none;border-color:var(--cwsi-blue);box-shadow:0 0 0 3px rgba(20,113,230,0.18);}
+.edit-name.editing input{
+  font:inherit;font-size:12.5px;min-width:180px;max-width:320px;
+  color:var(--text);background:var(--bg);border:1px solid var(--cwsi-blue);border-radius:6px;
+  padding:4px 8px;outline:none;box-shadow:0 0 0 3px rgba(20,113,230,0.18);
+}
+
 /* status pill widened so % reads cleanly and aligns */
 .kpi-reg td .tl{min-width:58px;justify-content:center;}
 
@@ -609,6 +639,54 @@ body::before{
 .callout.green .callout-icn{color:var(--green);}
 .callout-body{flex:1;font-size:12.5px;color:var(--text-2);}
 .callout-body strong{color:var(--text);font-weight:700;}
+
+/* EXPLAIN — the "how did we get this number?" eye-button + popover */
+.explain{position:relative;display:inline-flex;vertical-align:middle;}
+.explain-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;padding:0;
+  border:1px solid var(--border);border-radius:6px;
+  background:var(--bg-2);color:var(--text-3);
+  cursor:pointer;transition:color .12s,border-color .12s,background .12s;
+}
+.explain-btn .icon{width:13px;height:13px;}
+.explain-btn:hover{color:var(--cwsi-blue);border-color:rgba(20,113,230,0.45);}
+.explain-btn.is-open{color:var(--cwsi-blue);border-color:rgba(20,113,230,0.55);background:rgba(20,113,230,0.08);}
+.explain-btn:focus-visible{outline:2px solid var(--cwsi-blue);outline-offset:2px;}
+
+.explain-pop{
+  /* position/top/left/width are set inline (portaled to <body>, position:fixed) */
+  z-index:9999;
+  max-width:calc(100vw - 16px);
+  background:var(--surface);border:1px solid var(--border-strong);
+  border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.35);
+  animation:fadeIn .14s ease;text-align:left;
+}
+.explain-pop-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:11px 13px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--surface);border-radius:10px 10px 0 0;
+}
+.explain-pop-title{font-size:12.5px;font-weight:700;color:var(--text);}
+.explain-close{
+  border:none;background:none;cursor:pointer;
+  color:var(--text-3);font-size:18px;line-height:1;padding:0 2px;
+}
+.explain-close:hover{color:var(--text);}
+.explain-pop-body{padding:11px 13px;font-size:12px;color:var(--text-2);line-height:1.5;}
+.explain-pop-body p{margin:0 0 8px;}
+.explain-pop-body p:last-child{margin-bottom:0;}
+.explain-what{color:var(--text);font-weight:600;}
+.explain-k{
+  display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--text-3);font-family:var(--mono);margin-bottom:1px;
+}
+.explain-caveat{
+  background:var(--amber-bg);border:1px solid var(--amber-bd);
+  border-radius:7px;padding:8px 10px;margin-top:2px;
+}
+.explain-caveat .explain-k{color:var(--amber);}
+@media(max-width:640px){.explain-pop{width:80vw;}}
 
 /* LOADING + SKELETONS */
 @keyframes spin{to{transform:rotate(360deg);}}
