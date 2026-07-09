@@ -143,9 +143,10 @@ function regionTable(pack) {
     <section class="page-block">
       <div class="sec-head"><span class="rule"></span><h2>Regional Split</h2></div>
       <table class="tbl">
-        <thead><tr><th>Region</th><th class="r">MQLs</th><th class="r">Pipeline</th><th class="r">Share</th><th class="r">Closed-won</th></tr></thead>
-        <tbody>${tableRows(pack.regions.map((r) => [r.region, r.mqlDisplay, r.pipelineDisplay, r.pipelineShareDisplay, r.closedWonDisplay]))}</tbody>
+        <thead><tr><th>Region</th><th class="r">MQLs</th><th class="r">SQLs</th><th class="r">Created Opps</th><th class="r">Pipeline</th><th class="r">Share</th><th class="r">Closed-won</th></tr></thead>
+        <tbody>${tableRows(pack.regions.map((r) => [r.region, r.mqlDisplay, r.sqlDisplay, r.createdOppsDisplay, r.pipelineDisplay, r.pipelineShareDisplay, r.closedWonDisplay]))}</tbody>
       </table>
+      ${pack.regions.some((r) => /unassign/i.test(r.region)) ? `<div class="note">"Unassigned" = records whose region couldn't be resolved from the Salesforce account — a data-completeness gap in Salesforce, not a real region.</div>` : ''}
     </section>`
 }
 
@@ -182,21 +183,18 @@ function retentionBlock(r) {
     </section>`
 }
 
-function leversBlock(levers) {
-  if (!levers?.length) return ''
+// Funnel Conversion (BP8) — stage-to-stage ratios. Replaces the retired
+// "Gaps to Close" block so the export matches the on-screen Board.
+function conversionTable(conversion) {
+  if (!conversion?.length) return ''
   return `
     <section class="page-block">
-      <div class="sec-head"><span class="rule"></span><h2>Gaps to Close — ranked by pipeline impact</h2></div>
-      ${levers
-        .map(
-          (l, i) => `
-        <div class="lever">
-          <div class="lnum mono">${i + 1}</div>
-          <div class="lbody"><div class="ltitle">${esc(l.title)}</div><div class="lgap">Gap: ${esc(l.gapDisplay)} · ${esc(l.basis)}</div></div>
-          <div class="limpact">${esc(l.impactDisplay)}</div>
-        </div>`,
-        )
-        .join('')}
+      <div class="sec-head"><span class="rule"></span><h2>Funnel Conversion</h2></div>
+      <table class="tbl">
+        <thead><tr><th>Stage step</th><th class="r">Conversion</th></tr></thead>
+        <tbody>${tableRows(conversion.map((c) => [`${c.from} → ${c.to}`, c.display]))}</tbody>
+      </table>
+      <div class="note">Period-scoped stage-to-stage ratios — each stage is dated differently in Salesforce, so this is the share reaching the next stage (capped at 100%), not a single-cohort flow.</div>
     </section>`
 }
 
@@ -368,9 +366,9 @@ export function buildBoardPackHtml(pack, generated, { region, quarter } = {}) {
   const flow = [
     kpiSection,
     channelTable(pack.channels),
+    conversionTable(pack.conversion),
     narrativeSection(generated),
     recommendationsSection(generated),
-    leversBlock(pack.levers),
     pipelineHealth(pack.pipelineHealth),
     regionTable(pack),
     retentionBlock(pack.retention),

@@ -181,9 +181,20 @@ function groupBy(rows, key) {
 // Events page (which fetches channel='Events & Webinars' and splits internally)
 // are untouched. Every OTHER channel passes through unchanged.
 const EVENTS_CHANNEL = 'Events & Webinars'
+const SEO_CHANNEL = 'Organic SEO'
 function displayChannel(row) {
-  if (row.channel_name !== EVENTS_CHANNEL) return row.channel_name
-  return row.campaign_type === 'Webinar' ? 'Webinars' : 'In-person Events'
+  // Split "Events & Webinars" into Webinars vs In-person Events.
+  if (row.channel_name === EVENTS_CHANNEL) {
+    return row.campaign_type === 'Webinar' ? 'Webinars' : 'In-person Events'
+  }
+  // Peel whitepaper-download campaigns ("Content/White Paper") out of "Organic SEO"
+  // into their own "Whitepapers" channel — they're reported on the Email page, not
+  // organic search, so they shouldn't inflate SEO in the channel breakdowns either.
+  // Mirrors the Events/Webinars split: read-layer via campaign_type, no re-ingest.
+  if (row.channel_name === SEO_CHANNEL && row.campaign_type === 'Content/White Paper') {
+    return 'Whitepapers'
+  }
+  return row.channel_name
 }
 
 // ---- Surface query functions (each returns view-ready, aggregated data) ----

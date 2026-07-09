@@ -63,7 +63,7 @@ function Body({ data }) {
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
-            <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline)} Pipeline → Won</span>
+            <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline + funnel.closedWon)} Pipeline → Won</span>
           </div>
           {quarterScoped && (
             <div className="callout amber" style={{ marginTop: 12 }}>
@@ -187,6 +187,20 @@ function StageDistribution() {
               <div className="bar-pct">{num(s.count)}</div>
             </div>
           ))}
+        </div>
+        <div className="callout" style={{ marginTop: 14 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>How to read this.</strong> Each row is a stage a deal passes through in Salesforce on its way to
+            being won — shown with Salesforce's <strong>win-likelihood for that stage</strong> (the %), the{' '}
+            <strong>total value</strong> of open deals sitting in it, and <strong>how many</strong> deals. Deals begin at
+            the low-confidence stages and move up as they get more likely to close. <strong>"Unqualified opp" (5%) means
+            brand-new, not-yet-qualified deals</strong> — these are deliberately <strong>excluded from the "Influenced
+            Pipeline" figure</strong> shown elsewhere on the dashboard, which counts qualified deals only. That's why
+            this list (all open deals) adds up to more than Influenced Pipeline.
+          </div>
         </div>
       </div>
     </div>

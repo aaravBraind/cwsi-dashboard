@@ -99,6 +99,16 @@ export function buildBoardPackPrompt(pack, generated) {
     )
   }
 
+  // Funnel conversion (BP8)
+  if (pack.conversion?.length) {
+    cards.push(
+      `## Funnel Conversion\n\n${mdTable(
+        ['Stage step', 'Conversion'],
+        pack.conversion.map((c) => [`${c.from} → ${c.to}`, c.display]),
+      )}\n\n_Period-scoped stage-to-stage ratios (each stage dated differently in Salesforce), capped at 100% — not a single-cohort flow._`,
+    )
+  }
+
   // AI narrative (trace-passed) — one card carrying all present sections
   const n = generated?.narrative || {}
   const narrParts = NARR.filter(([k]) => n[k] && String(n[k]).trim())
@@ -126,16 +136,6 @@ export function buildBoardPackPrompt(pack, generated) {
     )
   }
 
-  // Gaps to close (levers)
-  if (pack.levers?.length) {
-    cards.push(
-      `## Gaps to Close — ranked by pipeline impact\n\n${mdTable(
-        ['#', 'Lever', 'Gap', 'Basis', 'Est. impact'],
-        pack.levers.map((l, i) => [i + 1, l.title, l.gapDisplay, l.basis, l.impactDisplay]),
-      )}`,
-    )
-  }
-
   // Pipeline health
   const ph = pack.pipelineHealth
   if (ph?.hasData) {
@@ -153,9 +153,9 @@ export function buildBoardPackPrompt(pack, generated) {
   if (meta.scopeIsAllRegions && pack.regions?.length) {
     cards.push(
       `## Regional Split\n\n${mdTable(
-        ['Region', 'MQLs', 'Pipeline', 'Share', 'Closed-won'],
-        pack.regions.map((r) => [r.region, r.mqlDisplay, r.pipelineDisplay, r.pipelineShareDisplay, r.closedWonDisplay]),
-      )}`,
+        ['Region', 'MQLs', 'SQLs', 'Created Opps', 'Pipeline', 'Share', 'Closed-won'],
+        pack.regions.map((r) => [r.region, r.mqlDisplay, r.sqlDisplay, r.createdOppsDisplay, r.pipelineDisplay, r.pipelineShareDisplay, r.closedWonDisplay]),
+      )}${pack.regions.some((r) => /unassign/i.test(r.region)) ? '\n\n_"Unassigned" = records whose region could not be resolved from the Salesforce account — a data-completeness gap, not a real region._' : ''}`,
     )
   }
 

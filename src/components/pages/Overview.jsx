@@ -214,14 +214,14 @@ function Body({ data }) {
                 <div className="group-head">
                   <div className="group-name">{c.channel}</div>
                   <div className="group-roi">
-                    {c.pipeline > 0
-                      ? <>{pct(c.closedWon, c.pipeline, 0)} converted to won</>
-                      : <>Closed-won {eur(c.closedWon)}</>}
+                    {(c.pipeline + c.closedWon) > 0
+                      ? <>{pct(c.closedWon, c.pipeline + c.closedWon, 0)} converted to won</>
+                      : <>No pipeline yet</>}
                   </div>
                 </div>
                 <div className="stack">
                   <div className="bar-row">
-                    <div className="bar-label">Pipeline generated</div>
+                    <div className="bar-label">Open pipeline</div>
                     <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.pipeline / maxPipe) * 100}%` }} /></div>
                     <div className="bar-val">{eur(c.pipeline)}</div>
                   </div>

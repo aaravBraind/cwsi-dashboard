@@ -43,7 +43,10 @@ export default function Outreach() {
         </div>
       </div>
 
-      {/* Filters — OR2: Type of Outreach (replaces Practice Area); Sequence stage needs step-level ingest */}
+      {/* Filters — Type of Outreach (replaces Practice Area) + marketing-sequence set.
+          The old "Sequence stage" placeholder was removed: it was a non-working mockup
+          leftover, and step-level detail isn't in scope (the step-type breakdown was
+          removed per client feedback). Step data model still exists if it's ever wanted. */}
       <div className="filters">
         <div className="filter" title="Filter by workstream (Type of Outreach) — the three marketing workstreams: Historic Data Reactivation, Outbound Prospecting · SoPro, and Outbound Prospecting · Microsoft TUM.">
           <span className="label">Type of Outreach</span>
@@ -60,10 +63,6 @@ export default function Outreach() {
             <option value="marketing">Marketing sequences only</option>
             <option value="all">All sequences</option>
           </select>
-        </div>
-        <div className="filter" title="Step-by-step data isn't available yet">
-          <span className="label">Sequence stage</span>
-          <select disabled><option>All stages · pending</option></select>
         </div>
       </div>
 

@@ -45,6 +45,21 @@ export default function Campaigns() {
         </div>
       </div>
 
+      <div className="callout" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
+          <strong>The "Theme" dropdown on each activity.</strong> Every activity is sorted into a theme
+          <strong> automatically, by reading its campaign name</strong> — so a campaign can occasionally land in the
+          wrong theme (for example, the 10.06 event named "Microsoft E7…" in Salesforce actually belongs to
+          "Protect Data, Power AI"). Use the <strong>Theme</strong> dropdown on any activity row to move it to the
+          right theme; leave it on <strong>"Auto"</strong> to keep the automatic choice. It's on every activity because
+          only you can tell which ones are misfiled — the correctly-sorted ones simply stay on "Auto". Your change
+          saves instantly and sticks through every data refresh.
+        </div>
+      </div>
+
       {q.isLoading && <Loading label="Loading campaign themes…" />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState message="No campaigns for this region / quarter yet." />}
