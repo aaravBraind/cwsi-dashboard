@@ -1,7 +1,8 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState, NotAvailablePanel } from '../States'
-import { usePipeline, useOpportunityStage } from '../../hooks/useDashboardData'
+import { usePipeline, useOpportunityStage, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
 import CurrentVsOngoing from '../CurrentVsOngoing'
+import SalesCycle from '../SalesCycle'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num, pct, isNA } from '../../data/format'
 import { I } from '../icons'
@@ -32,11 +33,16 @@ function Body({ data }) {
   const { funnel, bySource } = data
   const { filters } = useFilters()
   const quarterScoped = filters.quarter && filters.quarter !== 'ytd'
+  // Outreach opportunities (OV6: "Outreach opportunities are not showing"). Contact-attributed
+  // (a sequenced contact is on the opp), so it can overlap the campaign channels above — shown
+  // as an indicative row, NOT added to the Total, to avoid double-counting.
+  const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
   return (
     <>
       {/* Top strip */}
-      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="current view" explainId="pipeline" />
+      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
+        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="open + won" explainId="pipeline" />
+        <Cell label="Generated This Quarter" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
         <Cell label="Total Leads" val={num(funnel.leads)} meta="current view" explainId="leads" />
         <Cell label="MQLs → SQLs" val={`${num(funnel.mql)} → ${num(funnel.sql)}`} meta={pct(funnel.sql, funnel.mql)} explainId="sql" />
         <Cell label="Closed-Won Value" val={eur(funnel.closedWon)} meta="current view" explainId="closedWon" />
@@ -63,7 +69,7 @@ function Body({ data }) {
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
-            <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline + funnel.closedWon)} Pipeline → Won</span>
+            <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline)} Pipeline → Won</span>
           </div>
           {quarterScoped && (
             <div className="callout amber" style={{ marginTop: 12 }}>
@@ -84,6 +90,9 @@ function Body({ data }) {
 
       {/* Current-quarter activity vs ongoing impact of prior-quarter activities (X6) */}
       <CurrentVsOngoing />
+
+      {/* Sales cycle — how long opps take (created→close) by outcome & source (G5) */}
+      <SalesCycle />
 
       {/* Pipeline stage distribution — open-pipeline snapshot (B7-adjacent, 20 Jun) */}
       <StageDistribution />
@@ -122,8 +131,19 @@ function Body({ data }) {
                   <td className="r mono">{eur(s.closedWon)}</td>
                 </tr>
               ))}
+              {outbound && (outbound.createdOpps > 0 || outbound.won > 0) && (
+                <tr style={{ opacity: 0.85 }}>
+                  <td>Outreach · outbound <span className="chip neu">contact-attributed</span></td>
+                  <td className="r mono">—</td>
+                  <td className="r mono">—</td>
+                  <td className="r mono">—</td>
+                  <td className="r mono">{num(outbound.createdOpps)}</td>
+                  <td className="r mono">{eur(outbound.pipeline)}</td>
+                  <td className="r mono">{eur(outbound.won)}</td>
+                </tr>
+              )}
               <tr className="total">
-                <td>Total</td>
+                <td>Total <span style={{ fontWeight: 400, opacity: 0.6 }}>· excl. Outreach</span></td>
                 <td className="r mono">{num(funnel.leads)}</td>
                 <td className="r mono">{num(funnel.mql)}</td>
                 <td className="r mono">{num(funnel.sql)}</td>
@@ -137,9 +157,11 @@ function Body({ data }) {
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
             <div className="callout-body">
               <strong>Outreach &amp; Paid Search sources:</strong> <strong>Paid Search</strong> has no campaigns in
-              Salesforce for the period, so there's nothing to list here. <strong>Outreach</strong> is attributed by
-              contact (not by campaign) and is reported on its own page — it isn't a campaign-attributed source in
-              this table. Every row here is marketing-campaign-attributed (each opp carries a Campaign).
+              Salesforce for the period, so there's nothing to list here. <strong>Outreach</strong> opportunities are
+              now shown as an indicative row — but attributed by <em>contact</em> (a sequenced contact is on the opp),
+              not by campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
+              Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. Every campaign row
+              here is marketing-campaign-attributed (each opp carries a Campaign).
             </div>
           </div>
         </div>

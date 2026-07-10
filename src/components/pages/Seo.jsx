@@ -1,11 +1,18 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useWebTraffic, useSeo, useChannel } from '../../hooks/useDashboardData'
+import { useWebTraffic, useSeo, useChannel, useWebsiteLeads } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
 import Explain from '../Explain'
 
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
 const pos = (p) => (isNA(p) || p == null ? 'n/a' : Number(p).toFixed(1))
+// Avg session duration (seconds) → "Xm Ys" / "Ys".
+const dur = (s) => {
+  if (isNA(s) || s == null) return '—'
+  const t = Math.round(Number(s) || 0)
+  const m = Math.floor(t / 60)
+  return m > 0 ? `${m}m ${t % 60}s` : `${t}s`
+}
 // Shorten a full URL to its path for the top-pages table.
 const pagePath = (u) => {
   try {
@@ -61,9 +68,41 @@ export default function Seo() {
       {seo.data && !seo.data.hasData && <EmptyState message="No Search Console data for this region / quarter yet." />}
       {seo.data && seo.data.hasData && <SeoBody data={seo.data} />}
 
-      {/* Salesforce-attributed funnel for the channel */}
-      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Salesforce-attributed funnel</span><div className="line" /></div>
+      {/* Website Leads — the authoritative website funnel (SEO9): from the "Website Leads"
+          Salesforce campaigns specifically, not the whole Organic SEO channel. */}
+      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Website Leads · Salesforce campaigns</span><div className="line" /></div>
+      <WebsiteLeadsBody />
+
+      {/* Wider Salesforce-attributed funnel for the whole Organic SEO channel */}
+      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Organic SEO channel · Salesforce funnel</span><div className="line" /></div>
       <FunnelBody />
+    </>
+  )
+}
+
+// SEO9 — website MQL/SQL from the "Website Leads" Salesforce campaigns specifically.
+function WebsiteLeadsBody() {
+  const q = useWebsiteLeads()
+  if (q.isLoading) return <Loading label="Loading website leads…" />
+  if (q.isError) return <ErrorState error={q.error} />
+  if (!q.data || !q.data.hasData)
+    return <EmptyState message="No Website Leads campaign data for this region / quarter yet." />
+  const f = q.data.funnel
+  return (
+    <>
+      <div className="kpis cols-4">
+        <Kpi label="Leads · current view" val={num(f.leads)} explainId="leads" />
+        <Kpi label="MQLs · current view" val={num(f.mql)} explainId="mql" />
+        <Kpi label="SQLs · current view" val={num(f.sql)} explainId="sql" />
+        <Kpi label="Created Opps · current view" val={isNA(f.createdOpps) ? '—' : num(f.createdOpps)} explainId="createdOpps" />
+      </div>
+      <div className="kpis cols-2" style={{ marginTop: 12 }}>
+        <Kpi label="Influenced Pipeline · current view" val={eur(f.pipeline)} explainId="pipeline" />
+        <Kpi label="Closed-Won · current view" val={eur(f.closedWon)} explainId="closedWon" />
+      </div>
+      <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
+        From the <strong>Website Leads</strong> Salesforce campaigns{q.data.campaigns.length ? ` (${q.data.campaigns.length}: ${q.data.campaigns.join(', ')})` : ''} — the accurate website source, not the whole Organic SEO channel.
+      </p>
     </>
   )
 }
@@ -72,10 +111,15 @@ function WebBody({ data }) {
   const { totals, byHostname, byRegion, dateRange } = data
   return (
     <>
+      {/* SEO2 (Margot): the preferred website metrics — Sessions, Users, Avg Session Duration, Bounce Rate. */}
       <div className="kpis cols-4">
         <Kpi label="Sessions · current view" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} explainId="organicTraffic" />
+        <Kpi label="Users" val={isNA(totals.users) ? '—' : num(totals.users)} sub={isNA(totals.users) ? 'after next GA4 refresh' : ''} />
+        <Kpi label="Avg session duration" val={dur(totals.avgSessionDuration)} sub={isNA(totals.avgSessionDuration) ? 'after next GA4 refresh' : ''} />
+        <Kpi label="Bounce rate" val={ratePct(totals.bounceRate)} />
+      </div>
+      <div className="kpis cols-2" style={{ marginTop: 12 }}>
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
-        <Kpi label="Engagement rate" val={ratePct(totals.engagementRate)} />
         <Kpi
           label="Visitor → MQL · GA4 conv."
           val={isNA(totals.keyEvents) ? '—' : num(totals.keyEvents)}
@@ -87,29 +131,31 @@ function WebBody({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Traffic by Property</div>
-            <div className="panel-sub">Our public sites · sessions &amp; engagement · region &amp; quarter</div>
+            <div className="panel-sub">Our public sites · sessions · users · avg duration · bounce · region &amp; quarter</div>
           </div>
           <span className="chip blue">{byHostname.length} properties</span>
         </div>
         <div className="panel-body no-pad">
           <table className="tbl">
             <thead>
-              <tr><th>Property (hostname)</th><th className="r">Sessions</th><th className="r">Engaged</th><th className="r">Engagement %</th></tr>
+              <tr><th>Property (hostname)</th><th className="r">Sessions</th><th className="r">Users</th><th className="r">Avg duration</th><th className="r">Bounce %</th></tr>
             </thead>
             <tbody>
               {byHostname.map((h) => (
                 <tr key={h.hostname}>
                   <td>{h.hostname}</td>
                   <td className="r mono">{num(h.sessions)}</td>
-                  <td className="r mono">{num(h.engaged)}</td>
-                  <td className="r mono">{h.sessions ? `${((h.engaged / h.sessions) * 100).toFixed(1)}%` : 'n/a'}</td>
+                  <td className="r mono">{isNA(h.users) ? '—' : num(h.users)}</td>
+                  <td className="r mono">{dur(h.avgSessionDuration)}</td>
+                  <td className="r mono">{ratePct(h.bounceRate)}</td>
                 </tr>
               ))}
               <tr className="total">
                 <td>Total · {byHostname.length} properties</td>
                 <td className="r mono">{num(totals.sessions)}</td>
-                <td className="r mono">{num(totals.engaged)}</td>
-                <td className="r mono">{ratePct(totals.engagementRate)}</td>
+                <td className="r mono">{isNA(totals.users) ? '—' : num(totals.users)}</td>
+                <td className="r mono">{dur(totals.avgSessionDuration)}</td>
+                <td className="r mono">{ratePct(totals.bounceRate)}</td>
               </tr>
             </tbody>
           </table>

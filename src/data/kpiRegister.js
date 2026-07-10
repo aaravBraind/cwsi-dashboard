@@ -15,15 +15,12 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, retention, web, events, attendance } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
   const f = funnel || {}
   const w = web || {}
-  const ret = retention || {}
+  // Retained contracts + expansion removed from the register (Margot, 9 Jul call).
 
   const convCtx = has(w.keyEvents) && w.sessions ? `${pct(w.keyEvents, w.sessions)} of sessions` : 'GA4 conversions'
-  const retCtx = ret.expansionCount > 0
-    ? `${eur(ret.retainedValue)} won · Renewal only · + Expansion ${num(ret.expansionCount)} (${eur(ret.expansionValue)})`
-    : `${eur(ret.retainedValue)} won · Renewal only`
 
   const evTypes = events?.byType || []
   const evLeads = evTypes.reduce((s, t) => s + (Number(t.leads) || 0), 0)
@@ -49,7 +46,7 @@ export function buildKpiRegisterRows({ funnel, retention, web, events, attendanc
     has(f.closedWonCount)
       ? { t: 'live', label: 'Closed-won opportunities', val: num(f.closedWonCount), ctx: 'won deals', key: 'closedWonCount', num: f.closedWonCount }
       : { t: 'na', label: 'Closed-won opportunities', ctx: 'closed-won count arrives at the next data refresh', key: 'closedWonCount' },
-    { t: 'live', label: 'Influenced pipeline', val: eur(f.pipeline), ctx: 'open qualified opp value', key: 'influencedPipeline', num: f.pipeline },
+    { t: 'live', label: 'Influenced pipeline', val: eur(f.pipeline), ctx: 'generated (open + closed-won) opp value', key: 'influencedPipeline', num: f.pipeline },
     { t: 'live', label: 'Closed-won value', val: eur(f.closedWon), ctx: 'won value', key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
       ? {
@@ -61,9 +58,6 @@ export function buildKpiRegisterRows({ funnel, retention, web, events, attendanc
           key: 'influencedMargin', num: f.margin,
         }
       : { t: 'na', label: 'Influenced margin', ctx: 'Gross Profit blank on all won deals in scope — pending in Salesforce (not shown as revenue)', key: 'influencedMargin' },
-    ret.hasData
-      ? { t: 'live', label: 'Retained contracts', val: num(ret.retainedCount), ctx: retCtx, key: 'retainedContracts', num: ret.retainedCount }
-      : { t: 'na', label: 'Retained contracts', ctx: 'won renewals — none in scope', key: 'retainedContracts' },
     { t: 'na', label: 'Cost per lead (blended)', ctx: 'per-channel spend pending (the combined per-channel spend sheet)', key: 'costPerLead' },
     { t: 'na', label: 'Return on spend (blended)', ctx: 'mixed currency; per-channel spend pending', key: 'returnOnSpend' },
 

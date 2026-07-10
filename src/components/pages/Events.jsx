@@ -1,14 +1,23 @@
 import QuarterPills from '../QuarterPills'
-import { Loading, ErrorState, EmptyState, NotAvailablePanel } from '../States'
-import { useEvents, useEventsDetail, useCampaignOverrides } from '../../hooks/useDashboardData'
+import { Loading, ErrorState, EmptyState } from '../States'
+import { useEvents, useEventsDetail, useCampaignOverrides, useEventAttendance } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
 import Explain from '../Explain'
 import EditableName from '../EditableName'
 import CurrentVsOngoing from '../CurrentVsOngoing'
+import { I } from '../icons'
 
 const ratePct = (r, d = 0) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
 const TYPE_LABEL = { Webinar: 'Webinars', Event: 'In-person events', 'Seminar / Conference': 'Seminars / Conferences' }
 const typeLabel = (t) => TYPE_LABEL[t] || t || 'Untyped'
+
+// Owned vs Earned (EV4) — INTERIM name rule pending the Salesforce "Owned / Earned" field the
+// admin is creating. Margot: the only EARNED events in 2026 are Cybersec (Europe) and Henley
+// Regatta; everything else is Owned. Deliberately precise — "Cybersec Europe" (the conference CWSI
+// exhibits at) is earned, but CWSI's own "Exclusive Cybersec Dinner" events are OWNED, so we must
+// NOT match a bare "cybersec". Swap this for the SF field once it lands (same display, better source).
+const EARNED_RE = /cybersec\s*europe|henley\s*regatta/i
+const eventClass = (name) => (EARNED_RE.test(String(name || '')) ? 'Earned' : 'Owned')
 
 // Sum the SF-attributed funnel across a set of campaigns.
 const sumFunnel = (cs) =>
@@ -45,8 +54,11 @@ export default function Events() {
         <div className="callout-body">
           <strong>Webinar attendance</strong> comes from GoToWebinar (campaign-matched). The{' '}
           <strong>funnel &amp; per-campaign</strong> figures are Salesforce campaign-attributed, split by campaign
-          type into <strong>Webinars</strong> and <strong>In-person events</strong>. In-person attendance and the
-          owned/earned split aren’t tracked yet (no Salesforce field). Region &amp; quarter scope every figure.
+          type into <strong>Webinars</strong> and <strong>In-person events</strong>. The <strong>owned vs earned</strong>{' '}
+          split is shown below (provisional name rule until the new Salesforce field is wired). Region &amp; quarter scope every figure.
+          <br /><strong>Registrations don’t equal Leads:</strong> registrations come from GoToWebinar (everyone who
+          signed up), while “Leads” counts Salesforce campaign members marked <em>Responded</em> — so a webinar’s
+          registration count and its Lead count are measuring different things and won’t match.
         </div>
       </div>
 
@@ -62,13 +74,61 @@ export default function Events() {
       <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Current vs ongoing impact</span><div className="line" /></div>
       <CurrentVsOngoing channel="Events & Webinars" label="event" />
 
-      {/* Owned / earned split not available */}
-      <NotAvailablePanel
-        title="Owned vs Earned event split"
-        what="Owned (CWSI-run) vs Earned (sponsored/partner) split + per-event ROI / touchpoints"
-        why="Salesforce has no owned-vs-earned field yet — it needs a new dropdown field or a naming convention. Per-event ROI/touchpoints also need event spend + an attribution model."
-      />
+      {/* ---- Owned vs Earned split (EV4) ---- */}
+      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Owned vs Earned</span><div className="line" /></div>
+      <OwnedEarnedSummary det={det} />
     </>
+  )
+}
+
+// EV4 — Owned vs Earned split for the board. Provisional name rule (Earned = Cybersec Europe +
+// Henley Regatta; everything else Owned) until the new Salesforce Owned/Earned field is wired.
+function OwnedEarnedSummary({ det }) {
+  if (!det.data || !det.data.hasData) return null
+  const all = det.data.campaigns || []
+  const grp = (cls) => {
+    const rs = all.filter((c) => eventClass(c.campaignName) === cls)
+    return {
+      n: rs.length,
+      pipeline: rs.reduce((a, c) => a + (Number(c.pipeline) || 0), 0),
+      won: rs.reduce((a, c) => a + (Number(c.closedWon) || 0), 0),
+      names: rs.map((c) => c.campaignName),
+    }
+  }
+  const owned = grp('Owned')
+  const earned = grp('Earned')
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Owned vs Earned Events</div>
+          <div className="panel-sub">CWSI-hosted vs participated · provisional name-based split · current view</div>
+        </div>
+      </div>
+      <div className="panel-body">
+        <div className="kpis cols-2">
+          <div className="kpi">
+            <div className="kpi-label">Owned events <span className="chip neu">CWSI-hosted</span></div>
+            <div className="kpi-val">{num(owned.n)}</div>
+            <div className="kpi-sub"><span className="kpi-target">{eur(owned.pipeline)} pipeline · {eur(owned.won)} closed-won</span></div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">Earned events <span className="chip amber">Participated</span></div>
+            <div className="kpi-val">{num(earned.n)}</div>
+            <div className="kpi-sub"><span className="kpi-target">{earned.names.length ? earned.names.join(', ') : '—'} · {eur(earned.pipeline)} pipeline · {eur(earned.won)} won</span></div>
+          </div>
+        </div>
+        <div className="callout" style={{ marginTop: 4 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            Provisional split by name: <strong>Earned</strong> = Cybersec Europe + Henley Regatta (CWSI took part but
+            didn’t host); everything else is <strong>Owned</strong>. <em>Note: Henley Regatta has no Salesforce campaign
+            yet, so only Cybersec Europe currently shows as Earned — it’ll appear once a campaign exists for it.</em>{' '}
+            CWSI has now created an Owned/Earned field in Salesforce — we’ll switch this to read that field once we have its API name.
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -190,11 +250,22 @@ function InPerson({ det }) {
         </div>
       </div>
 
+      <div className="callout amber" style={{ marginBottom: 14 }}>
+        <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+        <div className="callout-body">
+          <strong>Owned vs Earned is provisional.</strong> Salesforce doesn't yet have an Owned/Earned field
+          (the admin is adding one), so for now we tag <strong>Cybersec Europe</strong> and{' '}
+          <strong>Henley Regatta</strong> as <strong>Earned</strong> (CWSI took part but didn't host) and
+          everything else as <strong>Owned</strong>, per CWSI (note: CWSI's own "Cybersec Dinner" events are
+          Owned). This switches to the Salesforce field automatically once it's live.
+        </div>
+      </div>
+
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Event Campaign Performance</div>
-            <div className="panel-sub">In-person only (webinars are covered above) · Salesforce campaign-attributed</div>
+            <div className="panel-sub">In-person only (webinars are covered above) · Salesforce campaign-attributed · Owned / Earned</div>
           </div>
           <span className="chip blue">{campaigns.length} campaigns</span>
         </div>
@@ -202,7 +273,7 @@ function InPerson({ det }) {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Campaign</th><th>Type</th>
+                <th>Campaign</th><th>Region</th><th>Type</th><th>Owned / Earned</th>
                 <th className="r">Leads <Explain id="leads" /></th><th className="r">MQLs <Explain id="mql" /></th><th className="r">SQLs <Explain id="sql" /></th>
                 <th className="r">Pipeline € <Explain id="pipeline" /></th><th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
@@ -211,7 +282,9 @@ function InPerson({ det }) {
               {campaigns.map((c) => (
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
+                  <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td className="mono mono-d">{typeLabel(c.campaignType)}</td>
+                  <td><span className={`chip ${eventClass(c.campaignName) === 'Earned' ? 'amber' : 'neu'}`}>{eventClass(c.campaignName)}</span></td>
                   <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
@@ -220,7 +293,7 @@ function InPerson({ det }) {
                 </tr>
               ))}
               <tr className="total">
-                <td colSpan={2}>Total · {campaigns.length} campaigns</td>
+                <td colSpan={4}>Total · {campaigns.length} campaigns</td>
                 <td className="r mono">{num(t.leads)}</td>
                 <td className="r mono">{num(t.mql)}</td>
                 <td className="r mono">{num(t.sql)}</td>
@@ -232,13 +305,68 @@ function InPerson({ det }) {
         </div>
       </div>
 
-      {/* In-person attendance not tracked */}
-      <NotAvailablePanel
-        title="In-person attendance"
-        what="In-person registrations / attendees (by region)"
-        why="Only webinar (GoToWebinar) attendance is tracked. In-person events need attendee lists uploaded to Salesforce, or a new Salesforce field."
-      />
+      {/* In-person registrations + attendance by region (EV1/EV2/EV3) */}
+      <AttendanceByRegion />
     </>
+  )
+}
+
+// EV1/EV2/EV3 — in-person registrations + attendance by region, from Margot's Outreach
+// attendee / non-attendee lists. Shows the data once seeded; until then an honest notice.
+function AttendanceByRegion() {
+  const q = useEventAttendance()
+  const has = q.data && q.data.hasData
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Registrations &amp; Attendance by Region</div>
+          <div className="panel-sub">In-person events · from the Outreach attendee / non-attendee lists</div>
+        </div>
+        {has && <span className="chip blue">{q.data.byEvent.length} events</span>}
+      </div>
+      <div className="panel-body">
+        <div className="callout amber" style={{ marginBottom: has ? 14 : 0 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>Source: Outreach attendee lists.</strong> In-person registrations &amp; attendance come from the
+            lists CWSI keeps in Outreach (Prospects → Prospect Lists), named{' '}
+            <em>Region – Attendees / Non-Attendees – Event</em>. Those lists aren't available through the Outreach
+            API, so we load them from an export.{' '}
+            {has
+              ? 'The figures below are from the latest export.'
+              : 'This view populates once the lists are exported to us — send them over and we’ll seed it.'}{' '}
+            Webinar attendance (above) comes from GoToWebinar.
+          </div>
+        </div>
+        {has && (
+          <table className="tbl">
+            <thead>
+              <tr><th>Event</th><th>Region</th><th className="r">Registered</th><th className="r">Attended</th><th className="r">Attendance</th></tr>
+            </thead>
+            <tbody>
+              {q.data.byEvent.flatMap((e) =>
+                e.byRegion.map((r) => (
+                  <tr key={`${e.event}|${r.region}`}>
+                    <td>{e.event}</td>
+                    <td>{r.region}</td>
+                    <td className="r mono">{num(r.registered)}</td>
+                    <td className="r mono">{num(r.attended)}</td>
+                    <td className="r mono mono-d">{r.registered > 0 ? `${((r.attended / r.registered) * 100).toFixed(0)}%` : 'n/a'}</td>
+                  </tr>
+                )),
+              )}
+              <tr className="total">
+                <td colSpan={2}>Total</td>
+                <td className="r mono">{num(q.data.totals.registered)}</td>
+                <td className="r mono">{num(q.data.totals.attended)}</td>
+                <td className="r mono mono-d">{isNA(q.data.totals.attendanceRate) ? 'n/a' : `${(q.data.totals.attendanceRate * 100).toFixed(0)}%`}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   )
 }
 

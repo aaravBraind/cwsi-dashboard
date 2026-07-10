@@ -12,6 +12,7 @@ import {
   upsertCampaignOverride,
   getPipeline,
   getCurrentVsOngoing,
+  getSalesCycle,
   getOpportunityStage,
   getChannel,
   getEmailReport,
@@ -26,8 +27,10 @@ import {
   getEvents,
   getEventTypeFunnel,
   getEventsDetail,
+  getEventAttendance,
   getWebTraffic,
   getSeo,
+  getWebsiteLeads,
 } from '../data/queries'
 
 // Each hook reads the active filters from context, so every consumer re-scopes
@@ -77,6 +80,15 @@ export function useCurrentVsOngoing(channel = null) {
   const { filters } = useFilters()
   const scoped = channel ? { ...filters, channel } : filters
   return useQuery({ queryKey: ['current-vs-ongoing', scoped], queryFn: () => getCurrentVsOngoing(scoped) })
+}
+
+// Sales-cycle view (G5) — per-opp created→close durations by outcome + source.
+export function useSalesCycle() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['sales-cycle', filters.region, filters.quarter],
+    queryFn: () => getSalesCycle({ region: filters.region, quarter: filters.quarter }),
+  })
 }
 
 // Editable campaign overrides (campaign_overrides table). Filter-independent — one
@@ -148,11 +160,11 @@ export function useCampaigns(channelId) {
 
 // LinkedIn delivery snapshot — region-scoped; quarter intentionally excluded
 // (cumulative snapshot, not a quarter slice).
-export function useLinkedInSnapshot() {
+export function useLinkedInSnapshot(includePrior = false) {
   const { filters } = useFilters()
   return useQuery({
-    queryKey: ['linkedin-snapshot', filters.region],
-    queryFn: () => getLinkedInSnapshot({ region: filters.region }),
+    queryKey: ['linkedin-snapshot', filters.region, includePrior],
+    queryFn: () => getLinkedInSnapshot({ region: filters.region, includePrior }),
   })
 }
 
@@ -235,6 +247,15 @@ export function useSeo() {
   })
 }
 
+// Website Leads funnel (SEO9) — scoped to the "Website Leads" SF campaigns.
+export function useWebsiteLeads() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['website-leads', filters.region, filters.quarter],
+    queryFn: () => getWebsiteLeads({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
 // Webinar events (GoToWebinar attendance) — region + quarter scoped.
 export function useEvents() {
   const { filters } = useFilters()
@@ -259,6 +280,15 @@ export function useEventsDetail() {
   return useQuery({
     queryKey: ['events-detail', filters.region, filters.quarter],
     queryFn: () => getEventsDetail({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// In-person event registrations + attendance by region (EV1/EV2/EV3).
+export function useEventAttendance() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['event-attendance', filters.region],
+    queryFn: () => getEventAttendance({ region: filters.region }),
   })
 }
 

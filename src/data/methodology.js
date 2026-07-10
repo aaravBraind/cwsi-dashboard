@@ -23,20 +23,20 @@ export const METHODOLOGY = {
   // ── Funnel definitions (the client's core question: "what is a lead / MQL / SQL?")
   leads: {
     label: 'Leads',
-    what: 'People who entered a marketing campaign in the period.',
-    source: 'Salesforce campaign membership — every record is tied to a campaign, so every figure is marketing-attributed.',
-    calc: 'We count each campaign member that resolves to a Lead or Contact: form fills, gated-content downloads, event registrants, uploaded audience lists and email recipients.',
+    what: 'People who responded to a marketing campaign in the period.',
+    source: 'Salesforce campaign membership, limited to members marked as “Responded”.',
+    calc: 'We count each campaign member who actively responded — a form fill, gated-content download or event/webinar registration. Bulk-uploaded lists and email audiences that were only linked to a campaign (but never responded) are excluded.',
     caveat:
-      'This is campaign membership, not net-new people. A single bulk list-upload or email audience can add hundreds of members at once, so “Leads” is deliberately top-of-funnel and larger than the number of new prospects. MQL and SQL below are the qualified subsets.',
+      'This counts genuine responses, not everyone added to a campaign — so it is deliberately smaller than a raw membership count. Because a person can respond to several campaigns, the same person may be counted under more than one campaign.',
   },
   mql: {
     label: 'Marketing Qualified Leads (MQL)',
-    what: 'Leads that reached the “Marketing Qualified Lead” stage — marketing did its job and handed a qualified lead to sales.',
-    source: 'the lead’s status in Salesforce.',
+    what: 'Everyone who responded to a marketing campaign — marketing having done its job of generating genuine interest.',
+    source: 'the same campaign responses as Leads.',
     calc:
-      'A lead whose status is “Marketing Qualified Lead” or a later stage (Meeting Booked, Trial). Leads that qualified into an opportunity are also counted, so MQL is never less than SQL.',
+      'A marketing qualified lead is anyone who responded to a campaign, so this equals the Leads figure. The distinction between a lead and an MQL was intentionally removed — any campaign response counts as marketing-qualified.',
     caveat:
-      'Salesforce has no single “MQL” flag, so MQL is read from the lead’s status. This status-based definition is agreed with CWSI; it takes effect at the next data refresh.',
+      'Leads and MQL are the same number by design; the qualification that narrows them happens at the SQL stage below. Takes effect at the next data refresh.',
   },
   campaignTheme: {
     label: 'Campaign themes',
@@ -57,15 +57,15 @@ export const METHODOLOGY = {
     label: 'Opportunities',
     what: 'Qualified opportunities that are still open or already won — the live + won marketing book.',
     source: 'Salesforce Opportunity (linked to a marketing campaign).',
-    calc: 'Count of opportunities at a genuine sales stage (any stage except “Unqualified opp”) that are still open or won. Closed-lost deals are excluded, so this is narrower than SQL (which counts every qualified opportunity).',
+    calc: 'Count of opportunities at a genuine sales stage (any stage except “Unqualified opp”) that are still open or won. Closed-lost deals are excluded.',
     caveat: 'This is not “Created Opportunities” (every opp created in the period, including those later lost) — that is a separate metric being added.',
   },
   sql: {
     label: 'Sales Qualified Leads (SQL)',
-    what: 'Leads that sales accepted and turned into a real opportunity.',
-    source: 'Salesforce Opportunity (linked to the marketing campaign).',
-    calc: 'We count opportunities that reached a genuine sales stage — i.e. any stage other than “Unqualified opp”.',
-    caveat: 'A lead can generate an opportunity without first being tagged MQL, so we stop later stages from showing more than earlier ones (Leads ≥ MQL ≥ SQL).',
+    what: 'Leads that sales actively engaged because they saw genuine potential.',
+    source: 'the lead’s status in Salesforce (and, for existing customers, a booked meeting).',
+    calc: 'For leads, we count those whose status reached “Attempt 1” or a later stage — a seller has started working them. For existing customers (who have no lead funnel), a booked meeting in their activity history marks them as sales-qualified.',
+    caveat: 'Because a status is a point-in-time snapshot, we treat “Attempt 1 or beyond” as sales-qualified. A few boundary statuses (for example nurture) are being confirmed with CWSI. Takes effect at the next data refresh.',
   },
   createdOpps: {
     label: 'Created Opportunities',
@@ -74,20 +74,35 @@ export const METHODOLOGY = {
     calc: 'Count of all opportunities created in the reporting window, including those still unqualified.',
     caveat: 'New headline metric. Lands at the next data refresh; shown as “—” until then.',
   },
+  salesCycle: {
+    label: 'Sales Cycle',
+    what: 'How long opportunities take from creation to close, split by outcome (won / lost / still-open) and by source.',
+    source: 'Salesforce opportunities (marketing-attributed), by their created and close dates.',
+    calc: 'Cycle = close date − created date. Closed deals are scoped by close date (so long-running deals that closed this period are included); open deals are those created this period. Average and median are shown per outcome and per source channel.',
+    caveat: 'Phase 1 measures created→close. The full lead-to-opportunity timeline (time from MQL to opportunity) is a follow-up that needs the contact-response join. Populates after the opportunity data refresh.',
+  },
+  createdOppsValue: {
+    label: 'Generated This Quarter',
+    what: 'The pipeline value of opportunities that were actually created in this period.',
+    source: 'Salesforce opportunities, by the date each was created (marketing-attributed).',
+    calc: 'Sum of opportunity value for opps whose created date falls in the reporting window, in EUR. Unlike Influenced Pipeline (open + won, dated by activity/close), this counts only opps created this period — so it answers "pipeline generated this quarter" without pulling in older deals that merely closed now.',
+    caveat: 'New metric. Lands at the next data refresh; shown as “—” until then.',
+  },
 
   // ── Money
   pipeline: {
     label: 'Influenced Pipeline',
-    what: 'The value of open, qualified opportunities that marketing touched.',
-    source: 'the value of open, campaign-attributed opportunities in Salesforce.',
-    calc: 'Sum of the value of open qualified opportunities, converted to EUR when the data is synced using the Salesforce corporate exchange rate.',
-    caveat: 'Only opportunities attributed to a marketing campaign are included — this is not the whole sales pipeline.',
+    what: 'The total value of qualified opportunities marketing touched — open pipeline plus deals already won.',
+    source: 'campaign-attributed opportunities in Salesforce.',
+    calc: 'Sum of open qualified opportunity value plus closed-won value, converted to EUR using the Salesforce corporate exchange rate. Won deals are included so that Closed Won is always part of — never larger than — the pipeline generated.',
+    caveat: 'Only opportunities attributed to a marketing campaign are included — this is not the whole sales pipeline. On the per-campaign tables the “Pipeline” column shows only deals still OPEN, so a campaign can show €0 pipeline next to a Closed-Won value — that just means all its opportunities have already closed and been won (nothing left in progress), not missing data.',
   },
   closedWon: {
     label: 'Closed Won',
     what: 'Revenue from won opportunities that marketing touched.',
     source: 'won, campaign-attributed opportunities in Salesforce.',
     calc: 'Sum of won deal values, converted to EUR when the data is synced using the Salesforce corporate exchange rate.',
+    caveat: 'A deal is only ever in one state at a time: once it closes and is won it moves OUT of open pipeline INTO Closed-Won. So seeing a Closed-Won value alongside €0 open pipeline is expected — it means those deals have already landed. It never appears in both at once.',
   },
   margin: {
     label: 'Influenced Margin',
@@ -112,29 +127,37 @@ export const METHODOLOGY = {
     what: 'All Salesforce money on the dashboard is shown in euros.',
     source: 'Salesforce is multi-currency (EUR / GBP / USD deals); each opportunity’s value is in its own currency.',
     calc: 'Every amount is converted to EUR when the data is synced using the Salesforce corporate exchange rate, then summed. We never add across currencies.',
-    caveat: 'LinkedIn delivery spend is billed in GBP and shown as GBP (a separate feed); it is always labelled £ and never mixed into the EUR totals.',
+    caveat: 'LinkedIn delivery spend is billed in GBP (a separate feed) and is converted to EUR for display at a fixed rate, so every figure on the dashboard reads in euros. It is never mixed into the EUR marketing budget.',
   },
 
   // ── Channels
   linkedinRoi: {
     label: 'LinkedIn ROI',
     what: 'Return on LinkedIn ad spend.',
-    source: 'Salesforce-attributed pipeline (EUR) ÷ LinkedIn delivery spend (GBP).',
-    calc: 'Influenced pipeline attributed to LinkedIn, divided by LinkedIn spend.',
-    caveat: 'This ratio mixes EUR pipeline with GBP spend and uses lifetime LinkedIn spend from a single snapshot — treat it as indicative, not exact. Reconciliation against the LinkedIn Ads export is pending.',
+    source: 'Salesforce-attributed pipeline (EUR) ÷ LinkedIn delivery spend (converted to EUR).',
+    calc: 'Influenced pipeline attributed to LinkedIn, divided by LinkedIn spend — both in EUR.',
+    caveat: 'LinkedIn spend is converted from GBP at a fixed rate and uses a single lifetime snapshot — treat the ratio as indicative, not exact. Reconciliation against the LinkedIn Ads export is pending.',
+  },
+  linkedinBudget: {
+    label: 'LinkedIn Budget',
+    what: 'The planned budget for each LinkedIn campaign that ran in 2026.',
+    source: 'the campaign Total Budget from the LinkedIn Ads exports supplied by CWSI.',
+    calc: 'Per-campaign budget from LinkedIn, converted from GBP to EUR at a fixed rate; the total sums the campaigns that have a budget in the export.',
+    caveat: 'One campaign (Protect Data, Power AI event) had no budget in the export, so it is excluded from the total (shown as n/a). Budgets are converted from GBP at a fixed rate.',
   },
   linkedinSpend: {
     label: 'LinkedIn Spend',
-    what: 'Money spent delivering LinkedIn campaigns.',
-    source: 'LinkedIn delivery snapshot, in GBP.',
-    calc: 'Cumulative spend across the LinkedIn campaigns in the snapshot.',
-    caveat: 'A single lifetime snapshot dated 2026-06-12 — not yet reconciled against the LinkedIn Ads Manager export, and per-campaign budgets are not yet loaded.',
+    what: 'Money spent delivering LinkedIn campaigns, shown in EUR.',
+    source: 'LinkedIn delivery snapshot (billed in GBP), converted to EUR at a fixed rate for display.',
+    calc: 'Cumulative spend across the LinkedIn campaigns in the snapshot, converted to EUR.',
+    caveat: 'A single lifetime snapshot — the GBP→EUR rate is fixed (not a live daily rate), and the figures are not yet reconciled against the LinkedIn Ads Manager export nor are per-campaign budgets loaded.',
   },
   organicTraffic: {
-    label: 'Organic Traffic',
-    what: 'Sessions from organic search to the CWSI sites.',
+    label: 'Website traffic',
+    what: 'Website engagement on the CWSI sites, shown as the four preferred GA4 metrics: Sessions, Users, Average Session Duration and Bounce Rate.',
     source: 'Google Analytics 4 (cwsisecurity.com + insights.cwsisecurity.com).',
-    calc: 'GA4 organic sessions for the reporting window.',
+    calc: 'Sessions = all visits. Users = distinct visitors (summed across days — a small over-count vs GA4’s de-duplicated period figure). Avg session duration = total session time ÷ sessions (mm:ss). Bounce rate = 1 − engaged sessions ÷ sessions (the share of visits with no meaningful interaction).',
+    caveat: 'Bounce rate is live now (from sessions + engaged sessions). Users and Avg session duration populate after the next GA4 data refresh (shown as “—” until then).',
   },
   otherChannel: {
     label: 'Other / Unmapped',

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
 import { useEmailReport, useCampaignOverrides } from '../../hooks/useDashboardData'
@@ -58,27 +59,55 @@ const Stage = ({ name, val, extra }) => (
 
 const opps = (v) => (isNA(v) ? '—' : num(v))
 
+// Recompute funnel totals from a filtered campaign list (so the funnel matches the filter).
+const sumTotals = (rows) => ({
+  leads: rows.reduce((a, c) => a + (Number(c.leads) || 0), 0),
+  mql: rows.reduce((a, c) => a + (Number(c.mql) || 0), 0),
+  sql: rows.reduce((a, c) => a + (Number(c.sql) || 0), 0),
+  createdOpps: rows.reduce((a, c) => a + (Number(c.createdOpps) || 0), 0),
+  pipeline: rows.reduce((a, c) => a + (Number(c.oppValue) || 0), 0),
+  closedWon: rows.reduce((a, c) => a + (Number(c.closedWon) || 0), 0),
+})
+
 function Body({ data, ov }) {
-  const { totals, campaigns, matchedCount } = data
+  const { totals, campaigns } = data
+  const [kind, setKind] = useState('all') // EM1: filter Whitepaper vs Workflow
+  const wpCount = campaigns.filter((c) => c.kind === 'Whitepaper').length
+  const wfCount = campaigns.filter((c) => c.kind === 'Workflow').length
+  const shown = kind === 'all' ? campaigns : campaigns.filter((c) => c.kind === kind)
+  const t = kind === 'all' ? totals : sumTotals(shown)
+  const matchedCount = shown.length
   return (
     <>
+      {/* EM1 — filter by campaign type (whitepaper downloads vs email workflows) */}
+      <div className="filters" style={{ marginBottom: 14 }}>
+        <div className="filter">
+          <span className="label">Campaign type</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="all">All ({campaigns.length})</option>
+            <option value="Whitepaper">Whitepaper downloads ({wpCount})</option>
+            <option value="Workflow">Email workflows ({wfCount})</option>
+          </select>
+        </div>
+      </div>
+
       {/* Commercial funnel — Margot's requested order (same style as Overview) */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} whitepaper &amp; workflow campaigns · current view</div>
+            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · current view</div>
           </div>
           <span className="chip blue">{matchedCount} campaigns</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Leads" val={num(totals.leads)} extra="campaign members" />
-            <Stage name="MQLs" val={num(totals.mql)} extra="marketing-qualified" />
-            <Stage name="SQLs" val={num(totals.sql)} extra="sales-qualified" />
-            <Stage name="Created Opps" val={opps(totals.createdOpps)} extra="opps created" />
-            <Stage name="Opportunity Value" val={eur(totals.pipeline)} extra="open qualified pipeline" />
-            <Stage name="Closed-Won" val={eur(totals.closedWon)} extra="won revenue" />
+            <Stage name="Leads" val={num(t.leads)} extra="campaign members" />
+            <Stage name="MQLs" val={num(t.mql)} extra="marketing-qualified" />
+            <Stage name="SQLs" val={num(t.sql)} extra="sales-qualified" />
+            <Stage name="Created Opps" val={opps(t.createdOpps)} extra="opps created" />
+            <Stage name="Opportunity Value" val={eur(t.pipeline)} extra="open qualified pipeline" />
+            <Stage name="Closed-Won" val={eur(t.closedWon)} extra="won revenue" />
           </div>
         </div>
       </div>
@@ -97,6 +126,7 @@ function Body({ data, ov }) {
             <thead>
               <tr>
                 <th>Campaign</th>
+                <th>Region</th>
                 <th>Type</th>
                 <th className="r">Leads <Explain id="leads" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
@@ -107,9 +137,10 @@ function Body({ data, ov }) {
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((c) => (
+              {shown.map((c) => (
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
+                  <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td><span className={`chip ${c.kind === 'Whitepaper' ? 'blue' : 'neu'}`}>{c.kind}</span></td>
                   <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
@@ -122,12 +153,13 @@ function Body({ data, ov }) {
               <tr className="total">
                 <td>Total · {matchedCount} campaigns</td>
                 <td />
-                <td className="r mono">{num(totals.leads)}</td>
-                <td className="r mono">{num(totals.mql)}</td>
-                <td className="r mono">{num(totals.sql)}</td>
-                <td className="r mono">{opps(totals.createdOpps)}</td>
-                <td className="r mono">{eur(totals.pipeline)}</td>
-                <td className="r mono">{eur(totals.closedWon)}</td>
+                <td />
+                <td className="r mono">{num(t.leads)}</td>
+                <td className="r mono">{num(t.mql)}</td>
+                <td className="r mono">{num(t.sql)}</td>
+                <td className="r mono">{opps(t.createdOpps)}</td>
+                <td className="r mono">{eur(t.pipeline)}</td>
+                <td className="r mono">{eur(t.closedWon)}</td>
               </tr>
             </tbody>
           </table>

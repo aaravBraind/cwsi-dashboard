@@ -74,7 +74,6 @@ export default function KpiTracker() {
           web={web.data?.totals}
           events={events.data}
           attendance={att.data?.hasData ? att.data.totals : null}
-          retention={q.data.retention}
           quarter={filters.quarter}
           targets={targetsQ.data || {}}
         />
@@ -143,8 +142,8 @@ function TargetCell({ kpiKey, row, period, scope }) {
   )
 }
 
-function Register({ f, web, events, attendance, retention, quarter, targets }) {
-  const rows = buildKpiRegisterRows({ funnel: f, retention, web, events, attendance })
+function Register({ f, web, events, attendance, quarter, targets }) {
+  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
   const kpiCount = rows.filter((r) => r.t !== 'cat').length

@@ -6,8 +6,8 @@
 //
 // getBoardPack assembles, for the active region/quarter scope:
 //   1. metrics      — the 7 board metrics in the AGREED ORDER (MQLs → SQLs →
-//                     MQL→SQL → closed opps → influenced pipeline → influenced
-//                     margin → CPL), each with actual, (provisional) target,
+//                     MQL→SQL rate → Created Opps → closed opps → influenced
+//                     pipeline → influenced margin), each with actual, (provisional) target,
 //                     % of target, status AND a QoQ trend vs the prior quarter.
 //   2. levers       — gaps-to-close ranked by ESTIMATED PIPELINE IMPACT.
 //   3. conversion   — funnel stage-to-stage conversion rates.
@@ -67,7 +67,7 @@ const quarterLabel = (q) => (QUARTER_PILLS.find((p) => p.q === q) || {}).label |
 // or pipeline page.
 export async function getBoardPack(filters = {}) {
   const data = await getBoardPackData(filters)
-  const { funnel, prevFunnel, prevQuarter, byChannel, byRegion, retention: ret, stage, hasData } = data
+  const { funnel, prevFunnel, prevQuarter, byChannel, byRegion, stage, hasData } = data
 
   // Targets read from the editable kpi_targets DB table (FY values), falling back
   // to the thresholds.js placeholders if a row/value is absent — so a client target
@@ -125,18 +125,18 @@ export async function getBoardPack(filters = {}) {
       trace: 'Σ v_fact_enriched.sql_count (scoped)',
     },
     {
-      key: 'createdOpps', order: 3, label: 'Created Opportunities', unit: 'count',
-      value: createdOpps, valueDisplay: real(createdOpps) ? num(createdOpps) : 'n/a',
-      target: null, targetDisplay: 'no target set',
-      trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opps created in period, marketing-attributed, any stage)',
-      note: real(createdOpps) ? null : 'pending Salesforce data refresh',
-    },
-    {
-      key: 'mqlToSql', order: 4, label: 'MQL → SQL Rate', unit: 'rate',
+      key: 'mqlToSql', order: 3, label: 'MQL → SQL Rate', unit: 'rate',
       value: mqlToSql, valueDisplay: mqlToSql == null ? 'n/a' : `${(mqlToSql * 100).toFixed(1)}%`,
       target: TGT.mqlToSql,
       targetDisplay: `FY ${(TGT.mqlToSql * 100).toFixed(0)}%`,
       trace: 'sql_count ÷ mql_count (derived)',
+    },
+    {
+      key: 'createdOpps', order: 4, label: 'Created Opportunities', unit: 'count',
+      value: createdOpps, valueDisplay: real(createdOpps) ? num(createdOpps) : 'n/a',
+      target: null, targetDisplay: 'no target set',
+      trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opps created in period, marketing-attributed, any stage)',
+      note: real(createdOpps) ? null : 'pending Salesforce data refresh',
     },
     {
       key: 'closedOpps', order: 5, label: 'Closed Opportunities', unit: 'count',
@@ -149,7 +149,7 @@ export async function getBoardPack(filters = {}) {
       key: 'pipeline', order: 6, label: 'Influenced Pipeline', unit: 'gbp',
       value: pipeline, valueDisplay: real(pipeline) ? eur(pipeline) : 'n/a',
       target: TGT.pipeline, targetDisplay: `FY ${eur(TGT.pipeline)}`,
-      trace: 'Σ v_fact_enriched.pipeline_value (scoped)',
+      trace: 'Σ v_fact_enriched.pipeline_value + Σ closed_won_value (generated = open + won, scoped)',
     },
     {
       key: 'margin', order: 7, label: 'Influenced Margin', unit: 'gbp',
@@ -219,8 +219,9 @@ export async function getBoardPack(filters = {}) {
   // differently (leads by lead date, SQL by opp activity, created-opps by created date,
   // won by close date) so this is a PERIOD-SCOPED ratio, not a same-cohort flow.
   const convRate = (a, b) => (real(a) && real(b) && b > 0 ? Math.min(a / b, 1) : null)
+  // Leads = MQL by definition now (Margot 9 Jul), so a Leads→MQL step is always 100% and
+  // misleading — dropped. The funnel starts at MQL: MQL → SQL → Created Opp → Closed-Won.
   const conversion = [
-    { from: 'Leads', to: 'MQL', rate: convRate(mql, leads) },
     { from: 'MQL', to: 'SQL', rate: convRate(sql, mql) },
     { from: 'SQL', to: 'Created Opp', rate: convRate(createdOpps, sql) },
     { from: 'Created Opp', to: 'Won', rate: convRate(closedWonCount, createdOpps) },
@@ -257,14 +258,10 @@ export async function getBoardPack(filters = {}) {
 
   // ---- 6. Open-pipeline health (stage distribution snapshot) -------------
   // Region-scoped current-state snapshot (NOT a quarter slice) — labelled as such.
-  // weighted = Σ value × probability — a probability-adjusted forecast, itself a
-  // store-derived (traceable) number.
+  // BP4: the probability-weighted forecast was removed (Margot — "overly complicated").
   const stageRows = stage?.stages || []
   const openCount = stageRows.reduce((a, s) => a + (Number(s.count) || 0), 0)
   const openValue = stageRows.reduce((a, s) => a + (Number(s.value) || 0), 0)
-  const weighted = stageRows.reduce(
-    (a, s) => a + (Number(s.value) || 0) * ((Number(s.probability) || 0) / 100), 0
-  )
   const pipelineHealth = {
     hasData: !!stage?.hasData,
     snapshotDate: stage?.snapshotDate || null,
@@ -276,17 +273,11 @@ export async function getBoardPack(filters = {}) {
     })),
     openCount, openCountDisplay: num(openCount),
     openValue, openValueDisplay: eur(openValue),
-    weighted, weightedDisplay: eur(weighted),
   }
 
-  // ---- 7. Retention (retained contracts + expansion) --------------------
-  const retention = {
-    hasData: !!ret?.hasData,
-    retainedCount: ret?.retainedCount, retainedCountDisplay: num(ret?.retainedCount),
-    retainedValue: ret?.retainedValue, retainedValueDisplay: eur(ret?.retainedValue),
-    expansionCount: ret?.expansionCount, expansionCountDisplay: num(ret?.expansionCount),
-    expansionValue: ret?.expansionValue, expansionValueDisplay: eur(ret?.expansionValue),
-  }
+  // ---- 7. Retention removed (Margot, 9 Jul call) — retained contracts + expansion
+  // are too hard to attribute to marketing for now, so they no longer feature in the
+  // board pack, its trace table, or the AI narrative.
 
   // ---- 8. Trace table — the single source of allowed numbers -------------
   // Everything the model may cite, with both the raw value and its display form.
@@ -323,17 +314,11 @@ export async function getBoardPack(filters = {}) {
   if (pipelineHealth.hasData) {
     add('pipe.openCount', 'Open opportunities', openCount, pipelineHealth.openCountDisplay)
     add('pipe.openValue', 'Open pipeline value', openValue, pipelineHealth.openValueDisplay)
-    add('pipe.weighted', 'Weighted (probability-adjusted) pipeline', weighted, pipelineHealth.weightedDisplay)
+    // BP4: weighted (probability-adjusted) forecast removed — "overly complicated, not adding value".
     for (const s of pipelineHealth.stages) {
       add(`stage.${s.stage}.value`, `${s.stage} value`, s.value, s.valueDisplay)
       add(`stage.${s.stage}.count`, `${s.stage} count`, s.count, s.countDisplay)
     }
-  }
-  if (retention.hasData) {
-    add('ret.count', 'Retained contracts (won renewals)', retention.retainedCount, retention.retainedCountDisplay)
-    add('ret.value', 'Retained contract value', retention.retainedValue, retention.retainedValueDisplay)
-    add('exp.count', 'Expansion deals (upsell + cross-sell)', retention.expansionCount, retention.expansionCountDisplay)
-    add('exp.value', 'Expansion value', retention.expansionValue, retention.expansionValueDisplay)
   }
 
   return {
@@ -353,7 +338,6 @@ export async function getBoardPack(filters = {}) {
     regions,
     regionsHaveUnassigned,
     pipelineHealth,
-    retention,
     traceTable,
     // Funnel summary as display strings — additive (Board.jsx + the validator read
     // metrics/levers/traceTable/meta, not this). Used by the branded-deck exporter

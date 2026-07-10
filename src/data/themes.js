@@ -36,12 +36,25 @@
 // Campaign.StartDate + ParentId, we can anchor themes on the native SF campaign
 // hierarchy where CWSI populates it, and date them precisely.
 
+// `keys` = the EXACT Salesforce campaigns Margot named in her Word doc (9 Jul call:
+// "select the ones I put in the document" — don't infer from start dates). These are
+// AUTHORITATIVE: a campaign whose key is listed here is pinned to that theme regardless
+// of its Salesforce name, which is how the 10.06.2026 "Microsoft E7…" campaign lands
+// under Protect Data (Margot refers to it as the IE "Protect Data, Power AI" event).
+// `any` = a secondary keyword fallback that only classifies campaigns NOT in any `keys`
+// list — it pulls obvious siblings (on-demand replays, NL/language variants) into the
+// right theme without Margot having to list every one.
 const THEMES = [
   {
     key: 'q1-data-asset',
     quarter: 'Q1',
     label: 'Data is an Asset (Data Security)',
     blurb: 'Q1 narrative — AI & data-security webinars plus the flagship “Data That Moves Your Business Forward” whitepaper.',
+    keys: [
+      '701Si00000S2Zj7IAF', // 19.02.2026 Webinar AI and Data Security
+      '701Si00000TlRLrIAN', // Q1 Data is an Asset, Not a Liability
+      '701Si00000V3LvjIAF', // Q1 2026 - Data That Moves Your Business Forward Whitepaper
+    ],
     any: ['data is an asset', 'data that moves', 'ai and data security', 'ai and the data security', 'ai & the data security'],
   },
   {
@@ -49,13 +62,19 @@ const THEMES = [
     quarter: 'Q1',
     label: 'Samenwerkingsdag Zorg (NL)',
     blurb: 'Q1 in-person healthcare event in the Netherlands.',
+    keys: ['701Si00000Tyxu9IAB'], // 31.03.2026 - NL - Samenwerkingsdag Zorg
     any: ['samenwerkingsdag'],
   },
   {
     key: 'q2-protect-data',
     quarter: 'Q2',
     label: 'Protect Data, Power AI',
-    blurb: 'Q2 in-person events (UK / IE) plus the supporting outreach workflows.',
+    blurb: 'Q2 in-person events (UK 22.04 + IE 10.06) plus the supporting outreach workflows.',
+    keys: [
+      '701Si00000UOSYCIA5', // 22.04.2026 - UK - Protect Data, Power AI Event
+      '701Tm00000ZXsNFIA1', // 10.06.2026 (SF: "Microsoft E7…") — Margot's IE Protect Data event
+      '701Si00000VOjzqIAD', // Protect data, power AI outreach workflows
+    ],
     any: ['protect data', 'protect, data', 'power ai'],
   },
   {
@@ -63,16 +82,26 @@ const THEMES = [
     quarter: 'Q2',
     label: 'Becoming Frontier — Agent 365',
     blurb: 'Q2 narrative — “Innovating with Agent 365” webinars + whitepaper, including on-demand replays and the NL/public-sector versions.',
+    keys: [
+      '701Si00000VBdQoIAL', // 07.05.2026 - Becoming Frontier: Innovating with Agent 365
+      '701Tm00000a9FhTIAU', // 18.06.2026 - Innovating with Agent 365 in the Public Sector
+      '701Tm00000c9ygeIAA', // 2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
+    ],
     any: ['becoming frontier', 'agent 365', '18.06.2026', '18 juni 2026'],
   },
   {
     key: 'q2-microsoft-e7',
     quarter: 'Q2',
     label: 'Microsoft E7',
-    blurb: 'Q2 Microsoft E7 event (10.06.2026) + the E7 offering email workflow.',
-    any: ['microsoft e7'],
+    blurb: 'Q2 Microsoft E7 offering — the E7 email workflow.',
+    keys: ['701Tm00000az9RSIAY'], // 2026 - Microsoft E7 Offering Workflow
+    any: [], // E7 event itself lives under Protect Data (Margot); avoid re-claiming it by keyword
   },
 ]
+
+// Fast lookup: campaign_key → theme (built from the authoritative `keys` lists above).
+const THEME_BY_KEY = {}
+for (const t of THEMES) for (const k of t.keys || []) THEME_BY_KEY[k] = t
 
 // Catch-all — everything that isn't part of a named quarterly theme (list imports,
 // partner / MDF campaigns, outreach lists, prior-year activity still generating).
@@ -83,12 +112,14 @@ const OTHER = {
   blurb: 'Campaigns not part of a named quarterly theme — list imports, partner/MDF, outreach lists, and prior-year activity still generating pipeline.',
 }
 
-// Assign a campaign name to its theme (case-insensitive substring match, padded so
-// short tokens don't match mid-word). First rule wins; unmatched → Other.
-export function themeForCampaign(name) {
+// Assign a campaign to its theme. An explicit campaign_key from Margot's Word-doc list
+// wins (authoritative); otherwise fall back to a case-insensitive keyword match on the
+// name (padded so short tokens don't match mid-word). First rule wins; unmatched → Other.
+export function themeForCampaign(name, key = null) {
+  if (key && THEME_BY_KEY[key]) return THEME_BY_KEY[key]
   const n = ` ${String(name || '').toLowerCase()} `
   for (const t of THEMES) {
-    if (t.any.some((kw) => n.includes(kw))) return t
+    if ((t.any || []).some((kw) => n.includes(kw))) return t
   }
   return OTHER
 }

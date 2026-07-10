@@ -106,6 +106,7 @@ function ThemeCard({ theme, ov }) {
             <thead>
               <tr>
                 <th>Activity</th>
+                <th>Region</th>
                 <th>Type</th>
                 <th className="r">Leads<Explain id="leads" /></th>
                 <th className="r">MQL<Explain id="mql" /></th>
@@ -123,6 +124,14 @@ function ThemeCard({ theme, ov }) {
                       campaignKey={c.campaignKey}
                       value={ov[c.campaignKey]?.display_name}
                       original={c.campaignName}
+                    />
+                  </td>
+                  <td>
+                    <EditableName
+                      campaignKey={c.campaignKey}
+                      field="display_region"
+                      value={ov[c.campaignKey]?.display_region}
+                      original={c.regionCode}
                     />
                   </td>
                   <td><span style={{ opacity: 0.6 }}>{c.campaignType || '—'}</span></td>
@@ -149,6 +158,11 @@ function ThemeCard({ theme, ov }) {
               ))}
             </tbody>
           </table>
+          <p className="panel-note" style={{ padding: '6px 4px 0', fontSize: 12, opacity: 0.7 }}>
+            “Pipeline €” is opportunities still <strong>open</strong>; “Closed-Won €” is deals already won. A deal
+            is only ever in one of the two — so an activity showing <strong>€0 pipeline next to a Closed-Won value</strong> just
+            means its opportunities have already closed and been won (nothing left in progress).
+          </p>
         </div>
       )}
     </div>

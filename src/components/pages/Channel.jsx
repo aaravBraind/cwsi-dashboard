@@ -5,6 +5,7 @@ import { useChannel, useCampaigns, useLinkedInSnapshot, useEmailEngagement, useC
 import { gbp, eur, num, pct, isNA } from '../../data/format'
 import Explain from '../Explain'
 import EditableName from '../EditableName'
+import CurrentVsOngoing from '../CurrentVsOngoing'
 
 const rateStr = (v) => (isNA(v) || v == null ? 'n/a' : `${(v * 100).toFixed(1)}%`)
 
@@ -71,23 +72,28 @@ export default function Channel({ channel }) {
         <EmptyState message={`No ${title} data for this region / quarter yet — nothing to show.`} />
       )}
       {q.data && q.data.hasData && <Body data={q.data} isLinkedIn={isLinkedIn} isEmail={isEmail} />}
+
+      {/* Current-quarter activity vs ongoing impact of earlier campaigns — same split as
+          Pipeline/Events, scoped to THIS channel (G5: apply consistently across pages). */}
+      {q.data && q.data.hasData && <CurrentVsOngoing channel={channel.name} />}
     </>
   )
 }
 
 // ---- LinkedIn delivery snapshot (GBP, cumulative-to-date) -----------------
 function LinkedInSnapshot() {
-  const s = useLinkedInSnapshot()
+  const [includePrior, setIncludePrior] = useState(false) // LI2 — show prior-year campaigns for context
+  const s = useLinkedInSnapshot(includePrior)
   const ov = useCampaignOverrides().data || {} // hook before any early return (Rules of Hooks)
   if (s.isLoading) return <Loading label="Loading LinkedIn snapshot…" />
   if (s.isError) return <ErrorState error={s.error} />
   if (!s.data || !s.data.hasData)
     return <EmptyState message="No LinkedIn delivery snapshot for this region yet." />
 
-  const { totals, campaigns, snapshotDate, efficiency: eff } = s.data
+  const { totals, campaigns, priorCampaigns = [], efficiency: eff } = s.data
   const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : null
-  // Per-£ metrics need 2 dp (gbp() rounds to whole £, which would show CPC as "£3").
-  const money2 = (v) => (isNA(v) || v == null ? 'n/a' : `£${Number(v).toFixed(2)}`)
+  // Per-€ metrics need 2 dp (eur() rounds to whole €, which would show CPC as "€3").
+  const money2 = (v) => (isNA(v) || v == null ? 'n/a' : `€${Number(v).toFixed(2)}`)
   const roiStr = (v) => (isNA(v) || v == null ? 'n/a' : `${Number(v).toFixed(1)}×`)
 
   return (
@@ -99,18 +105,33 @@ function LinkedInSnapshot() {
           </svg>
         </div>
         <div className="callout-body">
-          <strong>Cumulative lifetime snapshot</strong> from the LinkedIn report (as of{' '}
-          <strong>{snapshotDate}</strong>) — current totals, <strong>not a day-by-day trend</strong>.
-          Spend is <strong>GBP</strong> and is never added to the EUR marketing budget. The quarter
-          filter doesn't change this snapshot; the region filter does.
+          <strong>From the LinkedIn Ads export</strong> (report period 1 Jan – 9 Jul 2026), grouped into the{' '}
+          <strong>three 2026 campaigns</strong> CWSI reports on (Protect Data · Microsoft E7 · Data That Moves —
+          the Protect Data group includes its boost post). <strong>Budgets are the campaign budgets in EUR</strong>;
+          spend is converted from GBP to EUR (fixed rate) and is separate from the EUR marketing budget. Use the
+          toggle below to include prior-year LinkedIn campaigns for context. The quarter filter doesn't change this
+          snapshot; the region filter does.
         </div>
       </div>
 
+      {/* LI2 — prior-year campaigns available for context (default: 2026 only) */}
+      <div className="filters" style={{ marginBottom: 14 }}>
+        <label className="filter" style={{ cursor: 'pointer' }}>
+          <input type="checkbox" checked={includePrior} onChange={(e) => setIncludePrior(e.target.checked)} />
+          <span className="label" style={{ marginLeft: 6 }}>Include prior-year campaigns (context)</span>
+        </label>
+      </div>
+
       <div className="kpis cols-4">
-        <Kpi label="Spend · snapshot (GBP)" val={gbp(totals.spend)} explainId="linkedinSpend" />
-        <Kpi label="Impressions · snapshot" val={num(totals.impressions)} />
-        <Kpi label="Clicks · snapshot" val={num(totals.clicks)} />
-        <Kpi label="CTR · snapshot" val={ctr == null ? 'n/a' : `${(ctr * 100).toFixed(2)}%`} />
+        <Kpi
+          label="Spend (EUR)"
+          val={eur(totals.spend)}
+          sub={isNA(totals.budget) ? undefined : `${pct(totals.spend, totals.budget)} of ${eur(totals.budget)} budget`}
+          explainId="linkedinSpend"
+        />
+        <Kpi label="Total Budget (EUR)" val={isNA(totals.budget) ? 'n/a' : eur(totals.budget)} explainId="linkedinBudget" />
+        <Kpi label="Impressions" val={num(totals.impressions)} />
+        <Kpi label="Clicks · CTR" val={`${num(totals.clicks)} · ${ctr == null ? 'n/a' : `${(ctr * 100).toFixed(2)}%`}`} />
       </div>
 
       {/* Efficiency — all live now that LinkedIn spend + SF-attributed pipeline/revenue
@@ -122,7 +143,7 @@ function LinkedInSnapshot() {
           <div className="left">
             <div className="panel-title">LinkedIn Efficiency — snapshot</div>
             <div className="panel-sub">
-              CPC / CPM / CTR · CPL on form leads · ROI = SF-attributed pipeline (EUR) ÷ spend (GBP), lifetime, LinkedIn only
+              CPC / CPM / CTR · CPL on form leads · ROI = SF-attributed pipeline (EUR) ÷ spend (EUR), lifetime, LinkedIn only
             </div>
           </div>
           <span className="chip blue">live</span>
@@ -131,7 +152,7 @@ function LinkedInSnapshot() {
           <div className="kpis cols-4" style={{ marginBottom: 0 }}>
             <Kpi label="CPC · cost per click" val={money2(eff?.cpc)} />
             <Kpi label="CPM · per 1,000 impr." val={money2(eff?.cpm)} />
-            <Kpi label="CPL · per form lead" val={isNA(eff?.cplForm) ? 'n/a' : gbp(eff?.cplForm)} />
+            <Kpi label="CPL · per form lead" val={isNA(eff?.cplForm) ? 'n/a' : money2(eff?.cplForm)} />
             <Kpi label="CTR · click-through" val={isNA(eff?.ctr) ? 'n/a' : `${(eff.ctr * 100).toFixed(2)}%`} />
           </div>
           <div className="kpis cols-3" style={{ marginTop: 14, marginBottom: 0 }}>
@@ -139,12 +160,12 @@ function LinkedInSnapshot() {
               label="ROI · influenced pipeline"
               explainId="linkedinRoi"
               val={roiStr(eff?.roiPipeline)}
-              sub={isNA(eff?.pipeline) ? 'attribution pending' : `${eur(eff.pipeline)} pipeline ÷ ${gbp(totals.spend)} spend`}
+              sub={isNA(eff?.pipeline) ? 'attribution pending' : `${eur(eff.pipeline)} pipeline ÷ ${eur(totals.spend)} spend`}
             />
             <RoiKpi
               label="ROI · won revenue"
               val={roiStr(eff?.roiRevenue)}
-              sub={isNA(eff?.closedWon) ? 'attribution pending' : `${eur(eff.closedWon)} closed-won ÷ ${gbp(totals.spend)} spend`}
+              sub={isNA(eff?.closedWon) ? 'attribution pending' : `${eur(eff.closedWon)} closed-won ÷ ${eur(totals.spend)} spend`}
             />
             <RoiKpi
               label="CPL basis"
@@ -158,8 +179,8 @@ function LinkedInSnapshot() {
       <div className="panel">
         <div className="panel-head">
           <div className="left">
-            <div className="panel-title">LinkedIn Campaign Delivery — snapshot</div>
-            <div className="panel-sub">Per-campaign cumulative totals · spend in GBP · CTR &amp; CPL derived</div>
+            <div className="panel-title">LinkedIn Campaign Delivery — 2026</div>
+            <div className="panel-sub">The 2026 campaigns from the LinkedIn Ads export · budget &amp; spend in EUR (converted from GBP) · CTR &amp; CPL derived</div>
           </div>
           <span className="chip blue">{campaigns.length} campaigns</span>
         </div>
@@ -169,12 +190,14 @@ function LinkedInSnapshot() {
               <tr>
                 <th>Campaign</th>
                 <th>Region</th>
-                <th className="r">Spend (GBP)</th>
+                <th className="r">Budget (EUR)</th>
+                <th className="r">Spend (EUR)</th>
+                <th className="r">Used</th>
                 <th className="r">Impr.</th>
                 <th className="r">Clicks</th>
                 <th className="r">CTR</th>
                 <th className="r">Leads</th>
-                <th className="r">CPL (GBP)</th>
+                <th className="r">CPL (EUR)</th>
               </tr>
             </thead>
             <tbody>
@@ -182,27 +205,62 @@ function LinkedInSnapshot() {
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
-                  <td className="r mono">{gbp(c.spend)}</td>
+                  <td className="r mono">{isNA(c.budget) ? 'n/a' : eur(c.budget)}</td>
+                  <td className="r mono">{eur(c.spend)}</td>
+                  <td className="r mono mono-d">{isNA(c.budgetUsedPct) ? 'n/a' : `${(c.budgetUsedPct * 100).toFixed(0)}%`}</td>
                   <td className="r mono">{num(c.impressions)}</td>
                   <td className="r mono">{num(c.clicks)}</td>
                   <td className="r mono">{isNA(c.ctr) ? 'n/a' : `${(c.ctr * 100).toFixed(2)}%`}</td>
                   <td className="r mono">{num(c.leads)}</td>
-                  <td className="r mono mono-d">{isNA(c.cpl) ? 'n/a' : gbp(c.cpl)}</td>
+                  <td className="r mono mono-d">{isNA(c.cpl) ? 'n/a' : money2(c.cpl)}</td>
                 </tr>
               ))}
               <tr className="total">
                 <td colSpan={2}>Total · {campaigns.length} campaigns</td>
-                <td className="r mono">{gbp(totals.spend)}</td>
+                <td className="r mono">{isNA(totals.budget) ? 'n/a' : eur(totals.budget)}</td>
+                <td className="r mono">{eur(totals.spend)}</td>
+                <td className="r mono mono-d">{isNA(totals.budget) || totals.budget === 0 ? 'n/a' : `${((totals.spend / totals.budget) * 100).toFixed(0)}%`}</td>
                 <td className="r mono">{num(totals.impressions)}</td>
                 <td className="r mono">{num(totals.clicks)}</td>
                 <td className="r mono">{ctr == null ? 'n/a' : `${(ctr * 100).toFixed(2)}%`}</td>
                 <td className="r mono">{num(totals.leads)}</td>
-                <td className="r mono mono-d">{totals.leads > 0 ? gbp(totals.spend / totals.leads) : 'n/a'}</td>
+                <td className="r mono mono-d">{totals.leads > 0 ? money2(totals.spend / totals.leads) : 'n/a'}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* LI2 — prior-year LinkedIn campaigns (context only; not in the 2026 totals above) */}
+      {includePrior && priorCampaigns.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <div className="left">
+              <div className="panel-title">Prior-year LinkedIn campaigns — context</div>
+              <div className="panel-sub">Older campaigns from the delivery snapshot · spend in EUR · not part of the 2026 totals above</div>
+            </div>
+            <span className="chip neu">{priorCampaigns.length} campaigns</span>
+          </div>
+          <div className="panel-body no-pad">
+            <table className="tbl">
+              <thead>
+                <tr><th>Campaign</th><th>Region</th><th className="r">Spend (EUR)</th><th className="r">Impr.</th><th className="r">Clicks</th></tr>
+              </thead>
+              <tbody>
+                {priorCampaigns.map((c) => (
+                  <tr key={c.campaignKey}>
+                    <td>{c.campaignName}</td>
+                    <td>{c.regionCode}</td>
+                    <td className="r mono">{eur(c.spend)}</td>
+                    <td className="r mono">{num(c.impressions)}</td>
+                    <td className="r mono">{num(c.clicks)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -269,6 +327,7 @@ function Body({ data, isLinkedIn, isEmail }) {
             <thead>
               <tr>
                 <th>Campaign</th>
+                <th>Region</th>
                 {!isLinkedIn && !isEmail && <th className="r">Spend</th>}
                 {!isLinkedIn && !isEmail && <th className="r">Impr.</th>}
                 {!isLinkedIn && <th className="r">Leads <Explain id="leads" /></th>}
@@ -283,6 +342,7 @@ function Body({ data, isLinkedIn, isEmail }) {
               {campaigns.map((c) => (
                 <tr key={c.campaignKey || c.campaignName}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
+                  <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.spend) ? 'n/a' : gbp(c.spend)}</td>}
                   {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.impressions) ? 'n/a' : num(c.impressions)}</td>}
                   {!isLinkedIn && <td className="r mono">{num(c.leads)}</td>}
@@ -295,6 +355,7 @@ function Body({ data, isLinkedIn, isEmail }) {
               ))}
               <tr className="total">
                 <td>Total · {campaigns.length} campaigns</td>
+                <td />
                 {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
                 {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
                 {!isLinkedIn && <td className="r mono">{num(totals.leads)}</td>}

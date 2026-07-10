@@ -1,0 +1,107 @@
+{
+  "name": "outreach_prospect_lists_probe",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Outreach — are attendee 'Prospect Lists' reachable as TAGS?\n\nMargot's attendee/non-attendee lists live in Outreach (Prospects → Prospect Lists, named\n`region - attendees/non-attendees - event`). The Outreach v2 API does NOT expose those named lists,\nbut it DOES expose prospect **tags**. This probe samples prospects and lists their tags to see if the\nattendee lists are stored as tags (→ we can automate) or not (→ we ingest from a CSV export).\n\nRUN: Execute workflow → open *Summarize*:\n- `attendance_lists_as_tags: [ ... ]` with entries → automatable; send me the output.\n- `NONE FOUND` → the lists aren't tags; export them to CSV and we seed the table instead.\n\nReuses the Outreach OAuth2 credential (id GyVW4j5ZbEKjDTRQ).",
+        "height": 320,
+        "width": 470
+      },
+      "id": "sticky-pl-0001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        -140
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-pl-0001",
+      "name": "Execute workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.outreach.io/api/v2/prospects?fields[prospect]=tags,emails&page[size]=100",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.api+json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-pl-0001",
+      "name": "Outreach: Get Prospects",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        440,
+        220
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "GyVW4j5ZbEKjDTRQ",
+          "name": "Outreach Sequence"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checks whether Margot's attendee 'Prospect Lists' are reachable via the Outreach API as prospect\n// TAGS (the only list-like signal the v2 API exposes). If attendee/non-attendee tags show up here we\n// can automate in-person attendance; if not, we fall back to a CSV export of the lists.\nconst r = $input.first().json;\nconst status = r.statusCode;\nconst body = r.body || r;\nif (status && status >= 400) {\n  return [{ json: { ok:false, note: status===403 ? 'prospects.read scope missing (403)' : `HTTP ${status}`, status, error:(body&&body.errors)||body } }];\n}\nconst data = (body && body.data) || [];\nconst tagSet = new Set();\nlet withTags = 0;\nfor (const p of data) { const t = (p.attributes && p.attributes.tags) || []; if (t.length) withTags++; for (const x of t) tagSet.add(x); }\nconst tags = [...tagSet];\nconst attendanceTags = tags.filter((t) => /attendee|non.?attendee/i.test(t));\nreturn [{ json: {\n  ok: true,\n  prospects_sampled: data.length,\n  prospects_with_tags: withTags,\n  distinct_tags: tags.length,\n  attendance_lists_as_tags: attendanceTags.length ? attendanceTags : 'NONE FOUND — lists are not tags → use CSV export',\n  sample_tags: tags.slice(0, 40),\n} }];"
+      },
+      "id": "code-pl-0001",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Execute workflow": {
+      "main": [
+        [
+          {
+            "node": "Outreach: Get Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outreach: Get Prospects": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

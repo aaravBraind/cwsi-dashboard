@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useBoardPack, useGenerateBoardPack, useSavedBoardPack } from '../../hooks/useDashboardData'
+import { useBoardPack, useGenerateBoardPack, useSavedBoardPack, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { I } from '../icons'
 import Explain from '../Explain'
+import CurrentVsOngoing from '../CurrentVsOngoing'
+import { eur } from '../../data/format'
 
 // Board metric key → methodology-registry id, so each card's eye-button explains
 // the right figure to the client.
@@ -59,7 +61,7 @@ export default function Board() {
 }
 
 function Body({ pack, gen, saved }) {
-  const { metrics, meta, conversion, channels, regions, pipelineHealth, retention } = pack
+  const { metrics, meta, conversion, channels, regions, pipelineHealth } = pack
   return (
     <>
       {/* Targets are client-gated → flagged provisional everywhere they surface. */}
@@ -100,9 +102,13 @@ function Body({ pack, gen, saved }) {
           this scope, so the top line stays scannable and the depth is one click away. */}
       {channels.length > 0 && <ChannelSection channels={channels} meta={meta} />}
       {conversion.some((c) => c.rate != null) && <ConversionSection conversion={conversion} />}
+
+      {/* Legacy vs Current Activity (Margot — key board narrative): this-quarter results vs
+          pipeline/revenue still coming from prior-quarter activity + implied avg sales cycle. */}
+      <CurrentVsOngoing label="campaign" />
+
       {pipelineHealth.hasData && <PipelineHealthSection ph={pipelineHealth} />}
       {meta.scopeIsAllRegions && regions.length > 0 && <RegionSection regions={regions} />}
-      {retention.hasData && <RetentionSection r={retention} meta={meta} />}
 
       {/* 3. AI narrative + recommendations */}
       <NarrativePanel pack={pack} gen={gen} saved={saved} />
@@ -123,9 +129,9 @@ function MetricCard({ m, prevQ }) {
       </div>
       <div className="kpi-label" style={{ fontSize: 15, letterSpacing: 0 }}>{m.order} · {m.label} {METRIC_EXPLAIN[m.key] && <Explain id={METRIC_EXPLAIN[m.key]} />}</div>
       <div className="kpi-val">{m.valueDisplay}</div>
+      {/* BP2: the per-card target sub-figure duplicated the traffic-light "% of FY", so it's removed
+          to simplify. The traffic light carries target-attainment; QoQ trend + any "pending" note stay. */}
       <div className="kpi-sub">
-        <span className="kpi-target">{m.targetDisplay} <em style={{ opacity: 0.6 }}>· provisional</em></span>
-        {/* QoQ trend — only when an in-scope prior quarter exists (not Q1 / YTD). */}
         {m.trend && (
           <span className={`kpi-delta ${m.trend.dir}`} title={prevQ ? `vs ${prevQ}` : 'quarter-over-quarter'}>
             {m.trend.display}
@@ -174,6 +180,11 @@ function Expandable({ icon, title, sub, chip, defaultOpen = true, children }) {
 
 // 2a. Channel contribution — who drove the pipeline (share of total).
 function ChannelSection({ channels, meta }) {
+  // Outreach isn't a Salesforce campaign channel (it's contact-attributed), so it's absent from
+  // the campaign-based channels above. Surface it as an indicative row — NOT in the donut/shares
+  // or any total — so the board sees it without double-counting it against the campaign channels.
+  const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
+  const showOutreach = outbound && (outbound.pipeline > 0 || outbound.won > 0)
   return (
     <Expandable
       icon={I.grid}
@@ -198,9 +209,28 @@ function ChannelSection({ channels, meta }) {
                 <td className="r">{c.closedWonDisplay}</td>
               </tr>
             ))}
+            {showOutreach && (
+              <tr style={{ opacity: 0.85 }}>
+                <td>Outreach · outbound <span className="chip neu">contact-attributed</span></td>
+                <td className="r">—</td>
+                <td className="r">{eur(outbound.pipeline)}</td>
+                <td className="r">{eur(outbound.won)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+      {showOutreach && (
+        <div className="callout" style={{ marginTop: 12 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>Outreach is shown separately, on purpose.</strong> Its opportunities are attributed by
+            <em> contact</em> (a sequenced contact is on the opp), not by campaign — so they can overlap the
+            campaign channels above. It's therefore listed as an indicative row and <strong>excluded from the
+            pipeline-share donut and any totals</strong> to avoid double-counting. Full detail is on the Outreach page.
+          </div>
+        </div>
+      )}
     </Expandable>
   )
 }
@@ -212,7 +242,7 @@ function ConversionSection({ conversion }) {
     <Expandable
       icon={I.trend}
       title="Funnel Conversion"
-      sub="Leads → MQL → SQL → Created Opps → Closed-Won · stage-to-stage"
+      sub="MQL → SQL → Created Opps → Closed-Won · stage-to-stage"
       chip={<span className="chip neu">{conversion.filter((c) => c.rate != null).length} steps</span>}
     >
       <div className="bar-list">
@@ -275,10 +305,9 @@ function PipelineHealthSection({ ph }) {
       <div className="callout" style={{ marginTop: 14, marginBottom: 0 }}>
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
-          Probability-weighted (forecast) pipeline: <strong>{ph.weightedDisplay}</strong>. This is a
-          current-state open-pipeline snapshot for the selected region, not limited to one quarter. A <strong>"—"</strong> in
-          the Probability column means that stage has no win-probability set in Salesforce yet, so it isn't
-          weighted into the forecast (the Total row shows "—" because a total has no single probability).
+          This is a current-state open-pipeline snapshot for the selected region, not limited to one quarter.
+          The Probability column is Salesforce's win-probability for each stage; a <strong>"—"</strong> means that
+          stage has no probability set in Salesforce yet.
         </div>
       </div>
     </Expandable>
@@ -337,32 +366,8 @@ function RegionSection({ regions }) {
   )
 }
 
-// 2e. Retention — retained contracts (won renewals) + expansion.
-function RetentionSection({ r, meta }) {
-  return (
-    <Expandable
-      icon={I.users}
-      title="Retention"
-      sub={`Retained contracts & expansion · ${meta.regionLabel} · ${meta.quarterLabel}`}
-      chip={<span className="chip blue">{r.retainedCountDisplay} retained</span>}
-    >
-      <div className="kpis cols-4" style={{ marginBottom: 0 }}>
-        <RetStat label="Retained contracts" value={r.retainedCountDisplay} sub="won renewals" />
-        <RetStat label="Retained value" value={r.retainedValueDisplay} sub="won renewal €" />
-        <RetStat label="Expansion deals" value={r.expansionCountDisplay} sub="upsell + cross-sell" />
-        <RetStat label="Expansion value" value={r.expansionValueDisplay} sub="won expansion €" />
-      </div>
-    </Expandable>
-  )
-}
-
-const RetStat = ({ label, value, sub }) => (
-  <div className="kpi">
-    <div className="kpi-label">{label}</div>
-    <div className="kpi-val">{value}</div>
-    <div className="kpi-sub"><span className="kpi-target">{sub}</span></div>
-  </div>
-)
+// Retention (retained contracts + expansion) removed from the board pack per Margot
+// (9 Jul call) — too hard to attribute to marketing for now.
 
 // Share as a donut (client asked for Share as a pie/donut, not a number). Each
 // slice is a stroke arc on one ring; slices with no/zero share are dropped.

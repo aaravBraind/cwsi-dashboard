@@ -42,7 +42,7 @@ export default function Overview() {
 }
 
 function Body({ data }) {
-  const { funnel, byChannel, retention = {} } = data
+  const { funnel, byChannel } = data
   const { filters } = useFilters()
   const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
@@ -78,7 +78,7 @@ function Body({ data }) {
       </div>
 
       {/* 1. Top-line summary — target + light follow the active quarter pill */}
-      <div className="kpis cols-3">
+      <div className="kpis cols-2">
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.euro}</svg></div>
@@ -117,34 +117,6 @@ function Body({ data }) {
                     ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals have gross profit · rest pending in Salesforce`}
                 </span>
               </>
-            )}
-          </div>
-        </div>
-
-        <div className="kpi">
-          <div className="kpi-head">
-            <div className="kpi-icn amber"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.users}</svg></div>
-            <span className={`tl ${retention.hasData ? lightFor(retention.retainedCount, 'retainedContracts') : 'neu'}`}>
-              <span className="tl-dot" />{retention.hasData ? pctOf(retention.retainedCount, 'retainedContracts') : 'n/a'}
-            </span>
-          </div>
-          <div className="kpi-label">Retained Contracts · current view <Explain id="retention" /></div>
-          <div className="kpi-val">{retention.hasData ? num(retention.retainedCount) : '—'}</div>
-          <div className="kpi-sub">
-            {retention.hasData ? (
-              <>
-                <span className="kpi-target">{eur(retention.retainedValue)} won · {num(retention.openCount)} open</span>
-                {retention.expansionCount > 0 && (
-                  <span className="kpi-target" style={{ display: 'block' }}>
-                    + Expansion {num(retention.expansionCount)} ({eur(retention.expansionValue)}) · Upsell / Cross-Sell
-                  </span>
-                )}
-                <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  {tgtSub('retainedContracts')} · whole-book scale; marketing-only scope pending
-                </span>
-              </>
-            ) : (
-              <NotAvailable what="Retained contracts" why="No won-renewal opportunities in this scope" />
             )}
           </div>
         </div>
@@ -214,14 +186,14 @@ function Body({ data }) {
                 <div className="group-head">
                   <div className="group-name">{c.channel}</div>
                   <div className="group-roi">
-                    {(c.pipeline + c.closedWon) > 0
-                      ? <>{pct(c.closedWon, c.pipeline + c.closedWon, 0)} converted to won</>
+                    {c.pipeline > 0
+                      ? <>{pct(c.closedWon, c.pipeline, 0)} converted to won</>
                       : <>No pipeline yet</>}
                   </div>
                 </div>
                 <div className="stack">
                   <div className="bar-row">
-                    <div className="bar-label">Open pipeline</div>
+                    <div className="bar-label">Generated pipeline</div>
                     <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.pipeline / maxPipe) * 100}%` }} /></div>
                     <div className="bar-val">{eur(c.pipeline)}</div>
                   </div>
