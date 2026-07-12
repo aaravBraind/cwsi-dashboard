@@ -39,12 +39,12 @@ export const METHODOLOGY = {
       'Leads and MQL are the same number by design; the qualification that narrows them happens at the SQL stage below. Takes effect at the next data refresh.',
   },
   campaignTheme: {
-    label: 'Campaign themes',
-    what: 'Each quarterly theme (an overarching campaign) rolled up as a whole, with the individual activities that make it up shown beneath.',
-    source: 'Salesforce campaigns, grouped by a naming rule that assigns every campaign to a theme.',
-    calc: 'A campaign joins a theme when its name matches that theme (e.g. anything mentioning “Agent 365” or “Becoming Frontier” rolls into the Becoming Frontier theme). The rule covers the whole campaign book — sibling activities (on-demand replays, language/region variants, the LinkedIn promotion of a whitepaper) are pulled in automatically. Anything that matches no theme sits under “Other activities” so nothing is hidden.',
+    label: 'How this page is built',
+    what: 'Each quarterly theme is one overarching campaign, rolled up as a whole with its individual activities shown beneath — five themes across Q1 and Q2, plus an “Other activities” catch-all.',
+    source: 'Salesforce campaigns. The 10 campaigns you named (5 for Q1, 5 for Q2) are the anchors of the 5 themes.',
+    calc: 'Each of your 10 named campaigns is pinned to its theme by its exact Salesforce campaign ID (so it lands in the right theme even where the Salesforce name differs — e.g. the 10.06 IE “Protect Data” event is stored as “Microsoft E7…”). Every OTHER campaign is then auto-sorted by a name rule, which pulls in the sibling activities you didn’t list individually — on-demand replays, NL / language variants, the LinkedIn promotion of a whitepaper — into the matching theme. Anything that matches no theme sits under “Other activities”, so nothing is hidden. Each activity has a Theme dropdown to override the automatic choice (it saves and sticks across refreshes).',
     caveat:
-      'This is a proposed grouping for you to confirm — a name-based rule occasionally mis-files a campaign (e.g. the 10.06 event is stored in Salesforce as “Microsoft E7”, though it was referred to as the IE “Protect Data” event). Per-campaign theme reassignment is a fast follow. Once Salesforce campaign start dates + hierarchy are re-ingested we can anchor themes on the native hierarchy and split current-quarter vs ongoing impact.',
+      'Two different things are shown per activity: the FUNNEL (Leads / MQL / SQL) counts campaign RESPONDERS — people logged as “responded” to the campaign in Salesforce — while the MONEY (Pipeline / Closed-Won) counts OPPORTUNITIES linked to the campaign. They’re independent, so an activity (often an in-person event) can show pipeline or revenue with 0 leads: deals were attributed to the event, but the attendees weren’t recorded as responded members.',
   },
   currentVsOngoing: {
     label: 'Current-quarter activity vs ongoing impact',

@@ -18,9 +18,9 @@ import Explain from '../Explain'
 // Register row key → methodology-registry id (client "how we got this" eye-button).
 const REGISTER_EXPLAIN = {
   totalLeads: 'leads', totalMqls: 'mql', totalSqls: 'sql',
+  createdOpportunities: 'createdOpps',
   closedWonCount: 'closedWon', closedWonValue: 'closedWon',
   influencedPipeline: 'pipeline', influencedMargin: 'margin',
-  retainedContracts: 'retention',
   leadToMql: 'conversion', mqlToSql: 'conversion', sqlToWon: 'conversion',
   visitorToMql: 'conversion', mqlToSqlEvents: 'conversion',
   totalOrganicTraffic: 'organicTraffic', attendanceRate: 'webinarAttendance',

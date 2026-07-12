@@ -35,10 +35,11 @@ export default function Campaigns() {
         </div>
         <div className="callout-body">
           Each <strong>theme</strong> is an overarching quarterly campaign, rolled up from all its activities;
-          expand a theme to see the individual touchpoints within it. Campaigns are grouped by a naming rule that
-          covers the whole book, so sibling activities are pulled in automatically — <strong>this grouping is a
-          proposed mapping for you to confirm</strong>, and campaign names are editable (click the pencil).
-          <Explain id="campaignTheme" />
+          expand a theme to see the individual touchpoints within it. The <strong>10 campaigns you named</strong> (5 for
+          Q1, 5 for Q2) anchor the five themes — each is pinned to its theme by its Salesforce ID — and every other
+          campaign is auto-sorted by name to pull in its siblings (replays, language variants, etc.); anything
+          unmatched sits under “Other activities”. <strong>Confirm the grouping</strong>, and campaign names are editable
+          (click the pencil). <Explain id="campaignTheme" />
           <br />
           <em>Coming next (with the next data refresh):</em> Created Opportunities per theme, and a split between
           activities run <strong>this quarter</strong> and pipeline that <strong>earlier</strong> activities are still generating.
@@ -162,6 +163,12 @@ function ThemeCard({ theme, ov }) {
             “Pipeline €” is opportunities still <strong>open</strong>; “Closed-Won €” is deals already won. A deal
             is only ever in one of the two — so an activity showing <strong>€0 pipeline next to a Closed-Won value</strong> just
             means its opportunities have already closed and been won (nothing left in progress).
+            <br />
+            <strong>0 Leads/MQL/SQL but pipeline or revenue?</strong> Leads/MQL/SQL count campaign <strong>responders</strong>
+            (people logged as “responded” in Salesforce), while Pipeline &amp; Closed-Won count <strong>opportunities linked
+            to the campaign</strong>. In-person events often have deals attributed to them without the attendees being recorded
+            as responders — so the funnel reads 0 while the pipeline/revenue is real (e.g. Samenwerkingsdag Zorg: 0 leads, but
+            3 opportunities → €96k pipeline + €46k won).
           </p>
         </div>
       )}

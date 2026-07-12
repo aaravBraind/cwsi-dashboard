@@ -8,14 +8,21 @@ import CurrentVsOngoing from '../CurrentVsOngoing'
 import { I } from '../icons'
 
 const ratePct = (r, d = 0) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
-const TYPE_LABEL = { Webinar: 'Webinars', Event: 'In-person events', 'Seminar / Conference': 'Seminars / Conferences' }
+const TYPE_LABEL = {
+  Webinar: 'Webinars',
+  Event: 'In-person events',
+  OwnedEvent: 'In-person events',
+  EarnedEvent: 'In-person events',
+  'Seminar / Conference': 'Seminars / Conferences',
+}
 const typeLabel = (t) => TYPE_LABEL[t] || t || 'Untyped'
 
-// Owned vs Earned (EV4) — INTERIM name rule pending the Salesforce "Owned / Earned" field the
-// admin is creating. Margot: the only EARNED events in 2026 are Cybersec (Europe) and Henley
-// Regatta; everything else is Owned. Deliberately precise — "Cybersec Europe" (the conference CWSI
-// exhibits at) is earned, but CWSI's own "Exclusive Cybersec Dinner" events are OWNED, so we must
-// NOT match a bare "cybersec". Swap this for the SF field once it lands (same display, better source).
+// Owned vs Earned (EV4). Owned events now come straight from Salesforce — Campaign.Type =
+// 'OwnedEvent'. There is no 'EarnedEvent' type; CWSI's single earned event this year is tagged by
+// NAME (Cybersec Europe — the conference CWSI exhibits at, not its own "Cybersec Dinner" events,
+// hence the precise match). Henley Regatta kept for future-proofing (no SF campaign for it yet).
+// Precedence: an explicit earned name wins; everything else (incl. OwnedEvent, and the legacy
+// 'Event' type still used in production) is Owned.
 const EARNED_RE = /cybersec\s*europe|henley\s*regatta/i
 const eventClass = (name) => (EARNED_RE.test(String(name || '')) ? 'Earned' : 'Owned')
 
@@ -55,7 +62,7 @@ export default function Events() {
           <strong>Webinar attendance</strong> comes from GoToWebinar (campaign-matched). The{' '}
           <strong>funnel &amp; per-campaign</strong> figures are Salesforce campaign-attributed, split by campaign
           type into <strong>Webinars</strong> and <strong>In-person events</strong>. The <strong>owned vs earned</strong>{' '}
-          split is shown below (provisional name rule until the new Salesforce field is wired). Region &amp; quarter scope every figure.
+          split is shown below (owned from the Salesforce Campaign Type; the one earned event tagged by name). Region &amp; quarter scope every figure.
           <br /><strong>Registrations don’t equal Leads:</strong> registrations come from GoToWebinar (everyone who
           signed up), while “Leads” counts Salesforce campaign members marked <em>Responded</em> — so a webinar’s
           registration count and its Lead count are measuring different things and won’t match.
@@ -81,8 +88,8 @@ export default function Events() {
   )
 }
 
-// EV4 — Owned vs Earned split for the board. Provisional name rule (Earned = Cybersec Europe +
-// Henley Regatta; everything else Owned) until the new Salesforce Owned/Earned field is wired.
+// EV4 — Owned vs Earned split. Owned = Salesforce Campaign.Type 'OwnedEvent'; the one earned event
+// (Cybersec Europe) is tagged by name (no earned Type exists). See eventClass above.
 function OwnedEarnedSummary({ det }) {
   if (!det.data || !det.data.hasData) return null
   const all = det.data.campaigns || []
@@ -102,7 +109,7 @@ function OwnedEarnedSummary({ det }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Owned vs Earned Events</div>
-          <div className="panel-sub">CWSI-hosted vs participated · provisional name-based split · current view</div>
+          <div className="panel-sub">CWSI-hosted (Campaign Type “OwnedEvent”) vs participated (Cybersec Europe) · current view</div>
         </div>
       </div>
       <div className="panel-body">
@@ -121,10 +128,10 @@ function OwnedEarnedSummary({ det }) {
         <div className="callout" style={{ marginTop: 4 }}>
           <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
           <div className="callout-body">
-            Provisional split by name: <strong>Earned</strong> = Cybersec Europe + Henley Regatta (CWSI took part but
-            didn’t host); everything else is <strong>Owned</strong>. <em>Note: Henley Regatta has no Salesforce campaign
-            yet, so only Cybersec Europe currently shows as Earned — it’ll appear once a campaign exists for it.</em>{' '}
-            CWSI has now created an Owned/Earned field in Salesforce — we’ll switch this to read that field once we have its API name.
+<strong>Owned</strong> events come from the Salesforce Campaign Type <strong>“OwnedEvent”</strong>. There's no
+            separate earned type, so the single <strong>Earned</strong> event this year — <strong>Cybersec Europe</strong>
+            (the conference CWSI exhibits at, not its own “Cybersec Dinner” events) — is tagged by name. <em>Henley Regatta
+            has no Salesforce campaign yet, so it doesn't appear.</em>
           </div>
         </div>
       </div>
@@ -253,11 +260,11 @@ function InPerson({ det }) {
       <div className="callout amber" style={{ marginBottom: 14 }}>
         <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
         <div className="callout-body">
-          <strong>Owned vs Earned is provisional.</strong> Salesforce doesn't yet have an Owned/Earned field
-          (the admin is adding one), so for now we tag <strong>Cybersec Europe</strong> and{' '}
-          <strong>Henley Regatta</strong> as <strong>Earned</strong> (CWSI took part but didn't host) and
-          everything else as <strong>Owned</strong>, per CWSI (note: CWSI's own "Cybersec Dinner" events are
-          Owned). This switches to the Salesforce field automatically once it's live.
+          <strong>Owned</strong> events come from the Salesforce Campaign Type <strong>“OwnedEvent”</strong>. There's no
+          separate earned type in Salesforce, so the one <strong>Earned</strong> event this year — <strong>Cybersec
+          Europe</strong> — is tagged by name (its own “Cybersec Dinner” events stay Owned). <strong>Note:</strong>{' '}
+          “OwnedEvent” is a new Campaign Type — after the next Salesforce refresh those events are mapped to the Events
+          channel; until production adopts it, events on the legacy <em>“Event”</em> type still report normally.
         </div>
       </div>
 

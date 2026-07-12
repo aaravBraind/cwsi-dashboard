@@ -114,9 +114,9 @@ function WebBody({ data }) {
       {/* SEO2 (Margot): the preferred website metrics — Sessions, Users, Avg Session Duration, Bounce Rate. */}
       <div className="kpis cols-4">
         <Kpi label="Sessions · current view" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} explainId="organicTraffic" />
-        <Kpi label="Users" val={isNA(totals.users) ? '—' : num(totals.users)} sub={isNA(totals.users) ? 'after next GA4 refresh' : ''} />
-        <Kpi label="Avg session duration" val={dur(totals.avgSessionDuration)} sub={isNA(totals.avgSessionDuration) ? 'after next GA4 refresh' : ''} />
-        <Kpi label="Bounce rate" val={ratePct(totals.bounceRate)} />
+        <Kpi label="Users" val={isNA(totals.users) ? '—' : num(totals.users)} sub={isNA(totals.users) ? 'after next GA4 refresh' : ''} explainId="organicTraffic" />
+        <Kpi label="Avg session duration" val={dur(totals.avgSessionDuration)} sub={isNA(totals.avgSessionDuration) ? 'after next GA4 refresh' : ''} explainId="organicTraffic" />
+        <Kpi label="Bounce rate" val={ratePct(totals.bounceRate)} explainId="organicTraffic" />
       </div>
       <div className="kpis cols-2" style={{ marginTop: 12 }}>
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
