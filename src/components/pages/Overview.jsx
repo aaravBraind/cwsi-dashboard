@@ -154,15 +154,13 @@ function Body({ data }) {
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Leads" val={num(funnel.leads)} extra="all sources" explainId="leads" />
-            <Stage name="MQLs" val={num(funnel.mql)} extra={`${pct(funnel.mql, funnel.leads)} of leads`} explainId="mql" />
+            <Stage name="MQLs" val={num(funnel.mql)} extra="campaign responders" explainId="mql" />
             <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
             <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
-            <Stage name="Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
+            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
             <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
-            <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
             <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Opp n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Opp`}</span>
             <span className="conv">▶ {isNA(funnel.closedWonCount) || isNA(funnel.opp) ? 'Opp → Closed n/a' : `${pct(funnel.closedWonCount, funnel.opp)} Opp → Won`}</span>
@@ -175,7 +173,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Pipeline vs Closed-Won by Channel</div>
-            <div className="panel-sub">Generated pipeline against the revenue it converted into · per channel · current view</div>
+            <div className="panel-sub">Influenced pipeline against the revenue it converted into · per channel · current view</div>
           </div>
           <span className="chip blue">current view</span>
         </div>
@@ -193,7 +191,7 @@ function Body({ data }) {
                 </div>
                 <div className="stack">
                   <div className="bar-row">
-                    <div className="bar-label">Generated pipeline</div>
+                    <div className="bar-label">Influenced pipeline</div>
                     <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.pipeline / maxPipe) * 100}%` }} /></div>
                     <div className="bar-val">{eur(c.pipeline)}</div>
                   </div>

@@ -123,13 +123,13 @@ function LinkedInSnapshot() {
       </div>
 
       <div className="kpis cols-4">
+        <Kpi label="Budget Set (EUR)" val={isNA(totals.budget) ? 'n/a' : eur(totals.budget)} explainId="linkedinBudget" />
         <Kpi
-          label="Spend (EUR)"
+          label="Budget Spent (EUR)"
           val={eur(totals.spend)}
-          sub={isNA(totals.budget) ? undefined : `${pct(totals.spend, totals.budget)} of ${eur(totals.budget)} budget`}
+          sub={isNA(totals.budget) ? undefined : `${pct(totals.spend, totals.budget)} of budget set`}
           explainId="linkedinSpend"
         />
-        <Kpi label="Total Budget (EUR)" val={isNA(totals.budget) ? 'n/a' : eur(totals.budget)} explainId="linkedinBudget" />
         <Kpi label="Impressions" val={num(totals.impressions)} />
         <Kpi label="Clicks · CTR" val={`${num(totals.clicks)} · ${ctr == null ? 'n/a' : `${(ctr * 100).toFixed(2)}%`}`} />
       </div>
@@ -152,7 +152,7 @@ function LinkedInSnapshot() {
           <div className="kpis cols-4" style={{ marginBottom: 0 }}>
             <Kpi label="CPC · cost per click" val={money2(eff?.cpc)} />
             <Kpi label="CPM · per 1,000 impr." val={money2(eff?.cpm)} />
-            <Kpi label="CPL · per form lead" val={isNA(eff?.cplForm) ? 'n/a' : money2(eff?.cplForm)} />
+            <Kpi label="CPL · per SF-linked lead" val={isNA(eff?.cplForm) ? 'n/a' : money2(eff?.cplForm)} />
             <Kpi label="CTR · click-through" val={isNA(eff?.ctr) ? 'n/a' : `${(eff.ctr * 100).toFixed(2)}%`} />
           </div>
           <div className="kpis cols-3" style={{ marginTop: 14, marginBottom: 0 }}>
@@ -169,8 +169,8 @@ function LinkedInSnapshot() {
             />
             <RoiKpi
               label="CPL basis"
-              val={`${num(totals.leads)} form leads`}
-              sub="native LinkedIn conversions — not broad SF-attributed leads"
+              val={`${num(totals.leads)} SF-linked lead${totals.leads === 1 ? '' : 's'}`}
+              sub="leads on each ad's linked Salesforce campaign (the LinkedIn form-lead feed isn't populated)"
             />
           </div>
         </div>
@@ -180,7 +180,7 @@ function LinkedInSnapshot() {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">LinkedIn Campaign Delivery — 2026</div>
-            <div className="panel-sub">The 2026 campaigns from the LinkedIn Ads export · budget &amp; spend in EUR (converted from GBP) · CTR &amp; CPL derived</div>
+            <div className="panel-sub">The 2026 campaigns from the LinkedIn Ads export · budget &amp; spend in EUR (converted from GBP) · CTR &amp; CPL derived · Leads from each ad's linked Salesforce campaign</div>
           </div>
           <span className="chip blue">{campaigns.length} campaigns</span>
         </div>
@@ -268,6 +268,29 @@ function LinkedInSnapshot() {
 function Body({ data, isLinkedIn, isEmail }) {
   const { totals, campaigns } = data
   const ov = useCampaignOverrides().data || {}
+  // L4 (Margot 14.07): leave the per-campaign commercial-outcomes (ROI) table blank on LinkedIn.
+  // The Salesforce campaigns that map to the LinkedIn Paid channel aren't the paid-ad campaigns, so
+  // attributing pipeline/revenue to individual LinkedIn ads is misleading. The reliable channel-level
+  // figures (budget, spend, impressions, clicks, CTR, SF-linked leads, ROI) are in the snapshot above.
+  if (isLinkedIn) {
+    return (
+      <>
+        <div className="sec-divider"><span className="label">Commercial outcomes by campaign</span><div className="line" /></div>
+        <div className="callout amber" style={{ marginBottom: 0 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>Left blank for now.</strong> We don't show a per-campaign ROI table here because the Salesforce
+            campaigns mapped to the LinkedIn Paid channel aren't the paid advertising campaigns — so crediting pipeline
+            or revenue to individual LinkedIn ads would be misleading. The reliable LinkedIn figures —{' '}
+            <strong>budget set, budget spent, impressions, clicks, CTR, Salesforce-linked leads and channel ROI</strong> —
+            are in the delivery &amp; efficiency snapshot above.
+          </div>
+        </div>
+      </>
+    )
+  }
   return (
     <>
       {(isLinkedIn || isEmail) && (
@@ -281,16 +304,15 @@ function Body({ data, isLinkedIn, isEmail }) {
         // (campaign-member inflation), so LinkedIn shows commercial OUTCOMES only.
         <div className="kpis cols-3">
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Pipeline € · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline · current view" val={eur(totals.pipeline)} explainId="pipeline" />
           <Kpi label="Closed-Won € · current view" val={eur(totals.closedWon)} explainId="closedWon" />
         </div>
       ) : (
-        <div className="kpis cols-5">
-          <Kpi label="Leads · current view" val={num(totals.leads)} explainId="leads" />
+        <div className="kpis cols-4">
           <Kpi label="MQLs · current view" val={num(totals.mql)} explainId="mql" />
           <Kpi label="SQLs · current view" val={num(totals.sql)} explainId="sql" />
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Pipeline € · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline · current view" val={eur(totals.pipeline)} explainId="pipeline" />
         </div>
       )}
 
@@ -330,11 +352,10 @@ function Body({ data, isLinkedIn, isEmail }) {
                 <th>Region</th>
                 {!isLinkedIn && !isEmail && <th className="r">Spend</th>}
                 {!isLinkedIn && !isEmail && <th className="r">Impr.</th>}
-                {!isLinkedIn && <th className="r">Leads <Explain id="leads" /></th>}
                 {!isLinkedIn && <th className="r">MQLs <Explain id="mql" /></th>}
                 {!isLinkedIn && <th className="r">SQLs <Explain id="sql" /></th>}
                 <th className="r">Created Opps <Explain id="createdOpps" /></th>
-                <th className="r">Pipeline € <Explain id="pipeline" /></th>
+                <th className="r">Open Pipeline € <Explain id="pipeline" /></th>
                 <th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
             </thead>
@@ -345,7 +366,6 @@ function Body({ data, isLinkedIn, isEmail }) {
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.spend) ? 'n/a' : gbp(c.spend)}</td>}
                   {!isLinkedIn && !isEmail && <td className="r mono mono-d">{isNA(c.impressions) ? 'n/a' : num(c.impressions)}</td>}
-                  {!isLinkedIn && <td className="r mono">{num(c.leads)}</td>}
                   {!isLinkedIn && <td className="r mono">{num(c.mql)}</td>}
                   {!isLinkedIn && <td className="r mono">{num(c.sql)}</td>}
                   <td className="r mono">{num(c.createdOpps)}</td>
@@ -358,11 +378,10 @@ function Body({ data, isLinkedIn, isEmail }) {
                 <td />
                 {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
                 {!isLinkedIn && !isEmail && <td className="r mono mono-d">n/a</td>}
-                {!isLinkedIn && <td className="r mono">{num(totals.leads)}</td>}
                 {!isLinkedIn && <td className="r mono">{num(totals.mql)}</td>}
                 {!isLinkedIn && <td className="r mono">{num(totals.sql)}</td>}
                 <td className="r mono">{isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)}</td>
-                <td className="r mono">{eur(totals.pipeline)}</td>
+                <td className="r mono">{eur(campaigns.reduce((a, c) => a + (Number(c.pipeline) || 0), 0))}</td>
                 <td className="r mono">{eur(totals.closedWon)}</td>
               </tr>
             </tbody>

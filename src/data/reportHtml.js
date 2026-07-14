@@ -81,10 +81,9 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
   const real = (v, fmt) => (isNA(v) || v == null ? '—' : fmt(v))
 
   const stats = [
-    ['Total leads', real(f.leads, num)],
     ['MQLs', real(f.mql, num)],
     ['SQLs', real(f.sql, num)],
-    ['Opportunities', real(f.opp, num)],
+    ['Qualified Opportunities', real(f.opp, num)],
     ['Closed-won (count)', real(f.closedWonCount, num)],
     ['Influenced pipeline', real(f.pipeline, eur)],
     ['Closed-won value', real(f.closedWon, eur)],
@@ -98,9 +97,9 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
     ? block(
         'By Channel',
         `<table class="tbl">
-          <thead><tr><th>Channel</th><th class="r">Leads</th><th class="r">MQL</th><th class="r">SQL</th><th class="r">Pipeline</th><th class="r">Closed-won</th></tr></thead>
+          <thead><tr><th>Channel</th><th class="r">MQL</th><th class="r">SQL</th><th class="r">Pipeline</th><th class="r">Closed-won</th></tr></thead>
           <tbody>${tableRows(
-            bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
+            bySource.map((c) => [c.channel, real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
           )}</tbody>
         </table>`,
       )

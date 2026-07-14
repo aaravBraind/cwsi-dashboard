@@ -26,11 +26,12 @@ const typeLabel = (t) => TYPE_LABEL[t] || t || 'Untyped'
 const EARNED_RE = /cybersec\s*europe|henley\s*regatta/i
 const eventClass = (name) => (EARNED_RE.test(String(name || '')) ? 'Earned' : 'Owned')
 
-// Sum the SF-attributed funnel across a set of campaigns.
+// Sum the SF-attributed funnel across a set of campaigns. MQL = campaign members
+// (event registrants / responders) — the funnel starts at MQL (no separate Leads stage).
 const sumFunnel = (cs) =>
   cs.reduce(
-    (a, c) => ({ leads: a.leads + c.leads, mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), pipeline: a.pipeline + c.pipeline, won: a.won + c.closedWon }),
-    { leads: 0, mql: 0, sql: 0, createdOpps: 0, pipeline: 0, won: 0 },
+    (a, c) => ({ mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), pipeline: a.pipeline + c.pipeline, won: a.won + c.closedWon }),
+    { mql: 0, sql: 0, createdOpps: 0, pipeline: 0, won: 0 },
   )
 
 // Events — split into two sections the way the client reviews them:
@@ -63,9 +64,9 @@ export default function Events() {
           <strong>funnel &amp; per-campaign</strong> figures are Salesforce campaign-attributed, split by campaign
           type into <strong>Webinars</strong> and <strong>In-person events</strong>. The <strong>owned vs earned</strong>{' '}
           split is shown below (owned from the Salesforce Campaign Type; the one earned event tagged by name). Region &amp; quarter scope every figure.
-          <br /><strong>Registrations don’t equal Leads:</strong> registrations come from GoToWebinar (everyone who
-          signed up), while “Leads” counts Salesforce campaign members marked <em>Responded</em> — so a webinar’s
-          registration count and its Lead count are measuring different things and won’t match.
+          <br /><strong>Registrations don’t equal MQLs:</strong> registrations come from GoToWebinar (everyone who
+          signed up), while “MQLs” counts Salesforce campaign members marked <em>Responded</em> — so a webinar’s
+          registration count and its MQL count are measuring different things and won’t match.
         </div>
       </div>
 
@@ -152,12 +153,11 @@ function Webinars({ ev, det }) {
 
       {/* Salesforce-attributed funnel for Webinar campaigns */}
       {det.data?.hasData && (
-        <div className="kpis cols-5" style={{ marginTop: 4 }}>
-          <Kpi label="Leads · current view" val={num(t.leads)} explainId="leads" />
+        <div className="kpis cols-4" style={{ marginTop: 4 }}>
           <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
           <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
           <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Pipeline € · current view" val={eur(t.pipeline)} sub={`${eur(t.won)} closed-won`} explainId="pipeline" />
+          <Kpi label="Open Pipeline € · current view" val={eur(t.pipeline)} sub={`${eur(t.won)} closed-won`} explainId="pipeline" />
         </div>
       )}
     </>
@@ -234,12 +234,11 @@ function InPerson({ det }) {
 
   return (
     <>
-      <div className="kpis cols-5">
-        <Kpi label="Leads · current view" val={num(t.leads)} explainId="leads" />
+      <div className="kpis cols-4">
         <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
         <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
         <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
-        <Kpi label="Pipeline € · current view" val={eur(t.pipeline)} sub={`${eur(t.won)} closed-won`} explainId="pipeline" />
+        <Kpi label="Open Pipeline € · current view" val={eur(t.pipeline)} sub={`${eur(t.won)} closed-won`} explainId="pipeline" />
       </div>
 
       <div className="callout amber" style={{ marginBottom: 18 }}>
@@ -281,8 +280,8 @@ function InPerson({ det }) {
             <thead>
               <tr>
                 <th>Campaign</th><th>Region</th><th>Type</th><th>Owned / Earned</th>
-                <th className="r">Leads <Explain id="leads" /></th><th className="r">MQLs <Explain id="mql" /></th><th className="r">SQLs <Explain id="sql" /></th>
-                <th className="r">Pipeline € <Explain id="pipeline" /></th><th className="r">Closed-Won € <Explain id="closedWon" /></th>
+                <th className="r">MQLs <Explain id="mql" /></th><th className="r">SQLs <Explain id="sql" /></th>
+                <th className="r">Open Pipeline € <Explain id="pipeline" /></th><th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
             </thead>
             <tbody>
@@ -292,7 +291,6 @@ function InPerson({ det }) {
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td className="mono mono-d">{typeLabel(c.campaignType)}</td>
                   <td><span className={`chip ${eventClass(c.campaignName) === 'Earned' ? 'amber' : 'neu'}`}>{eventClass(c.campaignName)}</span></td>
-                  <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
                   <td className="r mono">{eur(c.pipeline)}</td>
@@ -301,7 +299,6 @@ function InPerson({ det }) {
               ))}
               <tr className="total">
                 <td colSpan={4}>Total · {campaigns.length} campaigns</td>
-                <td className="r mono">{num(t.leads)}</td>
                 <td className="r mono">{num(t.mql)}</td>
                 <td className="r mono">{num(t.sql)}</td>
                 <td className="r mono">{eur(t.pipeline)}</td>

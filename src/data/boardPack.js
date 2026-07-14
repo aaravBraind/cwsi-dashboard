@@ -91,7 +91,6 @@ export async function getBoardPack(filters = {}) {
   const pipeline = funnel.pipeline
   const margin = funnel.margin
   const closedWonCount = funnel.closedWonCount
-  const leads = funnel.leads
   const opp = funnel.opp
   const createdOpps = funnel.createdOpps
 
@@ -213,7 +212,7 @@ export async function getBoardPack(filters = {}) {
   levers.forEach((l) => { l.impactDisplay = eur(l.impactValue) })
 
   // ---- 3. Funnel stage-to-stage conversion (BP8) -------------------------
-  // Aligned to Margot's funnel: Leads → MQL → SQL → Created Opps → Closed-Won
+  // Aligned to Margot's funnel: MQL → SQL → Created Opps → Closed-Won
   // (was Leads→MQL→SQL→Opp→Won using opp_count, a qualified subset — confusing and
   // near-100% at SQL→Opp). Rate capped at 100% for display since stages are event-dated
   // differently (leads by lead date, SQL by opp activity, created-opps by created date,
@@ -287,7 +286,6 @@ export async function getBoardPack(filters = {}) {
   const add = (id, label, value, display) => {
     if (real(value)) traceTable.push({ id, label, value: Number(value), display })
   }
-  add('leads', 'Leads (scoped)', leads, num(leads))
   for (const m of metrics) {
     add(`${m.key}.value`, m.label, m.value, m.valueDisplay)
     if (m.target != null) add(`${m.key}.target`, `${m.label} target`, m.target, m.targetDisplay)
@@ -341,9 +339,9 @@ export async function getBoardPack(filters = {}) {
     traceTable,
     // Funnel summary as display strings — additive (Board.jsx + the validator read
     // metrics/levers/traceTable/meta, not this). Used by the branded-deck exporter
-    // to fill the funnel slide (leads / opp / closed-won aren't board metrics).
+    // to fill the funnel slide. Starts at MQL — the "Leads" stage was removed (Margot
+    // 14.07: the funnel should start at MQL).
     funnel: {
-      leads: real(leads) ? num(leads) : 'n/a',
       mql: real(mql) ? num(mql) : 'n/a',
       sql: real(sql) ? num(sql) : 'n/a',
       opp: real(funnel.opp) ? num(funnel.opp) : 'n/a',

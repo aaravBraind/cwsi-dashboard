@@ -226,10 +226,9 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
     `## Pipeline Funnel\n\n${mdTable(
       ['Funnel stage', 'Value'],
       [
-        ['Leads', real(f.leads, num)],
         ['MQLs', real(f.mql, num)],
         ['SQLs', real(f.sql, num)],
-        ['Opportunities (open + won)', real(f.opp, num)],
+        ['Qualified Opportunities (open + won)', real(f.opp, num)],
         ['Closed-won (count)', real(f.closedWonCount, num)],
         ['Influenced pipeline', real(f.pipeline, eur)],
         ['Closed-won value', real(f.closedWon, eur)],
@@ -240,8 +239,8 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
   if (bySource?.length) {
     cards.push(
       `## By Channel\n\n${mdTable(
-        ['Channel', 'Leads', 'MQL', 'SQL', 'Pipeline', 'Closed-won'],
-        bySource.map((c) => [c.channel, real(c.leads, num), real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
+        ['Channel', 'MQL', 'SQL', 'Pipeline', 'Closed-won'],
+        bySource.map((c) => [c.channel, real(c.mql, num), real(c.sql, num), real(c.pipeline, eur), real(c.closedWon, eur)]),
       )}`,
     )
   }

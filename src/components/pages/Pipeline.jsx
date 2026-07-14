@@ -40,10 +40,9 @@ function Body({ data }) {
   return (
     <>
       {/* Top strip */}
-      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
+      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
         <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="open + won" explainId="pipeline" />
-        <Cell label="Generated This Quarter" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
-        <Cell label="Total Leads" val={num(funnel.leads)} meta="current view" explainId="leads" />
+        <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
         <Cell label="MQLs → SQLs" val={`${num(funnel.mql)} → ${num(funnel.sql)}`} meta={pct(funnel.sql, funnel.mql)} explainId="sql" />
         <Cell label="Closed-Won Value" val={eur(funnel.closedWon)} meta="current view" explainId="closedWon" />
       </div>
@@ -53,21 +52,19 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Lead Journey</div>
-            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Pipeline → Closed-Won · with stage conversion · current view</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opps → Pipeline → Closed-Won · with stage conversion · current view</div>
           </div>
           <span className="chip blue">current view</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Leads" val={num(funnel.leads)} extra="all sources" explainId="leads" />
-            <Stage name="MQLs" val={num(funnel.mql)} extra={`${pct(funnel.mql, funnel.leads)} of leads`} explainId="mql" />
+            <Stage name="MQLs" val={num(funnel.mql)} extra="campaign responders" explainId="mql" />
             <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
             <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
-            <Stage name="Pipeline €" val={eur(funnel.pipeline)} extra="value" explainId="pipeline" />
+            <Stage name="Influenced Pipeline" val={eur(funnel.pipeline)} extra="open + won" explainId="pipeline" />
             <Stage name="Closed-Won" val={eur(funnel.closedWon)} extra="value" explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
-            <span className="conv">▶ {pct(funnel.mql, funnel.leads)} Lead → MQL</span>
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
             <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline)} Pipeline → Won</span>
           </div>
@@ -102,7 +99,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Pipeline by Source</div>
-            <div className="panel-sub">Leads, MQLs, SQLs, pipeline &amp; closed-won by channel · current view</div>
+            <div className="panel-sub">MQLs, SQLs, pipeline &amp; closed-won by channel · current view</div>
           </div>
           <span className="chip blue">Salesforce</span>
         </div>
@@ -111,11 +108,10 @@ function Body({ data }) {
             <thead>
               <tr>
                 <th>Source / Channel</th>
-                <th className="r">Leads <Explain id="leads" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
                 <th className="r">Created Opps <Explain id="createdOpps" /></th>
-                <th className="r">Pipeline € <Explain id="pipeline" /></th>
+                <th className="r">Influenced Pipeline € <Explain id="pipeline" /></th>
                 <th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
             </thead>
@@ -123,7 +119,6 @@ function Body({ data }) {
               {bySource.map((s) => (
                 <tr key={s.channel}>
                   <td>{s.channel}</td>
-                  <td className="r mono">{num(s.leads)}</td>
                   <td className="r mono">{num(s.mql)}</td>
                   <td className="r mono">{num(s.sql)}</td>
                   <td className="r mono">{num(s.createdOpps)}</td>
@@ -136,7 +131,6 @@ function Body({ data }) {
                   <td>Outreach · outbound <span className="chip neu">contact-attributed</span></td>
                   <td className="r mono">—</td>
                   <td className="r mono">—</td>
-                  <td className="r mono">—</td>
                   <td className="r mono">{num(outbound.createdOpps)}</td>
                   <td className="r mono">{eur(outbound.pipeline)}</td>
                   <td className="r mono">{eur(outbound.won)}</td>
@@ -144,7 +138,6 @@ function Body({ data }) {
               )}
               <tr className="total">
                 <td>Total <span style={{ fontWeight: 400, opacity: 0.6 }}>· excl. Outreach</span></td>
-                <td className="r mono">{num(funnel.leads)}</td>
                 <td className="r mono">{num(funnel.mql)}</td>
                 <td className="r mono">{num(funnel.sql)}</td>
                 <td className="r mono">{isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)}</td>
@@ -162,6 +155,10 @@ function Body({ data }) {
               not by campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
               Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. Every campaign row
               here is marketing-campaign-attributed (each opp carries a Campaign).
+              <br /><strong>Closed-Won reconciles here:</strong> the Closed-Won total in this table equals the
+              Closed-Won figure at the top of the page — both count won deals by their <strong>close date</strong>.
+              The <em>Pipeline Stage Distribution</em> lower down is a different measure (all <strong>open</strong>{' '}
+              opportunities, including unqualified), so it is larger and isn't expected to match Closed-Won.
             </div>
           </div>
         </div>

@@ -34,15 +34,13 @@ export default function Campaigns() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          Each <strong>theme</strong> is an overarching quarterly campaign, rolled up from all its activities;
-          expand a theme to see the individual touchpoints within it. The <strong>10 campaigns you named</strong> (5 for
-          Q1, 5 for Q2) anchor the five themes — each is pinned to its theme by its Salesforce ID — and every other
-          campaign is auto-sorted by name to pull in its siblings (replays, language variants, etc.); anything
-          unmatched sits under “Other activities”. <strong>Confirm the grouping</strong>, and campaign names are editable
+          There are <strong>two quarterly campaigns</strong>: everything in <strong>Q1</strong> rolls up under{' '}
+          <strong>“Data Is an Asset, Not a Liability”</strong> and everything in <strong>Q2</strong> under{' '}
+          <strong>“Innovation Without Risk”</strong>. Each is an overarching campaign, rolled up from all its
+          activities — expand a card to see the individual touchpoints within it. A campaign is placed in its quarter
+          from its own date (not from when its leads or deals happen to fall), so activities no longer cross between
+          quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Campaign names are editable
           (click the pencil). <Explain id="campaignTheme" />
-          <br />
-          <em>Coming next (with the next data refresh):</em> Created Opportunities per theme, and a split between
-          activities run <strong>this quarter</strong> and pipeline that <strong>earlier</strong> activities are still generating.
         </div>
       </div>
 
@@ -51,13 +49,12 @@ export default function Campaigns() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>The "Theme" dropdown on each activity.</strong> Every activity is sorted into a theme
-          <strong> automatically, by reading its campaign name</strong> — so a campaign can occasionally land in the
-          wrong theme (for example, the 10.06 event named "Microsoft E7…" in Salesforce actually belongs to
-          "Protect Data, Power AI"). Use the <strong>Theme</strong> dropdown on any activity row to move it to the
-          right theme; leave it on <strong>"Auto"</strong> to keep the automatic choice. It's on every activity because
-          only you can tell which ones are misfiled — the correctly-sorted ones simply stay on "Auto". Your change
-          saves instantly and sticks through every data refresh.
+          <strong>The "Theme" dropdown on each activity.</strong> Every activity is placed in a quarter
+          <strong> automatically, from its own campaign date</strong> — so it can occasionally be off (for example a
+          campaign whose Salesforce name has no date). Use the <strong>Theme</strong> dropdown on any activity row to
+          move it to <strong>Q1</strong> (Data Is an Asset), <strong>Q2</strong> (Innovation Without Risk) or{' '}
+          <strong>Other</strong>; leave it on <strong>"Auto"</strong> to keep the automatic choice. Your change saves
+          instantly and sticks through every data refresh.
         </div>
       </div>
 
@@ -92,11 +89,10 @@ function ThemeCard({ theme, ov }) {
 
       {/* Theme "as a whole" rollup */}
       <div className="panel-body">
-        <div className="kpis cols-4">
-          <Kpi label="Leads" val={num(t.leads)} explainId="leads" />
+        <div className="kpis cols-3">
           <Kpi label="MQLs" val={num(t.mql)} explainId="mql" />
           <Kpi label="SQLs" val={num(t.sql)} explainId="sql" />
-          <Kpi label="Pipeline €" val={eur(t.pipeline)} sub={`${eur(t.closedWon)} closed-won`} explainId="pipeline" />
+          <Kpi label="Open Pipeline €" val={eur(t.pipeline)} sub={`${eur(t.closedWon)} closed-won`} explainId="pipeline" />
         </div>
       </div>
 
@@ -109,10 +105,9 @@ function ThemeCard({ theme, ov }) {
                 <th>Activity</th>
                 <th>Region</th>
                 <th>Type</th>
-                <th className="r">Leads<Explain id="leads" /></th>
                 <th className="r">MQL<Explain id="mql" /></th>
                 <th className="r">SQL<Explain id="sql" /></th>
-                <th className="r">Pipeline €<Explain id="pipeline" /></th>
+                <th className="r">Open Pipeline €<Explain id="pipeline" /></th>
                 <th className="r">Closed-Won €<Explain id="closedWon" /></th>
                 <th>Theme</th>
               </tr>
@@ -136,7 +131,6 @@ function ThemeCard({ theme, ov }) {
                     />
                   </td>
                   <td><span style={{ opacity: 0.6 }}>{c.campaignType || '—'}</span></td>
-                  <td className="r">{num(c.leads)}</td>
                   <td className="r">{num(c.mql)}</td>
                   <td className="r">{num(c.sql)}</td>
                   <td className="r">{eur(c.pipeline)}</td>

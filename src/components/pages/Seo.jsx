@@ -90,8 +90,7 @@ function WebsiteLeadsBody() {
   const f = q.data.funnel
   return (
     <>
-      <div className="kpis cols-4">
-        <Kpi label="Leads · current view" val={num(f.leads)} explainId="leads" />
+      <div className="kpis cols-3">
         <Kpi label="MQLs · current view" val={num(f.mql)} explainId="mql" />
         <Kpi label="SQLs · current view" val={num(f.sql)} explainId="sql" />
         <Kpi label="Created Opps · current view" val={isNA(f.createdOpps) ? '—' : num(f.createdOpps)} explainId="createdOpps" />
@@ -253,10 +252,10 @@ function FunnelBody() {
   return (
     <>
       <div className="kpis cols-4">
-        <Kpi label="Leads · current view" val={num(t.leads)} explainId="leads" />
         <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
         <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
-        <Kpi label="Pipeline € · current view" val={eur(t.pipeline)} explainId="pipeline" />
+        <Kpi label="Created Opps · current view" val={isNA(t.createdOpps) ? '—' : num(t.createdOpps)} explainId="createdOpps" />
+        <Kpi label="Influenced Pipeline · current view" val={eur(t.pipeline)} explainId="pipeline" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
         Whitepaper-download campaigns are reported on the <strong>Email</strong> page, so they're not counted here.

@@ -34,8 +34,11 @@ export default function Email() {
           <strong>What's shown here:</strong> your <strong>whitepaper-download campaigns</strong> and the
           <strong> Salesforce email workflows</strong> — including the four you named (Data That Moves, Apple for
           Enterprise Tech Deep Dive, Becoming Frontier, and the Microsoft E7 Offering Workflow). Figures are the{' '}
-          <strong>commercial funnel</strong> (leads through to revenue) attributed to those campaigns in Salesforce.
-          Region &amp; quarter scope every figure.
+          <strong>commercial funnel</strong> (MQLs through to revenue), measured from <strong>Salesforce campaign
+          members</strong>. For a whitepaper, the <strong>MQL</strong> count is its <strong>downloads</strong> — the
+          people Salesforce records as having responded to the campaign. Region &amp; quarter scope every figure.
+          <br /><em>Note:</em> this counts contacts logged as campaign members in Salesforce; if a landing-page tool
+          shows more form-fills, those extra contacts aren't yet recorded against the Salesforce campaign.
         </div>
       </div>
 
@@ -59,9 +62,9 @@ const Stage = ({ name, val, extra }) => (
 
 const opps = (v) => (isNA(v) ? '—' : num(v))
 
-// Recompute funnel totals from a filtered campaign list (so the funnel matches the filter).
+// Funnel totals = sum of the per-campaign figures (so the funnel matches the filter and
+// the panel always equals the table's Total row). MQL is the campaign-members figure.
 const sumTotals = (rows) => ({
-  leads: rows.reduce((a, c) => a + (Number(c.leads) || 0), 0),
   mql: rows.reduce((a, c) => a + (Number(c.mql) || 0), 0),
   sql: rows.reduce((a, c) => a + (Number(c.sql) || 0), 0),
   createdOpps: rows.reduce((a, c) => a + (Number(c.createdOpps) || 0), 0),
@@ -70,12 +73,12 @@ const sumTotals = (rows) => ({
 })
 
 function Body({ data, ov }) {
-  const { totals, campaigns } = data
+  const { campaigns } = data
   const [kind, setKind] = useState('all') // EM1: filter Whitepaper vs Workflow
   const wpCount = campaigns.filter((c) => c.kind === 'Whitepaper').length
   const wfCount = campaigns.filter((c) => c.kind === 'Workflow').length
   const shown = kind === 'all' ? campaigns : campaigns.filter((c) => c.kind === kind)
-  const t = kind === 'all' ? totals : sumTotals(shown)
+  const t = sumTotals(shown)
   const matchedCount = shown.length
   return (
     <>
@@ -96,14 +99,13 @@ function Body({ data, ov }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">Leads → MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · current view</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · current view</div>
           </div>
           <span className="chip blue">{matchedCount} campaigns</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Leads" val={num(t.leads)} extra="campaign members" />
-            <Stage name="MQLs" val={num(t.mql)} extra="marketing-qualified" />
+            <Stage name="MQLs" val={num(t.mql)} extra="campaign members" />
             <Stage name="SQLs" val={num(t.sql)} extra="sales-qualified" />
             <Stage name="Created Opps" val={opps(t.createdOpps)} extra="opps created" />
             <Stage name="Opportunity Value" val={eur(t.pipeline)} extra="open qualified pipeline" />
@@ -128,7 +130,6 @@ function Body({ data, ov }) {
                 <th>Campaign</th>
                 <th>Region</th>
                 <th>Type</th>
-                <th className="r">Leads <Explain id="leads" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
                 <th className="r">Created Opps <Explain id="createdOpps" /></th>
@@ -142,7 +143,6 @@ function Body({ data, ov }) {
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td><span className={`chip ${c.kind === 'Whitepaper' ? 'blue' : 'neu'}`}>{c.kind}</span></td>
-                  <td className="r mono">{num(c.leads)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
                   <td className="r mono">{c.createdOpps ? num(c.createdOpps) : '—'}</td>
@@ -154,7 +154,6 @@ function Body({ data, ov }) {
                 <td>Total · {matchedCount} campaigns</td>
                 <td />
                 <td />
-                <td className="r mono">{num(t.leads)}</td>
                 <td className="r mono">{num(t.mql)}</td>
                 <td className="r mono">{num(t.sql)}</td>
                 <td className="r mono">{opps(t.createdOpps)}</td>

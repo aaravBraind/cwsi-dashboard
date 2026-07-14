@@ -1,134 +1,124 @@
-// Quarterly campaign THEMES (Margot, Jul 2026 — feedback item X4 / G3).
+// Quarterly campaign THEMES (Margot, 14 Jul 2026 — supersedes the earlier 5-theme model).
 //
-// A "theme" is an overarching quarterly narrative that CWSI delivers through
-// several campaigns / touchpoints (a webinar + an in-person event + a whitepaper +
-// a nurture workflow all telling one story). The dashboard used to show every
-// Salesforce campaign as a flat, standalone row; this layer rolls them up into the
-// theme they belong to, so we can show "the campaign as a whole" alongside the
-// individual activities within it.
+// Margot's 14.07 instruction: "All Q2 activities should be grouped under the
+// Innovation Without Risk campaign. All Q1 activities should be grouped under the
+// Data Is an Asset, Not a Liability campaign." So there are exactly TWO quarter
+// umbrellas plus an "Other activities" catch-all — not the five narrative sub-themes
+// we ran through 9 Jul.
 //
-// KEY DESIGN POINT (per user): this is NOT a hard-coded list of the ~10 campaigns
-// Margot named. It's a RULE that themes EVERY campaign in the book by matching its
-// name — so sibling activities she didn't list (on-demand replays, regional/language
-// variants, the LinkedIn-ad promotion of a whitepaper, the NL "juni" version) get
-// pulled into the right theme automatically. Anything that matches no theme falls
-// into "Other activities" so nothing is ever hidden. First matching rule wins.
+// WHY BY QUARTER, DETERMINED FROM THE CAMPAIGN ITSELF:
+// The old model classified a campaign by keyword-matching its NAME (date-blind) while
+// the Campaigns page FILTERED rows by their activity date. Those two axes disagreed, so
+// a Q2 campaign whose name matched a Q1 keyword (e.g. the May "Data That Moves" LinkedIn
+// ad) surfaced under Q1, and Q1 campaigns with a stray Q2-dated opp appeared under Q2 —
+// the "Q1 campaigns appearing in Q2 and vice versa" bug. We now derive a single quarter
+// per campaign, and the page filters campaigns by THAT quarter (see getCampaignThemes).
 //
-// WHY NAME-MATCHING AND NOT SALESFORCE CAMPAIGN HIERARCHY (ParentId)?
-// Salesforce has a native "campaign hierarchy": each Campaign can point to a parent
-// campaign via ParentId (its built-in way to say "these roll up into one bigger
-// campaign"). Ideally that WOULD be the theme grouping and we'd just read it. But in
-// CWSI's org the hierarchy is organised by VENDOR/PARTNER, not by quarterly theme —
-// the populated parents are "Microsoft Parent" (18 children), "SentinelOne Parent" (6),
-// "Dubber Parent" (5), Jamf/Ivanti/Wandera/VMO2/O2/EMEA (1–2 each), and only 41 of 504
-// campaigns have a parent at all. So ParentId answers "which vendor funded this?", not
-// "which quarterly campaign is this part of?" — it can't drive the themes. We still
-// ingest ParentId/Parent.Name (dim_campaign) so a future by-vendor view is possible,
-// but THEMES are derived from the campaign NAME here.
+// A campaign's quarter is resolved in priority order:
+//   1. the dd.mm.yyyy date prefix in the campaign name (the curated 2026 campaigns carry
+//      it, and it beats StartDate — which is null for ~26% of campaigns and sometimes
+//      contradicts the event date, e.g. the 22.04 event whose StartDate is 16.03);
+//   2. an explicit "Q1"/"Q2" token in the name;
+//   3. a curated key / keyword hint for the named campaigns that carry no date;
+//   4. Salesforce StartDate (2026);
+//   else → Other (prior-year, always-on, list imports — no 2026 quarter).
 //
-// This is a PROPOSED mapping for Margot to confirm and curate. Keyword rules will
-// occasionally mis-file a campaign — e.g. the 10.06.2026 event is stored in
-// Salesforce as "Microsoft E7: Governing AI Agents at Scale", but in her feedback
-// she referred to the 10.06 IE event as "Protect Data, Power AI". We theme it by its
-// actual SF name and flag it; a per-campaign theme override (the "Theme" dropdown on
-// the Campaigns page, stored in campaign_overrides.theme) lets Margot correct any
-// mis-file — NULL there means fall back to this name rule. Once the SF re-ingest lands
-// Campaign.StartDate + ParentId, we can anchor themes on the native SF campaign
-// hierarchy where CWSI populates it, and date them precisely.
+// A per-campaign manual override (the "Theme" dropdown → campaign_overrides.theme,
+// value 'q1' | 'q2' | 'other') still wins over this rule; NULL means "Auto".
 
-// `keys` = the EXACT Salesforce campaigns Margot named in her Word doc (9 Jul call:
-// "select the ones I put in the document" — don't infer from start dates). These are
-// AUTHORITATIVE: a campaign whose key is listed here is pinned to that theme regardless
-// of its Salesforce name, which is how the 10.06.2026 "Microsoft E7…" campaign lands
-// under Protect Data (Margot refers to it as the IE "Protect Data, Power AI" event).
-// `any` = a secondary keyword fallback that only classifies campaigns NOT in any `keys`
-// list — it pulls obvious siblings (on-demand replays, NL/language variants) into the
-// right theme without Margot having to list every one.
-const THEMES = [
-  {
-    key: 'q1-data-asset',
-    quarter: 'Q1',
-    label: 'Data is an Asset (Data Security)',
-    blurb: 'Q1 narrative — AI & data-security webinars plus the flagship “Data That Moves Your Business Forward” whitepaper.',
-    keys: [
-      '701Si00000S2Zj7IAF', // 19.02.2026 Webinar AI and Data Security
-      '701Si00000TlRLrIAN', // Q1 Data is an Asset, Not a Liability
-      '701Si00000V3LvjIAF', // Q1 2026 - Data That Moves Your Business Forward Whitepaper
-    ],
-    any: ['data is an asset', 'data that moves', 'ai and data security', 'ai and the data security', 'ai & the data security'],
-  },
-  {
-    key: 'q1-samenwerkingsdag',
-    quarter: 'Q1',
-    label: 'Samenwerkingsdag Zorg (NL)',
-    blurb: 'Q1 in-person healthcare event in the Netherlands.',
-    keys: ['701Si00000Tyxu9IAB'], // 31.03.2026 - NL - Samenwerkingsdag Zorg
-    any: ['samenwerkingsdag'],
-  },
-  {
-    key: 'q2-protect-data',
-    quarter: 'Q2',
-    label: 'Protect Data, Power AI',
-    blurb: 'Q2 in-person events (UK 22.04 + IE 10.06) plus the supporting outreach workflows.',
-    keys: [
-      '701Si00000UOSYCIA5', // 22.04.2026 - UK - Protect Data, Power AI Event
-      '701Tm00000ZXsNFIA1', // 10.06.2026 (SF: "Microsoft E7…") — Margot's IE Protect Data event
-      '701Si00000VOjzqIAD', // Protect data, power AI outreach workflows
-    ],
-    any: ['protect data', 'protect, data', 'power ai'],
-  },
-  {
-    key: 'q2-becoming-frontier',
-    quarter: 'Q2',
-    label: 'Becoming Frontier — Agent 365',
-    blurb: 'Q2 narrative — “Innovating with Agent 365” webinars + whitepaper, including on-demand replays and the NL/public-sector versions.',
-    keys: [
-      '701Si00000VBdQoIAL', // 07.05.2026 - Becoming Frontier: Innovating with Agent 365
-      '701Tm00000a9FhTIAU', // 18.06.2026 - Innovating with Agent 365 in the Public Sector
-      '701Tm00000c9ygeIAA', // 2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
-    ],
-    any: ['becoming frontier', 'agent 365', '18.06.2026', '18 juni 2026'],
-  },
-  {
-    key: 'q2-microsoft-e7',
-    quarter: 'Q2',
-    label: 'Microsoft E7',
-    blurb: 'Q2 Microsoft E7 offering — the E7 email workflow.',
-    keys: ['701Tm00000az9RSIAY'], // 2026 - Microsoft E7 Offering Workflow
-    any: [], // E7 event itself lives under Protect Data (Margot); avoid re-claiming it by keyword
-  },
-]
+import { REPORTING_YEAR } from './constants'
 
-// Fast lookup: campaign_key → theme (built from the authoritative `keys` lists above).
-const THEME_BY_KEY = {}
-for (const t of THEMES) for (const k of t.keys || []) THEME_BY_KEY[k] = t
-
-// Catch-all — everything that isn't part of a named quarterly theme (list imports,
-// partner / MDF campaigns, outreach lists, prior-year activity still generating).
-const OTHER = {
+export const Q1_THEME = {
+  key: 'q1',
+  quarter: 'Q1',
+  label: 'Data Is an Asset, Not a Liability',
+  blurb: 'Q1 2026 quarterly campaign — the data-security narrative: the AI & data-security webinars, the “Data That Moves Your Business Forward” whitepaper, and the NL Samenwerkingsdag Zorg event.',
+}
+export const Q2_THEME = {
+  key: 'q2',
+  quarter: 'Q2',
+  label: 'Innovation Without Risk',
+  blurb: 'Q2 2026 quarterly campaign — the safe-AI-innovation narrative: the Protect Data, Power AI events, the Becoming Frontier / Agent 365 webinars & whitepaper, and the Microsoft E7 workflow.',
+}
+// Catch-all — everything not tied to a 2026 quarterly theme (list imports, partner/MDF,
+// outreach lists, prior-year activity still generating pipeline).
+export const OTHER = {
   key: 'other',
   quarter: null,
   label: 'Other activities',
-  blurb: 'Campaigns not part of a named quarterly theme — list imports, partner/MDF, outreach lists, and prior-year activity still generating pipeline.',
+  blurb: 'Campaigns not part of a 2026 quarterly theme — list imports, partner / MDF, outreach lists, and prior-year activity still generating pipeline.',
 }
 
-// Assign a campaign to its theme. An explicit campaign_key from Margot's Word-doc list
-// wins (authoritative); otherwise fall back to a case-insensitive keyword match on the
-// name (padded so short tokens don't match mid-word). First rule wins; unmatched → Other.
-export function themeForCampaign(name, key = null) {
-  if (key && THEME_BY_KEY[key]) return THEME_BY_KEY[key]
+const THEMES = [Q1_THEME, Q2_THEME]
+
+// Curated quarter hints for the named campaigns whose Salesforce name carries no
+// dd.mm.yyyy prefix. `keys` = exact Salesforce campaign_key; `kw` = name keywords.
+const Q1_KEYS = new Set([
+  '701Si00000S2Zj7IAF', // 19.02.2026 Webinar AI and Data Security
+  '701Si00000TlRLrIAN', // Q1 Data is an Asset, Not a Liability
+  '701Si00000V3LvjIAF', // Q1 2026 - Data That Moves Your Business Forward Whitepaper
+  '701Si00000Tyxu9IAB', // 31.03.2026 - NL - Samenwerkingsdag Zorg
+])
+const Q2_KEYS = new Set([
+  '701Si00000UOSYCIA5', // 22.04.2026 - UK - Protect Data, Power AI Event
+  '701Tm00000ZXsNFIA1', // 10.06.2026 (SF "Microsoft E7…") — Margot's IE Protect Data event
+  '701Si00000VOjzqIAD', // Protect data, power AI outreach workflows
+  '701Si00000VBdQoIAL', // 07.05.2026 - Becoming Frontier: Innovating with Agent 365
+  '701Tm00000a9FhTIAU', // 18.06.2026 - Innovating with Agent 365 in the Public Sector
+  '701Tm00000c9ygeIAA', // 2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
+  '701Tm00000az9RSIAY', // 2026 - Microsoft E7 Offering Workflow
+])
+const Q1_KW = ['data is an asset', 'ai and data security', 'ai and the data security', 'ai & the data security', 'samenwerkingsdag']
+const Q2_KW = ['protect data', 'protect, data', 'power ai', 'becoming frontier', 'agent 365', 'microsoft e7', 'innovating with agent']
+
+// Read a dd.mm.yyyy / dd.mm.yy date prefix (requires day.month.year with separators —
+// so a bare "10.06" or a version like "1.2.3" won't match) and map it to a 2026 quarter.
+function quarterFromDatePrefix(name) {
+  const m = String(name || '').match(/\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\b/)
+  if (!m) return null
+  const month = Number(m[2])
+  let year = Number(m[3])
+  if (year < 100) year += 2000
+  if (year !== REPORTING_YEAR || month < 1 || month > 12) return null
+  return month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : null // H1 2026 only
+}
+
+// The single quarter a campaign belongs to: 'Q1' | 'Q2' | null (Other). See header.
+export function quarterOfCampaign(name, key = null, startDate = null) {
+  const byDate = quarterFromDatePrefix(name)
+  if (byDate) return byDate
   const n = ` ${String(name || '').toLowerCase()} `
-  for (const t of THEMES) {
-    if ((t.any || []).some((kw) => n.includes(kw))) return t
+  if (/\bq1\b/.test(n)) return 'Q1'
+  if (/\bq2\b/.test(n)) return 'Q2'
+  if (key && Q1_KEYS.has(key)) return 'Q1'
+  if (key && Q2_KEYS.has(key)) return 'Q2'
+  if (Q1_KW.some((kw) => n.includes(kw))) return 'Q1'
+  if (Q2_KW.some((kw) => n.includes(kw))) return 'Q2'
+  if (startDate) {
+    const d = new Date(startDate)
+    if (!Number.isNaN(d.getTime()) && d.getUTCFullYear() === REPORTING_YEAR) {
+      const mo = d.getUTCMonth() + 1
+      if (mo <= 3) return 'Q1'
+      if (mo <= 6) return 'Q2'
+    }
   }
+  return null
+}
+
+// Assign a campaign to its quarter umbrella (or Other). Manual overrides are applied by
+// the caller via themeMeta(pinned); NULL there falls back to this rule.
+export function themeForCampaign(name, key = null, startDate = null) {
+  const q = quarterOfCampaign(name, key, startDate)
+  if (q === 'Q1') return Q1_THEME
+  if (q === 'Q2') return Q2_THEME
   return OTHER
 }
 
-// Display order: named themes (Q1 then Q2, as authored) then Other last.
-export const THEME_ORDER = [...THEMES.map((t) => t.key), OTHER.key]
+// Display order: Q1, Q2, then Other last.
+export const THEME_ORDER = [Q1_THEME.key, Q2_THEME.key, OTHER.key]
 
 export function themeMeta(key) {
   return [...THEMES, OTHER].find((t) => t.key === key) || OTHER
 }
 
-export { THEMES, OTHER }
+export { THEMES }

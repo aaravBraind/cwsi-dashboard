@@ -648,19 +648,25 @@ export async function getChannel(channelName, filters, excludeTypes = null) {
   let rows = await fetchFacts({ ...filters, channel: channelName })
   if (excludeTypes && excludeTypes.length) rows = rows.filter((r) => !excludeTypes.includes(r.campaign_type))
   const campaigns = [...groupBy(rows, 'campaign_key')]
-    .map(([key, rs]) => ({
-      campaignKey: key,
-      campaignName: rs[0]?.campaign_name ?? key ?? 'Unattributed',
-      regionCode: dominantRegion(rs),
-      leads: sum(rs, 'leads'),
-      mql: sum(rs, 'mql_count'),
-      sql: sum(rs, 'sql_count'),
-      createdOpps: sum(rs, 'created_opp_count'),
-      pipeline: sum(rs, 'pipeline_value'),
-      closedWon: sum(rs, 'closed_won_value'),
-      spend: naIfAllZero(rs, 'spend'),
-      impressions: naIfAllZero(rs, 'impressions'),
-    }))
+    .map(([key, rs]) => {
+      // MQL = campaign responders, floored ≥ SQL — matches funnelOf so the funnel now
+      // starts at MQL with the same figure everywhere (the "Leads" stage was removed).
+      const won = sum(rs, 'closed_won_count')
+      const sql = Math.max(sum(rs, 'sql_count'), won)
+      const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
+      return {
+        campaignKey: key,
+        campaignName: rs[0]?.campaign_name ?? key ?? 'Unattributed',
+        regionCode: dominantRegion(rs),
+        mql,
+        sql,
+        createdOpps: sum(rs, 'created_opp_count'),
+        pipeline: sum(rs, 'pipeline_value'),
+        closedWon: sum(rs, 'closed_won_value'),
+        spend: naIfAllZero(rs, 'spend'),
+        impressions: naIfAllZero(rs, 'impressions'),
+      }
+    })
     .sort((a, b) => b.pipeline - a.pipeline)
   return {
     totals: funnelOf(rows),
@@ -713,19 +719,23 @@ export async function getEmailReport(filters = {}) {
     ['fact_id'],
   )).filter(isEmailReportRow)
   const campaigns = [...groupBy(rows, 'campaign_key')]
-    .map(([key, rs]) => ({
-      campaignKey: key,
-      campaignName: rs[0]?.campaign_name ?? key,
-      regionCode: dominantRegion(rs),
-      kind: rs[0]?.campaign_type === 'Content/White Paper' ? 'Whitepaper' : 'Workflow',
-      leads: sum(rs, 'leads'),
-      mql: sum(rs, 'mql_count'),
-      sql: sum(rs, 'sql_count'),
-      createdOpps: sum(rs, 'created_opp_count'),
-      oppValue: sum(rs, 'pipeline_value'),
-      closedWon: sum(rs, 'closed_won_value'),
-    }))
-    .sort((a, b) => b.leads - a.leads)
+    .map(([key, rs]) => {
+      const won = sum(rs, 'closed_won_count')
+      const sql = Math.max(sum(rs, 'sql_count'), won)
+      const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql) // MQL = campaign members (see getChannel)
+      return {
+        campaignKey: key,
+        campaignName: rs[0]?.campaign_name ?? key,
+        regionCode: dominantRegion(rs),
+        kind: rs[0]?.campaign_type === 'Content/White Paper' ? 'Whitepaper' : 'Workflow',
+        mql,
+        sql,
+        createdOpps: sum(rs, 'created_opp_count'),
+        oppValue: sum(rs, 'pipeline_value'),
+        closedWon: sum(rs, 'closed_won_value'),
+      }
+    })
+    .sort((a, b) => b.mql - a.mql)
   return {
     totals: funnelOf(rows),
     campaigns,
@@ -765,6 +775,31 @@ export async function getLinkedInSnapshot(filters = {}) {
     return q
   }, ['campaign_key'])
 
+  // L2 (Margot 14.07): the LinkedIn ad-platform lead-gen FORM feed isn't populated (reads 0 for
+  // every campaign), but these ads are linked to Salesforce campaigns that DO record leads — e.g.
+  // the BeNeLux "Data That Moves" LinkedIn ad has 1 lead in SF. So we source each campaign's lead
+  // count from its directly-linked LinkedIn-ad SF campaign (NOT the broad event campaign, which
+  // would over-credit LinkedIn with event registrants).
+  const LI_SF_LEAD_SOURCE = {
+    LI2026_DATA_MOVES: '701Tm00000ZUJUEIA5', // 07.05.2026 - BeNeLux - LinkedIn Ads - Data That Moves (SF)
+    LI2026_PROTECT_DATA: 'LI_914802433', // "Protect Data" LinkedIn ad (SF)
+    // LI2026_E7: no dedicated LinkedIn-ad SF campaign (its leads sit on the event campaign) → stays 0
+  }
+  const sfLeadKeys = [...new Set(Object.values(LI_SF_LEAD_SOURCE).filter(Boolean))]
+  const sfLeadsByKey = {}
+  if (sfLeadKeys.length) {
+    try {
+      const lr = await fetchAll(() => supabase
+        .from('v_fact_enriched')
+        .select('fact_id,campaign_key,leads')
+        .in('campaign_key', sfLeadKeys)
+        .gte('year', HISTORY_START_YEAR)
+        .lte('activity_date', toDateCapIso()), ['fact_id'])
+      for (const r of lr) sfLeadsByKey[r.campaign_key] = (sfLeadsByKey[r.campaign_key] || 0) + (Number(r.leads) || 0)
+    } catch { /* SF-linked leads best-effort; falls back to 0 */ }
+  }
+  const sfLeadsFor = (liKey) => sfLeadsByKey[LI_SF_LEAD_SOURCE[liKey]] || 0
+
   const snapshotDate = null // figures come from the LinkedIn Ads export (report period Jan 1 – Jul 9 2026)
   const totalBudgetEur = rows.reduce((a, r) => a + (r.budget_eur == null ? 0 : Number(r.budget_eur)), 0)
   const totals = {
@@ -772,7 +807,7 @@ export async function getLinkedInSnapshot(filters = {}) {
     budget: totalBudgetEur > 0 ? totalBudgetEur : NA, // total campaign budget (LI4) — already EUR
     impressions: sum(rows, 'impressions'),
     clicks: sum(rows, 'clicks'),
-    leads: sum(rows, 'leads'), // LinkedIn lead-gen FORM leads
+    leads: rows.reduce((a, r) => a + sfLeadsFor(r.campaign_key), 0), // L2: leads from the linked SF campaign
   }
 
   // LI2 (Margot's revised note): keep PRIOR-YEAR LinkedIn campaigns AVAILABLE so current-year
@@ -854,7 +889,7 @@ export async function getLinkedInSnapshot(filters = {}) {
       const impr = Number(r.impressions) || 0
       const spend = gbpToEur(Number(r.spend_gbp) || 0) // GBP export → EUR for display (G2)
       const budget = r.budget_eur == null ? NA : Number(r.budget_eur) // LI4 — budget stored in EUR
-      const leads = Number(r.leads) || 0
+      const leads = sfLeadsFor(r.campaign_key) // L2 — leads from the linked SF campaign (feed form-leads are empty)
       return {
         campaignKey: r.campaign_key,
         campaignName: r.campaign_name || r.campaign_key,
@@ -1067,25 +1102,31 @@ export async function getEventsDetail(filters = {}) {
     () => applyFilters(
       supabase
         .from('v_fact_enriched')
-        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,created_opp_count,pipeline_value,closed_won_value'),
+        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'),
       { ...filters, channel: 'Events & Webinars' },
     ),
     ['fact_id'],
   )
 
   const campaigns = [...groupBy(rows, 'campaign_key')]
-    .map(([key, rs]) => ({
-      campaignKey: key,
-      campaignName: rs[0]?.campaign_name || key || 'Unattributed',
-      campaignType: rs[0]?.campaign_type || null,
-      regionCode: dominantRegion(rs),
-      leads: sum(rs, 'leads'),
-      mql: sum(rs, 'mql_count'),
-      sql: sum(rs, 'sql_count'),
-      createdOpps: sum(rs, 'created_opp_count'),
-      pipeline: sum(rs, 'pipeline_value'),
-      closedWon: sum(rs, 'closed_won_value'),
-    }))
+    .map(([key, rs]) => {
+      // MQL = event registrants / campaign responders (Margot 14.07: "all registered
+      // attendees count as MQLs"), floored ≥ SQL — consistent with funnelOf.
+      const won = sum(rs, 'closed_won_count')
+      const sql = Math.max(sum(rs, 'sql_count'), won)
+      const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
+      return {
+        campaignKey: key,
+        campaignName: rs[0]?.campaign_name || key || 'Unattributed',
+        campaignType: rs[0]?.campaign_type || null,
+        regionCode: dominantRegion(rs),
+        mql,
+        sql,
+        createdOpps: sum(rs, 'created_opp_count'),
+        pipeline: sum(rs, 'pipeline_value'),
+        closedWon: sum(rs, 'closed_won_value'),
+      }
+    })
     .sort((a, b) => b.pipeline - a.pipeline)
 
   const types = [...new Set(rows.map((r) => r.campaign_type).filter(Boolean))].sort()
@@ -1141,47 +1182,64 @@ export async function getEventAttendance(filters = {}) {
 // SF-attributed funnel we already hold; Created Opportunities as a distinct metric
 // arrives with the funnel-definition work (X3).
 export async function getCampaignThemes(filters = {}) {
+  // A campaign belongs to ONE quarter (themes.js), so we classify by the campaign
+  // itself and filter campaigns by THAT quarter — not by scattering a campaign's
+  // activity-dated rows across quarters (which put Q1 campaigns under Q2 and vice
+  // versa). So we always fetch BOTH quarters (region-scoped, to-date capped) for each
+  // campaign's whole-period picture, then keep only the campaigns whose own quarter
+  // matches the selected pill. YTD shows every quarter + Other.
+  const selQuarter =
+    filters.quarter && filters.quarter !== 'ytd' ? `Q${String(filters.quarter).replace('q', '')}` : null
   const [rows, overrides] = await Promise.all([
     fetchAll(
       () => applyFilters(
         supabase
           .from('v_fact_enriched')
-          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,leads,mql_count,sql_count,pipeline_value,closed_won_value,closed_won_count'),
-        filters,
+          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,campaign_start_date,mql_count,sql_count,leads,pipeline_value,closed_won_value,closed_won_count'),
+        { ...filters, quarter: 'ytd' },
       ),
       ['fact_id'],
     ),
     getCampaignOverrides(), // map by campaign_key → { theme, display_name, ... }
   ])
 
-  // Collapse to one row per campaign, tagged with its theme. A manual override
-  // (campaign_overrides.theme) wins over the name-based auto rule; we keep the auto
-  // theme too so the UI can show "Auto · <name-rule theme>" and offer a revert.
+  // Collapse to one row per campaign, tagged with its quarter umbrella. A manual
+  // override (campaign_overrides.theme = 'q1'|'q2'|'other') wins over the auto rule; we
+  // keep the auto theme too so the UI can show "Auto · <theme>" and offer a revert.
+  // MQL is the canonical floored figure (= campaign responders, ≥ SQL) — matches
+  // funnelOf so "start at MQL" reads the same number everywhere (Leads stage removed).
   const campaigns = [...groupBy(rows, 'campaign_key')].map(([key, rs]) => {
     const name = rs[0]?.campaign_name || key || 'Unattributed'
-    const autoTheme = themeForCampaign(name, key)
+    const startDate = rs.find((r) => r.campaign_start_date)?.campaign_start_date || null
+    const autoTheme = themeForCampaign(name, key, startDate)
     const pinned = overrides[key]?.theme || null
+    const theme = pinned ? themeMeta(pinned) : autoTheme
+    const won = sum(rs, 'closed_won_count')
+    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
     return {
       campaignKey: key,
       campaignName: name,
       campaignType: rs[0]?.campaign_type || null,
       channel: rs[0]?.channel_name || null,
       regionCode: dominantRegion(rs),
-      leads: sum(rs, 'leads'),
-      mql: sum(rs, 'mql_count'),
-      sql: sum(rs, 'sql_count'),
+      mql,
+      sql,
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
-      wonCount: sum(rs, 'closed_won_count'),
-      theme: pinned ? themeMeta(pinned) : autoTheme,
+      wonCount: won,
+      theme,
       autoTheme,
       themeOverridden: !!pinned,
     }
   })
 
-  // Group campaigns by theme, roll up totals, emit in THEME_ORDER (Other last).
+  // Keep only campaigns whose own quarter matches the selected pill (crossover fix).
+  const visible = selQuarter ? campaigns.filter((c) => c.theme.quarter === selQuarter) : campaigns
+
+  // Group by theme, roll up totals, emit in THEME_ORDER (Other last).
   const byTheme = new Map()
-  for (const c of campaigns) {
+  for (const c of visible) {
     if (!byTheme.has(c.theme.key)) byTheme.set(c.theme.key, [])
     byTheme.get(c.theme.key).push(c)
   }
@@ -1189,22 +1247,21 @@ export async function getCampaignThemes(filters = {}) {
   const themes = THEME_ORDER.filter((k) => byTheme.has(k)).map((k) => {
     const cs = byTheme
       .get(k)
-      .sort((a, b) => b.pipeline - a.pipeline || b.closedWon - a.closedWon || b.leads - a.leads)
+      .sort((a, b) => b.pipeline - a.pipeline || b.closedWon - a.closedWon || b.mql - a.mql)
     const totals = cs.reduce(
       (a, c) => ({
-        leads: a.leads + c.leads,
         mql: a.mql + c.mql,
         sql: a.sql + c.sql,
         pipeline: a.pipeline + c.pipeline,
         closedWon: a.closedWon + c.closedWon,
         wonCount: a.wonCount + c.wonCount,
       }),
-      { leads: 0, mql: 0, sql: 0, pipeline: 0, closedWon: 0, wonCount: 0 },
+      { mql: 0, sql: 0, pipeline: 0, closedWon: 0, wonCount: 0 },
     )
     return { ...themeMeta(k), campaigns: cs, totals, activityCount: cs.length }
   })
 
-  return { themes, hasData: campaigns.length > 0 }
+  return { themes, hasData: visible.length > 0 }
 }
 
 // ---- Outreach.io engagement SNAPSHOT -------------------------------------

@@ -31,20 +31,20 @@ export const METHODOLOGY = {
   },
   mql: {
     label: 'Marketing Qualified Leads (MQL)',
-    what: 'Everyone who responded to a marketing campaign — marketing having done its job of generating genuine interest.',
-    source: 'the same campaign responses as Leads.',
+    what: 'The top of the funnel — everyone who responded to a marketing campaign (form fills, gated-content downloads, event / webinar registrations).',
+    source: 'Salesforce campaign membership, limited to members marked as “Responded”.',
     calc:
-      'A marketing qualified lead is anyone who responded to a campaign, so this equals the Leads figure. The distinction between a lead and an MQL was intentionally removed — any campaign response counts as marketing-qualified.',
+      'Count of campaign members who actively responded. This is the funnel’s starting stage — any genuine campaign response counts as marketing-qualified (the separate “Leads” stage was removed, as a response is what qualifies someone as an MQL). Bulk-uploaded lists and audiences that never responded are excluded.',
     caveat:
-      'Leads and MQL are the same number by design; the qualification that narrows them happens at the SQL stage below. Takes effect at the next data refresh.',
+      'Because a person can respond to several campaigns, the same person may be counted under more than one campaign. The qualification that narrows the funnel happens at the SQL stage below.',
   },
   campaignTheme: {
     label: 'How this page is built',
-    what: 'Each quarterly theme is one overarching campaign, rolled up as a whole with its individual activities shown beneath — five themes across Q1 and Q2, plus an “Other activities” catch-all.',
-    source: 'Salesforce campaigns. The 10 campaigns you named (5 for Q1, 5 for Q2) are the anchors of the 5 themes.',
-    calc: 'Each of your 10 named campaigns is pinned to its theme by its exact Salesforce campaign ID (so it lands in the right theme even where the Salesforce name differs — e.g. the 10.06 IE “Protect Data” event is stored as “Microsoft E7…”). Every OTHER campaign is then auto-sorted by a name rule, which pulls in the sibling activities you didn’t list individually — on-demand replays, NL / language variants, the LinkedIn promotion of a whitepaper — into the matching theme. Anything that matches no theme sits under “Other activities”, so nothing is hidden. Each activity has a Theme dropdown to override the automatic choice (it saves and sticks across refreshes).',
+    what: 'There are two overarching quarterly campaigns — “Data Is an Asset, Not a Liability” (Q1) and “Innovation Without Risk” (Q2) — each rolled up as a whole with its individual activities beneath, plus an “Other activities” catch-all.',
+    source: 'Salesforce campaigns, grouped by the quarter each one belongs to.',
+    calc: 'Each campaign is placed in its quarter from the campaign itself — the date in its name (e.g. “07.05.2026 …” → Q2), then an explicit “Q1/Q2” label, then a curated hint for the named campaigns that carry no date. Everything in Q1 rolls up under “Data Is an Asset, Not a Liability”, everything in Q2 under “Innovation Without Risk”. The page shows only the campaigns belonging to the selected quarter, so activities no longer cross between quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Each activity has a Theme dropdown to move it to Q1, Q2 or Other (it saves and sticks across refreshes).',
     caveat:
-      'Two different things are shown per activity: the FUNNEL (Leads / MQL / SQL) counts campaign RESPONDERS — people logged as “responded” to the campaign in Salesforce — while the MONEY (Pipeline / Closed-Won) counts OPPORTUNITIES linked to the campaign. They’re independent, so an activity (often an in-person event) can show pipeline or revenue with 0 leads: deals were attributed to the event, but the attendees weren’t recorded as responded members.',
+      'Two different things are shown per activity: the FUNNEL (MQL / SQL) counts campaign RESPONDERS — people logged as “responded” to the campaign in Salesforce — while the MONEY (Open Pipeline / Closed-Won) counts OPPORTUNITIES linked to the campaign. They’re independent, so an activity (often an in-person event) can show pipeline or revenue with 0 responders: deals were attributed to the event, but the attendees weren’t recorded as responded members.',
   },
   currentVsOngoing: {
     label: 'Current-quarter activity vs ongoing impact',
@@ -82,11 +82,11 @@ export const METHODOLOGY = {
     caveat: 'Phase 1 measures created→close. The full lead-to-opportunity timeline (time from MQL to opportunity) is a follow-up that needs the contact-response join. Populates after the opportunity data refresh.',
   },
   createdOppsValue: {
-    label: 'Generated This Quarter',
-    what: 'The pipeline value of opportunities that were actually created in this period.',
+    label: 'New Pipeline Created',
+    what: 'The pipeline value of opportunities that were actually created in the selected period.',
     source: 'Salesforce opportunities, by the date each was created (marketing-attributed).',
-    calc: 'Sum of opportunity value for opps whose created date falls in the reporting window, in EUR. Unlike Influenced Pipeline (open + won, dated by activity/close), this counts only opps created this period — so it answers "pipeline generated this quarter" without pulling in older deals that merely closed now.',
-    caveat: 'New metric. Lands at the next data refresh; shown as “—” until then.',
+    calc: 'Sum of opportunity value for opps whose created date falls in the reporting window, in EUR. Unlike Influenced Pipeline (open + won, dated by activity/close), this counts only opps created this period — so it answers "new pipeline created this period" without pulling in older deals that merely closed now.',
+    caveat: 'One of three distinct pipeline terms used consistently across the dashboard — New Pipeline Created (this), Influenced Pipeline (open + won), and Closed-Won. Lands at the next data refresh; shown as “—” until then.',
   },
 
   // ── Money
@@ -95,7 +95,7 @@ export const METHODOLOGY = {
     what: 'The total value of qualified opportunities marketing touched — open pipeline plus deals already won.',
     source: 'campaign-attributed opportunities in Salesforce.',
     calc: 'Sum of open qualified opportunity value plus closed-won value, converted to EUR using the Salesforce corporate exchange rate. Won deals are included so that Closed Won is always part of — never larger than — the pipeline generated.',
-    caveat: 'Only opportunities attributed to a marketing campaign are included — this is not the whole sales pipeline. On the per-campaign tables the “Pipeline” column shows only deals still OPEN, so a campaign can show €0 pipeline next to a Closed-Won value — that just means all its opportunities have already closed and been won (nothing left in progress), not missing data.',
+    caveat: 'Three pipeline terms are used consistently on the dashboard: New Pipeline Created (opps created this period), Influenced Pipeline (open + won — this), and Closed-Won (won only). Only opportunities attributed to a marketing campaign are included — not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column (deals still open) alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
   },
   closedWon: {
     label: 'Closed Won',

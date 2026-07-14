@@ -27,7 +27,6 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
   const evMql = evTypes.reduce((s, t) => s + (Number(t.mql) || 0), 0)
   const evSql = evTypes.reduce((s, t) => s + (Number(t.sql) || 0), 0)
 
-  const leadToMqlV = has(f.mql) && f.leads ? f.mql / f.leads : null
   const visitorToMqlV = has(w.keyEvents) && Number(w.sessions) > 0 ? w.keyEvents / w.sessions : null
   const mqlToSqlV = has(f.sql) && f.mql ? f.sql / f.mql : null
   const sqlToWonV = has(f.closedWonCount) && f.sql ? f.closedWonCount / f.sql : null
@@ -66,7 +65,6 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
     { t: 'na', label: 'Impressions (non-LinkedIn)', ctx: 'LinkedIn impressions live on LinkedIn page', key: 'impressions' },
     { t: 'na', label: 'Cost per click (CPC)', ctx: 'LinkedIn CTR/clicks on LinkedIn page (GBP)', key: 'cpc' },
     { t: 'na', label: 'Cost per thousand (CPM)', ctx: 'LinkedIn-only; on LinkedIn page', key: 'cpm' },
-    { t: 'live', label: 'Lead → MQL conversion', val: pct(f.mql, f.leads), ctx: 'derived', key: 'leadToMql', num: leadToMqlV },
     { t: 'live', label: 'MQL → SQL conversion', val: pct(f.sql, f.mql), ctx: 'derived', key: 'mqlToSql', num: mqlToSqlV },
     has(f.closedWonCount)
       ? { t: 'live', label: 'SQL → Closed/Won', val: pct(f.closedWonCount, f.sql), ctx: 'derived', key: 'sqlToWon', num: sqlToWonV }
@@ -93,7 +91,6 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
     has(w.sessions) && Number(w.sessions) > 0
       ? { t: 'live', label: 'Total organic traffic (sessions)', val: num(w.sessions), ctx: 'GA4', key: 'totalOrganicTraffic', num: w.sessions }
       : { t: 'na', label: 'Total organic traffic', ctx: 'GA4 sessions', key: 'totalOrganicTraffic' },
-    { t: 'live', label: 'Total leads', val: num(f.leads), ctx: 'campaign membership · all channels', key: 'totalLeads', num: f.leads },
     has(w.keyEvents)
       ? { t: 'live', label: 'Conversions from organic (GA4)', val: num(w.keyEvents), ctx: convCtx, key: 'conversionsFromOrganic', num: w.keyEvents }
       : { t: 'na', label: 'Conversions from organic', ctx: 'GA4 key events', key: 'conversionsFromOrganic' },
