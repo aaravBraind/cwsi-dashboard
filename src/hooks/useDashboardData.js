@@ -200,11 +200,11 @@ export function useOutreach(workstream = null, marketingOnly = true) {
 
 // Outreach → SF meeting attribution (CC-6) — region + quarter (global) scoped.
 // Pillar does NOT apply (meetings aren't practice-area tagged), so it's excluded.
-export function useOutreachAttributedMeetings() {
+export function useOutreachAttributedMeetings(marketingOnly = true) {
   const { filters } = useFilters()
   return useQuery({
-    queryKey: ['outreach-attributed-meetings', filters.region, filters.quarter],
-    queryFn: () => getOutreachAttributedMeetings({ region: filters.region, quarter: filters.quarter }),
+    queryKey: ['outreach-attributed-meetings', filters.region, filters.quarter, marketingOnly],
+    queryFn: () => getOutreachAttributedMeetings({ region: filters.region, quarter: filters.quarter, marketingOnly }),
   })
 }
 

@@ -196,6 +196,20 @@ export const METHODOLOGY = {
     source: 'Outreach.io engagement snapshot.',
     calc: 'Replies ÷ prospects across the sequences in scope.',
   },
+  outreachOpenRate: {
+    label: 'Open rate',
+    what: 'How often prospects open an outreach email.',
+    source: 'Outreach.io engagement snapshot.',
+    calc: 'Opens ÷ prospects across the sequences in scope (cumulative lifetime snapshot).',
+    caveat: 'A cumulative snapshot, not a per-quarter figure. Open tracking is approximate (image-pixel based).',
+  },
+  outreachOpps: {
+    label: 'Opportunities from Outreach (outbound)',
+    what: 'Salesforce opportunities whose contact is a member of an outbound Outreach sequence — created count, influenced pipeline (open + won) and closed-won value.',
+    source: 'Salesforce opportunities joined to Outreach sequence membership by the contact’s email; scoped to the current view.',
+    calc: 'An opportunity is credited to a sequence when its Salesforce contact matches a prospect in that sequence. Counted DISTINCT per opportunity for the Outbound-prospecting tier only. Influenced pipeline = open-qualified value + closed-won value; closed-won = won value.',
+    caveat: 'Contact-attributed (a sequenced contact is on the opp), NOT campaign-attributed — so these can overlap the campaign channels on the Pipeline page and are shown separately, not added to the campaign total. Pipeline reads as contact-touch, not "generated", and can be dominated by a single large sales-led deal.',
+  },
   marketingSpend: {
     label: 'Marketing Spend (actual)',
     what: 'Actual marketing spend recorded to date.',

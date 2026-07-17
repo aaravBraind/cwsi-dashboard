@@ -39,20 +39,21 @@ function Body({ data }) {
   const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
   return (
     <>
-      {/* Top strip */}
-      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="open + won" explainId="pipeline" />
+      {/* Pipeline value — the € money metrics (S3 glossary). Counts live in the funnel
+          below; keeping euros here and counts there removes the old top-strip/funnel
+          duplication (P1) and adopts the agreed metric set (P2). */}
+      <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
-        <Cell label="MQLs → SQLs" val={`${num(funnel.mql)} → ${num(funnel.sql)}`} meta={pct(funnel.sql, funnel.mql)} explainId="sql" />
-        <Cell label="Closed-Won Value" val={eur(funnel.closedWon)} meta="current view" explainId="closedWon" />
+        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="open + won" explainId="pipeline" />
+        <Cell label="Closed-Won" val={eur(funnel.closedWon)} meta="won · by close date" explainId="closedWon" />
       </div>
 
-      {/* Lead Journey — natural funnel with stage conversion (mirrors Overview) */}
+      {/* Lead Journey — count funnel, stage progression only (mirrors Overview exactly). */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Lead Journey</div>
-            <div className="panel-sub">MQLs → SQLs → Created Opps → Pipeline → Closed-Won · with stage conversion · current view</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opps → Qualified Opportunities → Closed-Won · with stage conversion · current view</div>
           </div>
           <span className="chip blue">current view</span>
         </div>
@@ -61,12 +62,13 @@ function Body({ data }) {
             <Stage name="MQLs" val={num(funnel.mql)} extra="campaign responders" explainId="mql" />
             <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
             <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
-            <Stage name="Influenced Pipeline" val={eur(funnel.pipeline)} extra="open + won" explainId="pipeline" />
-            <Stage name="Closed-Won" val={eur(funnel.closedWon)} extra="value" explainId="closedWon" />
+            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
+            <Stage name="Closed-Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
-            <span className="conv">▶ {pct(funnel.closedWon, funnel.pipeline)} Pipeline → Won</span>
+            <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Qualified n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Qualified`}</span>
+            <span className="conv">▶ {isNA(funnel.closedWonCount) || isNA(funnel.opp) ? 'Qualified → Won n/a' : `${pct(funnel.closedWonCount, funnel.opp)} Qualified → Won`}</span>
           </div>
           {quarterScoped && (
             <div className="callout amber" style={{ marginTop: 12 }}>
@@ -149,12 +151,16 @@ function Body({ data }) {
           <div className="callout" style={{ margin: '4px 12px 12px' }}>
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
             <div className="callout-body">
-              <strong>Outreach &amp; Paid Search sources:</strong> <strong>Paid Search</strong> has no campaigns in
-              Salesforce for the period, so there's nothing to list here. <strong>Outreach</strong> opportunities are
-              now shown as an indicative row — but attributed by <em>contact</em> (a sequenced contact is on the opp),
-              not by campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
-              Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. Every campaign row
-              here is marketing-campaign-attributed (each opp carries a Campaign).
+              <strong>Outreach, Paid &amp; Paid Search sources:</strong> <strong>Outreach</strong> (P4) opportunities are
+              shown as an indicative row — attributed by <em>contact</em> (a sequenced contact is on the opp), not by
+              campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
+              Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. <strong>Paid social
+              (LinkedIn)</strong> (P5) is already represented here through its linked Salesforce campaigns — each LinkedIn
+              ad is tied to a specific SF campaign (e.g. the BeNeLux "Data That Moves" ad → SF campaign
+              <span className="mono"> 701Tm00000ZUJUEIA5</span>), so its leads &amp; pipeline appear under the
+              <strong> LinkedIn Paid</strong> channel row rather than being counted twice. <strong>Paid Search</strong> has
+              no Salesforce campaigns for the period, so there's nothing to list. Every campaign row here is
+              marketing-campaign-attributed (each opp carries a Campaign).
               <br /><strong>Closed-Won reconciles here:</strong> the Closed-Won total in this table equals the
               Closed-Won figure at the top of the page — both count won deals by their <strong>close date</strong>.
               The <em>Pipeline Stage Distribution</em> lower down is a different measure (all <strong>open</strong>{' '}

@@ -1127,6 +1127,11 @@ export async function getEventsDetail(filters = {}) {
         closedWon: sum(rs, 'closed_won_value'),
       }
     })
+    // V2 (Margot 14.07): drop older events that "still appear" but contribute NOTHING to the
+    // period — no registrants/MQL, no SQL, no opportunity, no pipeline, no won (>=€1 clears
+    // rounding noise like €0.86). A campaign dated 2024/2023 with genuine ongoing 2026 activity
+    // (e.g. an opp that reached SQL/won in 2026) is kept; only pure-zero clutter is removed.
+    .filter((c) => c.mql > 0 || c.sql > 0 || c.createdOpps > 0 || c.pipeline > 0 || c.closedWon >= 1)
     .sort((a, b) => b.pipeline - a.pipeline)
 
   const types = [...new Set(rows.map((r) => r.campaign_type).filter(Boolean))].sort()
@@ -1463,6 +1468,26 @@ export function outreachSeqCategory(name) {
   return 'Events & campaigns'
 }
 
+// R2 — separate genuinely MARKETING sequences from SALES-OWNED ones. Margot: the Outreach
+// view should show only the marketing sequences the team set up, not sales' one-off
+// named-account / renewal / rep sequences. There's no owner column, so we classify by
+// CWSI's naming convention into three classes:
+//   • 'workstream'      — the 3 systematic marketing workstreams (SoPro / Microsoft TUM /
+//                         Secure X Outbound) = isMarketingSequence.
+//   • 'event-campaign'  — marketing-run demand gen: event / webinar / campaign / workshop /
+//                         monthly-update / (non-)attendee follow-ups.
+//   • 'sales-owned'     — everything else: single-company account names ("AJ Bell",
+//                         "Hilton Foods"), renewals/expansion, rep skim/funding reach-outs.
+// Ambiguity is resolved CONSERVATIVELY toward 'sales-owned' (R2's intent is to strip sales
+// noise); the definitive marketing list is Margot's to confirm, so this is a naming heuristic.
+const OUTREACH_EVENT_CAMPAIGN_RE = /\b(event|webinar|invite|attend|attended|follow[\s-]?up|campaign|workshop|roundtable|monthly update|non[\s-]?attend|becoming frontier)\b/i
+export function outreachSeqClass(name) {
+  if (isMarketingSequence(name)) return 'workstream'
+  if (OUTREACH_EVENT_CAMPAIGN_RE.test(String(name || ''))) return 'event-campaign'
+  return 'sales-owned'
+}
+export const isSalesOwnedSequence = (name) => outreachSeqClass(name) === 'sales-owned'
+
 export async function getOutreachAttributedMeetings(filters = {}) {
   // dateCol differs: meetings by activity_date, opps by created_date (Created Opps dating).
   const scope = (q, dateCol) => {
@@ -1487,9 +1512,18 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_id']),
   ])
 
+  // R2: default to marketing sequences only — drop sales-owned (named-account / renewal /
+  // rep) sequences from every tier and the per-sequence table. A meeting still counts if ANY
+  // marketing sequence claims it (it's only excluded when all its attributions are sales-owned).
+  const marketingOnly = filters.marketingOnly !== false
+  const salesMeetingIds = new Set() // meetings that touch a sales-owned sequence (for the honesty note)
   const outbound = new Set(), exclBroadcast = new Set(), any = new Set()
   const perSeq = new Map()
   for (const r of attr) {
+    if (isSalesOwnedSequence(r.sequence_name)) {
+      salesMeetingIds.add(r.meeting_id)
+      if (marketingOnly) continue
+    }
     const cat = outreachSeqCategory(r.sequence_name)
     any.add(r.meeting_id)
     if (cat !== 'Broadcast / newsletter') exclBroadcast.add(r.meeting_id)
@@ -1505,6 +1539,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
   const oppOut = new Set(), oppExcl = new Set(), oppAny = new Set()
   const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
   for (const o of opps) {
+    if (marketingOnly && isSalesOwnedSequence(o.sequence_name)) continue // R2
     const amt = Number(o.amount_eur) || 0
     const pipe = (!o.is_closed && o.stage_name !== UNQ) ? amt : 0
     const won = o.is_won ? amt : 0
@@ -1549,8 +1584,10 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     // DISTINCT opps per tier + pipeline/won (OR9)
     oppTiers: { outbound: sumTier(oppOut), exclBroadcast: sumTier(oppExcl), any: sumTier(oppAny) },
     bySequence,
-    // Coverage for the honesty note: how many meetings we could even attempt to match
-    coverage: { attributed: any.size, withEmail, totalMeetings },
+    // Coverage for the honesty note: how many meetings we could even attempt to match.
+    // salesExcluded = meetings dropped because their only attribution was a sales-owned
+    // sequence (R2); marketingOnly reflects whether that filter is active.
+    coverage: { attributed: any.size, withEmail, totalMeetings, salesExcluded: [...salesMeetingIds].filter((id) => !any.has(id)).length, marketingOnly },
     hasData: attr.length > 0 || totalMeetings > 0 || opps.length > 0,
   }
 }

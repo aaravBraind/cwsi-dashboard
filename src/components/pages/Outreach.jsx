@@ -16,7 +16,7 @@ export default function Outreach() {
   const [workstream, setWorkstream] = useState(null) // OR2: Type of Outreach filter
   const [marketingOnly, setMarketingOnly] = useState(true) // OR4: marketing sequences only (default)
   const q = useOutreach(workstream, marketingOnly)
-  const mtg = useOutreachAttributedMeetings()
+  const mtg = useOutreachAttributedMeetings(marketingOnly) // R2: same marketing-only scope as the snapshot
 
   return (
     <>
@@ -315,7 +315,19 @@ function MeetingAttribution({ m }) {
             <strong> nested</strong>: each includes the one before it (Outbound is part of +Events, which is part of Any).{' '}
             <strong>Outbound prospecting is the strict figure</strong> the
             100-meetings target measures; a "broadcast / newsletter" match only means the contact was on a monthly
-            list, not that it generated the meeting.
+            list, not that it generated the meeting.{' '}
+            <strong>This outbound count has been reconciled against Salesforce and is deliberately conservative</strong> —
+            every meeting is a distinct Salesforce meeting whose contact sits in an outbound sequence, de-duplicated per
+            meeting, so it cannot double-count. It reads lower, not higher, than the true total because email-only
+            matching misses contacts who used a different address.
+            {coverage.marketingOnly && (
+              <>
+                {' '}<strong>Marketing sequences only:</strong> sales-owned sequences (single-account, renewal and
+                rep-run cadences) are excluded by naming convention
+                {coverage.salesExcluded > 0 ? <> — {num(coverage.salesExcluded)} meeting{coverage.salesExcluded === 1 ? '' : 's'} whose only match was a sales sequence {coverage.salesExcluded === 1 ? 'was' : 'were'} dropped</> : ''}.
+                Switch <em>Sequence set</em> to "All sequences" to include them.
+              </>
+            )}
           </div>
         </div>
 

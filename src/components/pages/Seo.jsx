@@ -47,15 +47,23 @@ export default function Seo() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>Sessions &amp; engagement</strong> come from GA4 (our public sites only — internal
-          test and preview sites are excluded). <strong>Clicks,
-          impressions, CTR and position</strong> come from Search Console. <strong>Key events</strong>{' '}
-          (GA4 conversions) feed the <strong>Visitor → MQL</strong> tile. Region &amp; quarter scope every figure.
+          <strong>One lead funnel, one traffic view.</strong> The <strong>funnel below</strong> is the
+          authoritative organic lead-to-revenue funnel, sourced from the Salesforce <strong>Website Leads</strong>{' '}
+          campaigns (MQLs → SQLs → opportunities → pipeline → won). <strong>GA4 traffic</strong> (sessions, users,
+          key events) and <strong>Search Console</strong> (clicks, impressions, position) are shown below it as
+          website <em>traffic &amp; search</em> signals — GA4 "key events" are on-site conversions, not the same
+          thing as Salesforce leads, so they're reported as traffic, never as a competing lead number.
+          Region &amp; quarter scope every figure.
         </div>
       </div>
 
+      {/* G2/G4 — the single authoritative SF-sourced Organic Search funnel, moved to the TOP.
+          "Website Leads" Salesforce campaigns (SEO9), not the whole Organic SEO channel. */}
+      <div className="sec-divider"><span className="label">Organic Search funnel · Salesforce (Website Leads)</span><div className="line" /></div>
+      <WebsiteLeadsBody />
+
       {/* GA4 website traffic */}
-      <div className="sec-divider"><span className="label">Website traffic · GA4</span><div className="line" /></div>
+      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Website traffic · GA4</span><div className="line" /></div>
       {web.isLoading && <Loading label="Loading GA4 traffic…" />}
       {web.isError && <ErrorState error={web.error} />}
       {web.data && !web.data.hasData && <EmptyState message="No GA4 traffic for this region / quarter yet." />}
@@ -68,13 +76,9 @@ export default function Seo() {
       {seo.data && !seo.data.hasData && <EmptyState message="No Search Console data for this region / quarter yet." />}
       {seo.data && seo.data.hasData && <SeoBody data={seo.data} />}
 
-      {/* Website Leads — the authoritative website funnel (SEO9): from the "Website Leads"
-          Salesforce campaigns specifically, not the whole Organic SEO channel. */}
-      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Website Leads · Salesforce campaigns</span><div className="line" /></div>
-      <WebsiteLeadsBody />
-
-      {/* Wider Salesforce-attributed funnel for the whole Organic SEO channel */}
-      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Organic SEO channel · Salesforce funnel</span><div className="line" /></div>
+      {/* Wider Salesforce-attributed funnel for the whole Organic SEO channel — context only,
+          a broader superset of the authoritative Website Leads funnel above (G4). */}
+      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Wider Organic SEO channel · Salesforce (context)</span><div className="line" /></div>
       <FunnelBody />
     </>
   )
@@ -90,17 +94,21 @@ function WebsiteLeadsBody() {
   const f = q.data.funnel
   return (
     <>
-      <div className="kpis cols-3">
+      {/* G3 — full funnel incl. Qualified Opportunities; New vs Influenced pipeline labelled per S3. */}
+      <div className="kpis cols-4">
         <Kpi label="MQLs · current view" val={num(f.mql)} explainId="mql" />
         <Kpi label="SQLs · current view" val={num(f.sql)} explainId="sql" />
+        <Kpi label="Qualified Opportunities · current view" val={isNA(f.opp) ? '—' : num(f.opp)} explainId="opportunities" />
         <Kpi label="Created Opps · current view" val={isNA(f.createdOpps) ? '—' : num(f.createdOpps)} explainId="createdOpps" />
       </div>
-      <div className="kpis cols-2" style={{ marginTop: 12 }}>
+      <div className="kpis cols-3" style={{ marginTop: 12 }}>
+        <Kpi label="New Pipeline Created · current view" val={isNA(f.createdOppsValue) ? '—' : eur(f.createdOppsValue)} explainId="createdOppsValue" />
         <Kpi label="Influenced Pipeline · current view" val={eur(f.pipeline)} explainId="pipeline" />
         <Kpi label="Closed-Won · current view" val={eur(f.closedWon)} explainId="closedWon" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
         From the <strong>Website Leads</strong> Salesforce campaigns{q.data.campaigns.length ? ` (${q.data.campaigns.length}: ${q.data.campaigns.join(', ')})` : ''} — the accurate website source, not the whole Organic SEO channel.
+        <strong> New Pipeline Created</strong> = value of opportunities created this period; <strong>Influenced Pipeline</strong> = open + won opportunity value.
       </p>
     </>
   )
@@ -119,10 +127,12 @@ function WebBody({ data }) {
       </div>
       <div className="kpis cols-2" style={{ marginTop: 12 }}>
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
+        {/* G4 — GA4 key events are on-site conversions (traffic signal), NOT Salesforce leads.
+            Relabelled from "Visitor → MQL" so it never competes with the SF lead funnel above. */}
         <Kpi
-          label="Visitor → MQL · GA4 conv."
+          label="Key events (GA4 on-site conversions)"
           val={isNA(totals.keyEvents) ? '—' : num(totals.keyEvents)}
-          sub={isNA(totals.keyEvents) || !totals.sessions ? '' : `${((totals.keyEvents / totals.sessions) * 100).toFixed(2)}% of sessions`}
+          sub={isNA(totals.keyEvents) || !totals.sessions ? 'a traffic signal, not a Salesforce lead' : `${((totals.keyEvents / totals.sessions) * 100).toFixed(2)}% of sessions · traffic signal, not a Salesforce lead`}
         />
       </div>
 
@@ -258,7 +268,10 @@ function FunnelBody() {
         <Kpi label="Influenced Pipeline · current view" val={eur(t.pipeline)} explainId="pipeline" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
-        Whitepaper-download campaigns are reported on the <strong>Email</strong> page, so they're not counted here.
+        <strong>Context only — the wider Organic SEO channel</strong> (every SF opportunity attributed to Organic SEO), a
+        broader superset of the authoritative <strong>Website Leads</strong> funnel at the top; the two count different
+        scopes, so their lead numbers differ by design. Whitepaper-download campaigns are reported on the{' '}
+        <strong>Email</strong> page, so they're not counted here.
       </p>
     </>
   )

@@ -8,6 +8,8 @@ import {
   useEvents,
   useKpiTargets,
   useUpdateKpiTarget,
+  useOutreach,
+  useOutreachAttributedMeetings,
 } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num } from '../../data/format'
@@ -24,6 +26,10 @@ const REGISTER_EXPLAIN = {
   leadToMql: 'conversion', mqlToSql: 'conversion', sqlToWon: 'conversion',
   visitorToMql: 'conversion', mqlToSqlEvents: 'conversion',
   totalOrganicTraffic: 'organicTraffic', attendanceRate: 'webinarAttendance',
+  outreachProspects: 'outreachProspects', outreachOpenRate: 'outreachOpenRate',
+  outreachReplyRate: 'outreachReplyRate', outreachMeetings: 'outreachMeetings',
+  outreachCreatedOpps: 'outreachOpps', outreachClosedWon: 'outreachOpps',
+  outreachPipeline: 'outreachOpps',
 }
 
 // The KPI register, in the agreed category order. `live` rows are computed from
@@ -51,6 +57,8 @@ export default function KpiTracker() {
   const web = useWebTraffic()
   const events = useEventTypeFunnel()
   const att = useEvents() // GoToWebinar attendance — webinar actual is real
+  const outreach = useOutreach() // K1: prospects/open/reply (lifetime snapshot)
+  const outreachMtg = useOutreachAttributedMeetings() // K1: meetings/opps (current view)
   const targetsQ = useKpiTargets()
   const { filters } = useFilters()
 
@@ -74,6 +82,8 @@ export default function KpiTracker() {
           web={web.data?.totals}
           events={events.data}
           attendance={att.data?.hasData ? att.data.totals : null}
+          outreach={outreach.data}
+          outreachMeetings={outreachMtg.data}
           quarter={filters.quarter}
           targets={targetsQ.data || {}}
         />
@@ -142,8 +152,8 @@ function TargetCell({ kpiKey, row, period, scope }) {
   )
 }
 
-function Register({ f, web, events, attendance, quarter, targets }) {
-  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance })
+function Register({ f, web, events, attendance, outreach, outreachMeetings, quarter, targets }) {
+  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
   const kpiCount = rows.filter((r) => r.t !== 'cat').length

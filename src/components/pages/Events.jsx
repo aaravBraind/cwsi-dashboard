@@ -60,13 +60,15 @@ export default function Events() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>Webinar attendance</strong> comes from GoToWebinar (campaign-matched). The{' '}
-          <strong>funnel &amp; per-campaign</strong> figures are Salesforce campaign-attributed, split by campaign
-          type into <strong>Webinars</strong> and <strong>In-person events</strong>. The <strong>owned vs earned</strong>{' '}
-          split is shown below (owned from the Salesforce Campaign Type; the one earned event tagged by name). Region &amp; quarter scope every figure.
-          <br /><strong>Registrations don’t equal MQLs:</strong> registrations come from GoToWebinar (everyone who
-          signed up), while “MQLs” counts Salesforce campaign members marked <em>Responded</em> — so a webinar’s
-          registration count and its MQL count are measuring different things and won’t match.
+          <strong>Webinars</strong> and <strong>in-person events</strong> use the <strong>same metric set</strong> —
+          MQLs → SQLs → Created Opps → pipeline &amp; closed-won — all Salesforce campaign-attributed, so the two
+          sections read consistently. Webinars add GoToWebinar attendance (registrants / attendees) on top; in-person
+          attendance comes from the Outreach attendee lists (shown once exported). Region &amp; quarter scope every figure.
+          <br /><strong>How MQL &amp; SQL are defined for events:</strong> <strong>MQL = every registered attendee</strong>{' '}
+          (the Salesforce campaign members for the event); <strong>SQL = the registrants who progressed to a qualified
+          opportunity</strong> (any opportunity stage except “Unqualified opp”). <em>Note:</em> GoToWebinar’s raw
+          registration tally is a sign-up count and can differ slightly from the Salesforce campaign-member MQL — they
+          come from different systems.
         </div>
       </div>
 
@@ -154,7 +156,7 @@ function Webinars({ ev, det }) {
       {/* Salesforce-attributed funnel for Webinar campaigns */}
       {det.data?.hasData && (
         <div className="kpis cols-4" style={{ marginTop: 4 }}>
-          <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
+          <Kpi label="MQLs (registrants) · current view" val={num(t.mql)} explainId="mql" />
           <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
           <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
           <Kpi label="Open Pipeline € · current view" val={eur(t.pipeline)} sub={`${eur(t.won)} closed-won`} explainId="pipeline" />

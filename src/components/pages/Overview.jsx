@@ -68,7 +68,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Marketing Budget — Actual Spend</div>
-            <div className="panel-sub">From the budget tracker (EUR) · net of corrections · total budget &amp; MDF split pending from CWSI</div>
+            <div className="panel-sub">From the budget tracker (EUR) · total budget &amp; MDF split pending from CWSI</div>
           </div>
           <span className="chip blue">EUR</span>
         </div>

@@ -17,7 +17,7 @@
 
 import {
   getKpiTracker, getKpiTargets, getWebTraffic, getEventTypeFunnel, getEvents,
-  getPipeline,
+  getPipeline, getOutreach, getOutreachAttributedMeetings,
 } from './queries'
 import { buildKpiRegisterRows, periodOf, scopeLabel } from './kpiRegister'
 
@@ -41,12 +41,14 @@ export function download(content, filename, mime) {
 // scoped figures, mirroring the dashboard pages.
 
 export async function assembleKpiRegister(filters) {
-  const [kpi, webRes, events, evtRes, targets] = await Promise.all([
+  const [kpi, webRes, events, evtRes, targets, outreach, outreachMeetings] = await Promise.all([
     getKpiTracker(filters),
     getWebTraffic(filters),
     getEventTypeFunnel(filters),
     getEvents(filters),
     getKpiTargets(),
+    getOutreach({ region: filters.region }),
+    getOutreachAttributedMeetings(filters),
   ])
   const rows = buildKpiRegisterRows({
     funnel: kpi.funnel,
@@ -54,6 +56,8 @@ export async function assembleKpiRegister(filters) {
     web: webRes?.totals,
     events,
     attendance: evtRes?.hasData ? evtRes.totals : null,
+    outreach,
+    outreachMeetings,
   })
   return { rows, targets, period: periodOf(filters.quarter), scope: scopeLabel(filters.quarter) }
 }

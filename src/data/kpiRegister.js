@@ -15,9 +15,13 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings } = {}) {
   const f = funnel || {}
   const w = web || {}
+  const o = outreach?.kpis || {}
+  const ot = outreachMeetings?.oppTiers?.outbound || null
+  const outMeetings = outreachMeetings?.tiers?.outbound
+  const outInfluenced = ot ? ot.pipeline + ot.won : null
   // Retained contracts + expansion removed from the register (Margot, 9 Jul call).
 
   const convCtx = has(w.keyEvents) && w.sessions ? `${pct(w.keyEvents, w.sessions)} of sessions` : 'GA4 conversions'
@@ -109,6 +113,32 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance } = {}) {
       ? { t: 'live', label: 'MQL → SQL conversion (events)', val: pct(evSql, evMql), ctx: 'event-campaign funnel', key: 'mqlToSqlEvents', num: eventsMqlSqlV }
       : { t: 'na', label: 'MQL → SQL conversion (events)', ctx: 'event-campaign funnel (at the next data refresh)', key: 'mqlToSqlEvents' },
     { t: 'na', label: 'Cost per conversion', ctx: 'event spend pending', key: 'costPerConversion' },
+
+    // ── Outreach (Prospecting) — K1. Engagement (prospects/opens/replies) is a
+    //    lifetime cadence snapshot; meetings/opps are Salesforce, contact-attributed
+    //    to OUTBOUND sequences and current-view scoped (so they can overlap campaigns). ──
+    { t: 'cat', label: 'Outreach (Prospecting)' },
+    o.prospects > 0
+      ? { t: 'live', label: 'Prospects in cadence', val: num(o.prospects), ctx: 'marketing sequences · lifetime snapshot', key: 'outreachProspects', num: o.prospects }
+      : { t: 'na', label: 'Prospects in cadence', ctx: 'Outreach sequence snapshot', key: 'outreachProspects' },
+    has(o.openRate)
+      ? { t: 'live', label: 'Open rate', val: pct(o.opens, o.prospects), ctx: 'opens ÷ prospects · lifetime snapshot', key: 'outreachOpenRate', num: o.openRate }
+      : { t: 'na', label: 'Open rate', ctx: 'Outreach engagement snapshot', key: 'outreachOpenRate' },
+    has(o.replyRate)
+      ? { t: 'live', label: 'Reply rate', val: pct(o.replies, o.prospects), ctx: 'replies ÷ prospects · lifetime snapshot', key: 'outreachReplyRate', num: o.replyRate }
+      : { t: 'na', label: 'Reply rate', ctx: 'Outreach engagement snapshot', key: 'outreachReplyRate' },
+    outMeetings != null
+      ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings attributed to outbound sequences · current view', key: 'outreachMeetings', num: outMeetings }
+      : { t: 'na', label: 'Meetings booked (outbound)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMeetings' },
+    ot
+      ? { t: 'live', label: 'Opportunities created (outbound)', val: num(ot.createdOpps), ctx: 'contact-attributed to outbound sequences · current view', key: 'outreachCreatedOpps', num: ot.createdOpps }
+      : { t: 'na', label: 'Opportunities created (outbound)', ctx: 'outbound-attributed opps', key: 'outreachCreatedOpps' },
+    ot
+      ? { t: 'live', label: 'Closed-won (outbound)', val: eur(ot.won), ctx: 'won value · contact-attributed to outbound sequences', key: 'outreachClosedWon', num: ot.won }
+      : { t: 'na', label: 'Closed-won (outbound)', ctx: 'outbound-attributed closed-won', key: 'outreachClosedWon' },
+    outInfluenced != null
+      ? { t: 'live', label: 'Influenced pipeline (outbound)', val: eur(outInfluenced), ctx: 'open + won · contact-attributed to outbound sequences', key: 'outreachPipeline', num: outInfluenced }
+      : { t: 'na', label: 'Influenced pipeline (outbound)', ctx: 'outbound-attributed pipeline', key: 'outreachPipeline' },
   ]
 }
 

@@ -42,9 +42,8 @@ export default function MarketingBudget({ compact = false }) {
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24"><path d="M18 6a7 7 0 1 0 0 12" /><line x1="3" y1="10" x2="13" y2="10" /><line x1="3" y1="14" x2="13" y2="14" /></svg></div>
             <span className="tl neu"><span className="tl-dot" />EUR</span>
           </div>
-          <div className="kpi-label">Marketing Spend · actual (net) <Explain id="marketingSpend" /></div>
+          <div className="kpi-label">Marketing Spend · actual <Explain id="marketingSpend" /></div>
           <div className="kpi-val">{m(d.netActual)}</div>
-          <div className="kpi-sub"><span className="kpi-target">net of corrections</span></div>
         </div>
 
         <div className="kpi">
