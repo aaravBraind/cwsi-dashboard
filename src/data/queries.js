@@ -1512,17 +1512,19 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_id']),
   ])
 
-  // R2: default to marketing sequences only — drop sales-owned (named-account / renewal /
-  // rep) sequences from every tier and the per-sequence table. A meeting still counts if ANY
-  // marketing sequence claims it (it's only excluded when all its attributions are sales-owned).
+  // Margot (20 Jul): the Outreach view is ONLY the 3 marketing workstreams (Historic Data
+  // Reactivation / SoPro / Microsoft TUM = isMarketingSequence). Everything else — events,
+  // campaigns, sales one-offs — is excluded from every tier + the per-sequence table. A meeting
+  // still counts if ANY workstream sequence claims it (only excluded when none of its
+  // attributions is a workstream sequence).
   const marketingOnly = filters.marketingOnly !== false
-  const salesMeetingIds = new Set() // meetings that touch a sales-owned sequence (for the honesty note)
+  const nonWorkstreamMeetingIds = new Set() // meetings whose matches are all non-workstream (for the note)
   const outbound = new Set(), exclBroadcast = new Set(), any = new Set()
   const perSeq = new Map()
   for (const r of attr) {
-    if (isSalesOwnedSequence(r.sequence_name)) {
-      salesMeetingIds.add(r.meeting_id)
-      if (marketingOnly) continue
+    if (marketingOnly && !isMarketingSequence(r.sequence_name)) {
+      nonWorkstreamMeetingIds.add(r.meeting_id)
+      continue
     }
     const cat = outreachSeqCategory(r.sequence_name)
     any.add(r.meeting_id)
@@ -1539,7 +1541,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
   const oppOut = new Set(), oppExcl = new Set(), oppAny = new Set()
   const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
   for (const o of opps) {
-    if (marketingOnly && isSalesOwnedSequence(o.sequence_name)) continue // R2
+    if (marketingOnly && !isMarketingSequence(o.sequence_name)) continue // 3 workstreams only (Margot 20 Jul)
     const amt = Number(o.amount_eur) || 0
     const pipe = (!o.is_closed && o.stage_name !== UNQ) ? amt : 0
     const won = o.is_won ? amt : 0
@@ -1585,9 +1587,9 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     oppTiers: { outbound: sumTier(oppOut), exclBroadcast: sumTier(oppExcl), any: sumTier(oppAny) },
     bySequence,
     // Coverage for the honesty note: how many meetings we could even attempt to match.
-    // salesExcluded = meetings dropped because their only attribution was a sales-owned
-    // sequence (R2); marketingOnly reflects whether that filter is active.
-    coverage: { attributed: any.size, withEmail, totalMeetings, salesExcluded: [...salesMeetingIds].filter((id) => !any.has(id)).length, marketingOnly },
+    // excluded = meetings dropped because none of their matches was one of the 3 marketing
+    // workstreams (events / campaigns / sales one-offs); marketingOnly reflects the filter.
+    coverage: { attributed: any.size, withEmail, totalMeetings, excluded: [...nonWorkstreamMeetingIds].filter((id) => !any.has(id)).length, marketingOnly },
     hasData: attr.length > 0 || totalMeetings > 0 || opps.length > 0,
   }
 }

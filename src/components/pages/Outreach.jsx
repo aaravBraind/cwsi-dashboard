@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { Loading, ErrorState, EmptyState } from '../States'
 import { useOutreach, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
@@ -6,6 +6,9 @@ import { replyLight } from '../../data/thresholds'
 import Explain from '../Explain'
 
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
+// Region code → the label CWSI uses (their sequence names say "UK&I", the code is "UKI").
+const REGION_LABEL = { UKI: 'UK&I', BeLux: 'BeLux', NL: 'NL', UNASSIGNED: 'Unassigned' }
+const regionLabel = (rc) => REGION_LABEL[rc] || rc || 'Unassigned'
 
 // Outreach.io — SDR sales-engagement channel. Matches the functional mockup
 // layout. Engagement is live (lifetime snapshot); meetings are Outreach-sourced
@@ -14,9 +17,11 @@ const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFix
 export default function Outreach() {
   // Practice area is page-local (pillar lives only in this feed, not globally).
   const [workstream, setWorkstream] = useState(null) // OR2: Type of Outreach filter
-  const [marketingOnly, setMarketingOnly] = useState(true) // OR4: marketing sequences only (default)
-  const q = useOutreach(workstream, marketingOnly)
-  const mtg = useOutreachAttributedMeetings(marketingOnly) // R2: same marketing-only scope as the snapshot
+  // Margot (20 Jul): this page is ONLY about the 3 marketing workstreams (Historic Data
+  // Reactivation / SoPro / Microsoft TUM) — sales & one-off sequences are always excluded.
+  // Hard-locked marketing-only (the "All sequences" toggle was removed).
+  const q = useOutreach(workstream, true)
+  const mtg = useOutreachAttributedMeetings(true)
 
   return (
     <>
@@ -39,14 +44,14 @@ export default function Outreach() {
           cadences with replies and meetings booked. Figures are a <strong>cumulative lifetime
           snapshot</strong> (not a daily trend); <strong>region</strong> scopes them. <strong>Meetings booked</strong>{' '}
           are now <strong>attributed via Salesforce</strong> — a meeting is credited to a sequence when its
-          contact is a member of that sequence (the agreed attribution method), shown in tiers below.
+          contact is a member of that sequence (the agreed attribution method). This page reports on the{' '}
+          <strong>three marketing workstreams only</strong> — Historic Data Reactivation, Outbound Prospecting · SoPro,
+          and Outbound Prospecting · Microsoft TUM; sales &amp; one-off account sequences are excluded throughout.
         </div>
       </div>
 
-      {/* Filters — Type of Outreach (replaces Practice Area) + marketing-sequence set.
-          The old "Sequence stage" placeholder was removed: it was a non-working mockup
-          leftover, and step-level detail isn't in scope (the step-type breakdown was
-          removed per client feedback). Step data model still exists if it's ever wanted. */}
+      {/* Filter — Type of Outreach (the 3 marketing workstreams). The "Sequence set" toggle was
+          removed (Margot 20 Jul): the page is always marketing-only, so there's nothing to toggle. */}
       <div className="filters">
         <div className="filter" title="Filter by workstream (Type of Outreach) — the three marketing workstreams: Historic Data Reactivation, Outbound Prospecting · SoPro, and Outbound Prospecting · Microsoft TUM.">
           <span className="label">Type of Outreach</span>
@@ -55,13 +60,6 @@ export default function Outreach() {
             <option value="Historic Data Reactivation">Historic Data Reactivation</option>
             <option value="Outbound Prospecting · SoPro">Outbound Prospecting · SoPro</option>
             <option value="Outbound Prospecting · Microsoft TUM">Outbound Prospecting · Microsoft TUM</option>
-          </select>
-        </div>
-        <div className="filter" title="Marketing sequences = the 3 workstreams (Historic Data Reactivation / SoPro / Microsoft TUM); sales & one-off account sequences excluded. Switch to All sequences to see everything.">
-          <span className="label">Sequence set</span>
-          <select value={marketingOnly ? 'marketing' : 'all'} onChange={(e) => setMarketingOnly(e.target.value === 'marketing')}>
-            <option value="marketing">Marketing sequences only</option>
-            <option value="all">All sequences</option>
           </select>
         </div>
       </div>
@@ -79,7 +77,6 @@ const MEETINGS_TARGET = 100 // Paul's Q2 outbound-generated meetings target (24 
 function Body({ data, meetings }) {
   const { kpis, funnel, workstreams, seqCounts, marketingOnly } = data
   const outbound = meetings?.tiers?.outbound ?? null
-  const anyTier = meetings?.tiers?.any ?? null
   return (
     <>
       {/* 4 KPI cards (mockup order: sequences, prospects, reply rate, meetings) */}
@@ -165,7 +162,7 @@ function Body({ data, meetings }) {
               {marketingOnly && seqCounts
                 ? <><strong>{num(seqCounts.marketing)} marketing sequences</strong> of {num(seqCounts.total)} total · </>
                 : <>All {num(seqCounts?.total)} sequences · </>}
-              the three workstreams (Historic Data Reactivation · Outbound Prospecting SoPro / Microsoft TUM), by product / flow &amp; region
+              the three marketing workstreams (Historic Data Reactivation · Outbound Prospecting SoPro / Microsoft TUM) → region → product / flow
             </div>
           </div>
           <span className="chip blue">{num(kpis.totalSequences)} sequences</span>
@@ -175,7 +172,6 @@ function Body({ data, meetings }) {
             <thead>
               <tr>
                 <th>Product / flow</th>
-                <th>Region</th>
                 <th className="r">Prospects</th>
                 <th className="r">Open %</th>
                 <th className="r">Reply %</th>
@@ -186,7 +182,6 @@ function Body({ data, meetings }) {
               {workstreams.map((g) => <WorkstreamGroup key={g.workstream} g={g} />)}
               <tr className="total">
                 <td>Total · {num(kpis.totalSequences)} sequences</td>
-                <td />
                 <td className="r mono">{num(kpis.prospects)}</td>
                 <td className="r mono">{ratePct(kpis.openRate, 0)}</td>
                 <td className="r mono">{ratePct(kpis.replyRate)}</td>
@@ -222,27 +217,45 @@ function WorkstreamGroup({ g }) {
   const sub = g.subtotal
   const subOpen = sub.prospects ? sub.opens / sub.prospects : null
   const subReply = sub.prospects ? sub.replies / sub.prospects : null
+  // Group this workstream's product flows BY REGION so the region name shows ONCE (a
+  // sub-header), not repeated on every product row (Margot, 20 Jul). Regions ordered by size.
+  const byRegion = new Map()
+  for (const r of g.rows) {
+    const k = r.region || 'UNASSIGNED'
+    if (!byRegion.has(k)) byRegion.set(k, [])
+    byRegion.get(k).push(r)
+  }
+  const regionGroups = [...byRegion.entries()]
+    .map(([region, rows]) => ({ region, rows, prospects: rows.reduce((a, r) => a + (r.prospects || 0), 0) }))
+    .sort((a, b) => b.prospects - a.prospects)
   return (
     <>
-      <tr className="cat"><td colSpan={6}>{g.workstream} · {num(sub.sequences)} sequences</td></tr>
-      {g.rows.map((r, i) => {
-        const open = r.prospects ? r.opens / r.prospects : null
-        const reply = r.prospects ? r.replies / r.prospects : null
-        const lt = replyLight(reply)
-        return (
-          <tr key={r.label + '|' + r.region + i}>
-            <td>{r.label}{r.sequences > 1 ? <span style={{ opacity: 0.55 }}> · {num(r.sequences)} flows</span> : null}</td>
-            <td>{r.region === 'UNASSIGNED' ? 'Unassigned' : r.region}</td>
-            <td className="r mono">{num(r.prospects)}</td>
-            <td className="r mono">{open == null ? 'n/a' : `${(open * 100).toFixed(0)}%`}</td>
-            <td className="r mono">{reply == null ? 'n/a' : `${(reply * 100).toFixed(1)}%`}</td>
-            <td className="c"><span className={`tl-bare ${lt}`} /></td>
+      <tr className="cat"><td colSpan={5}>{g.workstream} · {num(sub.sequences)} sequences</td></tr>
+      {regionGroups.map((rg) => (
+        <Fragment key={rg.region}>
+          <tr>
+            <td colSpan={5} style={{ paddingLeft: 22, fontWeight: 600, opacity: 0.7, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+              {regionLabel(rg.region)} · {num(rg.prospects)} prospects
+            </td>
           </tr>
-        )
-      })}
+          {rg.rows.map((r, i) => {
+            const open = r.prospects ? r.opens / r.prospects : null
+            const reply = r.prospects ? r.replies / r.prospects : null
+            const lt = replyLight(reply)
+            return (
+              <tr key={r.label + '|' + r.region + i}>
+                <td style={{ paddingLeft: 34 }}>{r.label}{r.sequences > 1 ? <span style={{ opacity: 0.55 }}> · {num(r.sequences)} flows</span> : null}</td>
+                <td className="r mono">{num(r.prospects)}</td>
+                <td className="r mono">{open == null ? 'n/a' : `${(open * 100).toFixed(0)}%`}</td>
+                <td className="r mono">{reply == null ? 'n/a' : `${(reply * 100).toFixed(1)}%`}</td>
+                <td className="c"><span className={`tl-bare ${lt}`} /></td>
+              </tr>
+            )
+          })}
+        </Fragment>
+      ))}
       <tr className="total">
         <td>subtotal</td>
-        <td />
         <td className="r mono">{num(sub.prospects)}</td>
         <td className="r mono">{subOpen == null ? 'n/a' : `${(subOpen * 100).toFixed(0)}%`}</td>
         <td className="r mono">{subReply == null ? 'n/a' : `${(subReply * 100).toFixed(1)}%`}</td>
@@ -279,26 +292,21 @@ function MeetingAttribution({ m }) {
         <span className="chip blue">{num(coverage.totalMeetings)} meetings in scope</span>
       </div>
       <div className="panel-body">
-        <div className="kpis cols-3" style={{ marginBottom: 4 }}>
+        <div className="kpis cols-2" style={{ marginBottom: 4 }}>
           <div className="kpi">
             <div className="kpi-head">
               <span className={`tl ${tiers.outbound >= MEETINGS_TARGET ? 'green' : tiers.outbound >= MEETINGS_TARGET * 0.8 ? 'amber' : 'neu'}`}>
                 <span className="tl-dot" />{Math.round((tiers.outbound / MEETINGS_TARGET) * 100)}% of {MEETINGS_TARGET}
               </span>
             </div>
-            <div className="kpi-label">Outbound prospecting</div>
+            <div className="kpi-label">Meetings booked · marketing workstreams</div>
             <div className="kpi-val">{num(tiers.outbound)}</div>
-            <div className="kpi-sub"><span className="kpi-target">SoPro · Microsoft TUM · Historic Data Reactivation — the 100 target</span></div>
+            <div className="kpi-sub"><span className="kpi-target">Historic Data Reactivation · SoPro · Microsoft TUM — the 100 target</span></div>
           </div>
           <div className="kpi">
-            <div className="kpi-label" style={{ marginTop: 26 }}>+ Events &amp; campaigns</div>
-            <div className="kpi-val">{num(tiers.exclBroadcast)}</div>
-            <div className="kpi-sub"><span className="kpi-target">adds event / webinar follow-ups</span></div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-label" style={{ marginTop: 26 }}>Any marketing touch</div>
-            <div className="kpi-val">{num(tiers.any)}</div>
-            <div className="kpi-sub"><span className="kpi-target">incl. newsletters — over-counts</span></div>
+            <div className="kpi-label" style={{ marginTop: 26 }}>Matched from</div>
+            <div className="kpi-val">{num(coverage.attributed)}<span style={{ fontSize: 15, opacity: 0.55 }}> / {num(coverage.withEmail)}</span></div>
+            <div className="kpi-sub"><span className="kpi-target">meetings with a contact email we could match ({num(coverage.totalMeetings)} in scope)</span></div>
           </div>
         </div>
 
@@ -307,27 +315,15 @@ function MeetingAttribution({ m }) {
             <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
           </div>
           <div className="callout-body">
-            <strong>How to read this:</strong> a meeting is credited to a sequence when its Salesforce
+            <strong>How to read this:</strong> a meeting is credited to a workstream sequence when its Salesforce
             contact email matches a prospect in that sequence. We matched <strong>{num(coverage.attributed)}</strong> of
             the <strong>{num(coverage.withEmail)}</strong> meetings that carry a contact email
             ({num(coverage.totalMeetings)} meetings in scope). The match is <strong>email-based, so coverage is
-            partial</strong> (a contact who used a different email in Outreach won't match). The three figures are
-            <strong> nested</strong>: each includes the one before it (Outbound is part of +Events, which is part of Any).{' '}
-            <strong>Outbound prospecting is the strict figure</strong> the
-            100-meetings target measures; a "broadcast / newsletter" match only means the contact was on a monthly
-            list, not that it generated the meeting.{' '}
-            <strong>This outbound count has been reconciled against Salesforce and is deliberately conservative</strong> —
-            every meeting is a distinct Salesforce meeting whose contact sits in an outbound sequence, de-duplicated per
-            meeting, so it cannot double-count. It reads lower, not higher, than the true total because email-only
-            matching misses contacts who used a different address.
-            {coverage.marketingOnly && (
-              <>
-                {' '}<strong>Marketing sequences only:</strong> sales-owned sequences (single-account, renewal and
-                rep-run cadences) are excluded by naming convention
-                {coverage.salesExcluded > 0 ? <> — {num(coverage.salesExcluded)} meeting{coverage.salesExcluded === 1 ? '' : 's'} whose only match was a sales sequence {coverage.salesExcluded === 1 ? 'was' : 'were'} dropped</> : ''}.
-                Switch <em>Sequence set</em> to "All sequences" to include them.
-              </>
-            )}
+            partial</strong> (a contact who used a different email in Outreach won't match).{' '}
+            <strong>This is the strict figure</strong> the 100-meetings target measures — reconciled against
+            Salesforce and de-duplicated per meeting, so it cannot double-count and reads lower, not higher, than the
+            true total. <strong>Marketing workstreams only:</strong> meetings whose only match was an event, campaign or
+            sales sequence are excluded{coverage.excluded > 0 ? <> — {num(coverage.excluded)} such meeting{coverage.excluded === 1 ? '' : 's'} dropped</> : ''}.
           </div>
         </div>
 
