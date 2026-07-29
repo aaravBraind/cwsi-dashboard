@@ -203,6 +203,24 @@ function dominantRegion(rs) {
   return best
 }
 
+// Did this campaign actually contribute anything in the selected period?
+//
+// Client ask (Margot 14.07, raised for BOTH events and email): campaigns from
+// earlier years "still appear" in the per-campaign tables. They appear because they
+// have activity ROWS dated in the period while every metric on them is zero — so
+// quarter filtering alone can't remove them. A campaign dated 2024/2025 that still
+// has GENUINE 2026 activity (an opp that reached SQL or won this year) is kept; only
+// pure-zero clutter is dropped. `closedWon >= 1` rather than `> 0` clears rounding
+// noise like €0.86.
+//
+// Shared deliberately: this predicate was originally inlined in the events list only,
+// which is exactly why the same fix never reached the email list (M3). Both callers
+// now use this one so they cannot drift again. Accepts either `pipeline` (events,
+// channel) or `oppValue` (email) as the pipeline field, since the two lists shape
+// their rows for different tables.
+const contributedInPeriod = (c) =>
+  c.mql > 0 || c.sql > 0 || c.createdOpps > 0 || (c.pipeline ?? c.oppValue ?? 0) > 0 || c.closedWon >= 1
+
 // Presentation channel (Margot X8 / OV6 / BP5): Salesforce collapses all event
 // campaign types into ONE channel ("Events & Webinars"), but the client wants
 // Webinars and in-person Events reported as two distinct channels. We split at
@@ -735,6 +753,12 @@ export async function getEmailReport(filters = {}) {
         closedWon: sum(rs, 'closed_won_value'),
       }
     })
+    // M3 (Margot 14.07): drop older campaigns that "still appear" with nothing behind
+    // them — e.g. "2024 UK Intune Workflow" and the 2025 whitepaper/lead-magnet
+    // campaigns, which carry zero 2026 downloads, SQLs, opps, pipeline and won. Same
+    // rule the events list uses; see contributedInPeriod(). Totals are unaffected —
+    // these campaigns contribute 0 to every metric by definition.
+    .filter(contributedInPeriod)
     .sort((a, b) => b.mql - a.mql)
   return {
     totals: funnelOf(rows),
@@ -1127,11 +1151,9 @@ export async function getEventsDetail(filters = {}) {
         closedWon: sum(rs, 'closed_won_value'),
       }
     })
-    // V2 (Margot 14.07): drop older events that "still appear" but contribute NOTHING to the
-    // period — no registrants/MQL, no SQL, no opportunity, no pipeline, no won (>=€1 clears
-    // rounding noise like €0.86). A campaign dated 2024/2023 with genuine ongoing 2026 activity
-    // (e.g. an opp that reached SQL/won in 2026) is kept; only pure-zero clutter is removed.
-    .filter((c) => c.mql > 0 || c.sql > 0 || c.createdOpps > 0 || c.pipeline > 0 || c.closedWon >= 1)
+    // V2 (Margot 14.07): drop older events that "still appear" but contribute NOTHING
+    // to the period. See contributedInPeriod().
+    .filter(contributedInPeriod)
     .sort((a, b) => b.pipeline - a.pipeline)
 
   const types = [...new Set(rows.map((r) => r.campaign_type).filter(Boolean))].sort()

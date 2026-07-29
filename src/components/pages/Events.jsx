@@ -72,6 +72,9 @@ export default function Events() {
         </div>
       </div>
 
+      {/* ---- EV1: both event types combined, ABOVE the type breakdown ---- */}
+      <EventsSummary ev={ev} det={det} />
+
       {/* ---- Webinars ---- */}
       <div className="sec-divider"><span className="label">Webinars</span><div className="line" /></div>
       <Webinars ev={ev} det={det} />
@@ -88,6 +91,89 @@ export default function Events() {
       <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Owned vs Earned</span><div className="line" /></div>
       <OwnedEarnedSummary det={det} />
     </>
+  )
+}
+
+// EV1 (Margot, Jul 2026) — "top summary = webinars + in-person hosted in-quarter
+// (registrations, attendees, created opps, influenced pipeline, closed won) BEFORE the
+// type breakdown". One combined read of the whole event programme, so the page opens with
+// the answer to "how did events do?" instead of making the reader add two sections up.
+//
+// Bases differ per metric, and rather than blur them the tiles say so in their sub-labels:
+//   • Registrations — webinars from GoToWebinar; in-person from Salesforce campaign members
+//     (per V4, an event's members ARE its registrants). Two systems, so the split is shown.
+//   • Attendees — webinars from GoToWebinar. In-person attendance only exists in the Outreach
+//     attendee lists, so until those are exported this tile is webinar-only and SAYS so
+//     rather than presenting a partial figure as the programme total.
+//   • Created Opps / Influenced Pipeline / Closed-Won — Salesforce campaign-attributed for
+//     both types, so these are true combined totals. Influenced = open + won (the S3 glossary).
+function EventsSummary({ ev, det }) {
+  const att = useEventAttendance()
+  if (!det.data || !det.data.hasData) return null
+
+  const all = det.data.campaigns || []
+  const webinarCs = all.filter((c) => c.campaignType === 'Webinar')
+  const inPersonCs = all.filter((c) => c.campaignType !== 'Webinar')
+  const t = sumFunnel(all)
+  const influenced = t.pipeline + t.won
+
+  // Registrations
+  const webReg = ev.data?.hasData ? ev.data.totals.registrants : 0
+  const inPersonReg = sumFunnel(inPersonCs).mql
+  // Attendees — in-person only once the attendee lists are loaded.
+  const webAtt = ev.data?.hasData ? ev.data.totals.attendees : 0
+  const hasInPersonAtt = !!(att.data && att.data.hasData)
+  const inPersonAtt = hasInPersonAtt ? att.data.totals.attended : null
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Event Programme — Webinars + In-person</div>
+          <div className="panel-sub">Both event types combined · Salesforce-attributed · current view</div>
+        </div>
+        <span className="chip blue">
+          {webinarCs.length} webinar{webinarCs.length === 1 ? '' : 's'} · {inPersonCs.length} in-person
+        </span>
+      </div>
+      <div className="panel-body">
+        <div className="kpis cols-5" style={{ marginBottom: 4 }}>
+          <Kpi
+            label="Registrations · current view"
+            val={num(webReg + inPersonReg)}
+            sub={`${num(webReg)} webinar · ${num(inPersonReg)} in-person`}
+            explainId="mql"
+          />
+          <Kpi
+            label="Attendees · current view"
+            val={num(hasInPersonAtt ? webAtt + inPersonAtt : webAtt)}
+            sub={hasInPersonAtt ? `${num(webAtt)} webinar · ${num(inPersonAtt)} in-person` : 'webinars only · in-person pending attendee lists'}
+            explainId="webinarAttendance"
+          />
+          <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
+          <Kpi
+            label="Influenced Pipeline · current view"
+            val={eur(influenced)}
+            sub={`${eur(t.pipeline)} open · ${eur(t.won)} won`}
+            explainId="pipeline"
+          />
+          <Kpi label="Closed-Won · current view" val={eur(t.won)} explainId="closedWon" />
+        </div>
+        <div className="callout">
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>How to read this.</strong> Created Opps, Influenced Pipeline and Closed-Won are true combined
+            totals — both event types are Salesforce campaign-attributed on the same basis.{' '}
+            <strong>Registrations</strong> combine two systems: GoToWebinar sign-ups for webinars and Salesforce
+            campaign members for in-person events, so the split is shown beneath.{' '}
+            {hasInPersonAtt
+              ? 'Attendees combine GoToWebinar with the Outreach attendee lists.'
+              : <><strong>Attendees is webinars only for now</strong> — in-person attendance lives in the Outreach attendee lists, which aren’t available through the API; the figure completes once those are exported.</>}{' '}
+            The sections below break the same programme down by type.
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
