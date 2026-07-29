@@ -1,8 +1,8 @@
-// ---- Branded KPI Register / Pipeline HTML (HTML → headless-Chrome PDF) ------
+// ---- Branded KPI Register / Pipeline HTML (HTML → browser print → PDF) ------
 // Builds the SAME CWSI-branded design as the board pack (shared cover + CSS +
 // footer from boardPackHtml.js), filled with the live, scope-fresh figures for the
-// KPI Register and Pipeline reports. The app POSTs these to the same n8n Gotenberg
-// webhook the board pack uses → a real vector, selectable PDF. See pdfClient.js.
+// KPI Register and Pipeline reports. Rendered by the same browser print path the
+// board pack uses → a real vector, selectable PDF. See printPdf.js + pdfClient.js.
 //
 // Nothing here computes figures — it only presents the already-assembled data the
 // KPI Tracker / Pipeline pages show, so an export can never disagree with a screen.

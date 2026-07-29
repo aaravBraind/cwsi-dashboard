@@ -1,12 +1,13 @@
 // ---- T-8 Export layer ------------------------------------------------------
 // One-click PDF / PPTX export for the KPI Register, Pipeline Report and Board
 // Pack. Every report now uses the SAME two branded routes:
-//   • PDF  — CWSI-branded HTML → headless Chrome (Gotenberg) via n8n → vector PDF
-//            that matches the on-screen design (pdfClient.js + *Html.js builders).
+//   • PDF  — CWSI-branded HTML → the browser's own print engine → vector PDF that
+//            matches the on-screen design (printPdf.js + pdfClient.js + *Html.js).
 //   • PPTX — an attractive, editable Gamma deck via n8n, preserve-mode so figures
 //            are kept verbatim and never paraphrased (gammaClient.js).
-// Both n8n webhooks are report-agnostic (they render whatever HTML / Markdown they
-// are handed), so all three reports share one endpoint each.
+// The PDF path is report-agnostic (it prints whatever HTML it is handed) and needs no
+// server at all; the Gamma webhook likewise renders whatever Markdown it is given, so
+// all three reports share the one path each.
 //
 // Scope (region + quarter) is chosen per-export in the UI dialog and passed in
 // here; every figure is fetched FRESH at that scope (not the global filter), so an
@@ -69,7 +70,7 @@ export async function assemblePipeline(filters) {
 
 // ---- Dispatcher ------------------------------------------------------------
 // report ∈ 'kpi' | 'pipeline' | 'board'; format ∈ 'PDF' | 'BRANDED' | 'PPTX'.
-// 'PDF' (kpi/pipeline) and 'BRANDED' (board) are the same branded Gotenberg PDF;
+// 'PDF' (kpi/pipeline) and 'BRANDED' (board) are the same branded print-to-PDF;
 // 'PPTX' is the Gamma deck. Clients are lazy-imported so the render libraries stay
 // off the dashboard bundle until an export is actually triggered.
 export async function runExport({ report, format, region, quarter }) {

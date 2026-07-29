@@ -1,9 +1,13 @@
-// ---- Branded Board Pack HTML (Route 3: HTML → headless-Chrome PDF) ---------
+// ---- Branded Board Pack HTML (HTML → browser print → PDF) ------------------
 // Builds the SAME CWSI-branded design as the approved artifact, filled with the
 // live figure set + the latest trace-passed narrative, as a self-contained HTML
-// string (inline CSS, embedded base64 logo). The app POSTs this to an n8n webhook
-// that renders it via Gotenberg (Chromium) → a real, vector, selectable PDF that
-// matches the artifact. See workflows/board_pack_pdf_render.json + pdfClient.js.
+// string (inline CSS, embedded base64 logo). The app renders it through the
+// browser's own print engine (Chromium) → a real, vector, selectable PDF that
+// matches the artifact. See printPdf.js + pdfClient.js.
+//
+// The print CSS here is what does the pagination — `@page`, `break-inside`,
+// `break-after`, repeating table headers — so the layout adapts to however much
+// data a scope contains instead of being sliced into fixed pages by JS.
 //
 // Design tokens mirror brandKit.js / styles.css; the layout mirrors the artifact
 // (docs reference). Nothing here computes figures — it only presents the pack.
@@ -13,6 +17,29 @@ import { hex, brand } from './brandKit'
 // White CWSI wordmark (the artifact's cover logo), embedded so the render has no
 // external fetch. Injected at build from docs/cwsi.png.
 const LOGO = 'data:image/png;base64,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'
+
+// The cover's navy field, as an <img> rather than a CSS background. Chrome's print
+// dialog has a "Background graphics" checkbox that defaults to OFF and drops CSS
+// background fills (`print-color-adjust: exact` does not override it) — which would
+// leave the cover's white text on white paper, i.e. invisible. Images always print,
+// so the artwork goes in as one. The CSS gradient stays underneath as the on-screen
+// / backgrounds-on rendering; they are the same two stops, so the result is
+// identical either way. Mirrors .cover in STYLE below — keep the two in step.
+const COVER_ART = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 1123" preserveAspectRatio="none">` +
+    `<defs>` +
+    `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="${hex.navy}"/><stop offset=".8" stop-color="${hex.navyDeep}"/>` +
+    `</linearGradient>` +
+    `<radialGradient id="glow">` +
+    `<stop offset="0" stop-color="${hex.blue}" stop-opacity=".45"/>` +
+    `<stop offset=".68" stop-color="${hex.blue}" stop-opacity="0"/>` +
+    `</radialGradient>` +
+    `</defs>` +
+    `<rect width="794" height="1123" fill="url(#g)"/>` +
+    `<circle cx="724" cy="70" r="160" fill="url(#glow)"/>` +
+    `</svg>`,
+)}`
 
 export const esc = (s) =>
   String(s ?? '')
@@ -225,11 +252,20 @@ const STYLE = `
 
   /* cover — fills the whole first page: brand at the top, title block anchored at
      the bottom (space-between), so the page reads as a designed cover with no empty
-     gap. Hard page break after it. */
+     gap. Hard page break after it.
+     Height is in mm, not 100vh: under the browser print path the document is laid
+     out in a viewport rather than directly at page size, so vh would resolve against
+     the frame. 296mm (not 297) leaves a rounding margin — at exactly page height a
+     sub-pixel overflow spills into a blank second page. */
   .cover{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-deep) 80%); color:#fff; padding:72px 56px; position:relative; overflow:hidden;
-    min-height:100vh; display:flex; flex-direction:column; justify-content:space-between; break-after:page;}
-  .cover::after{content:''; position:absolute; right:-90px; top:-90px; width:320px; height:320px; background:radial-gradient(circle,rgba(20,113,230,.45),transparent 68%);}
-  .cover img{height:34px; width:auto; display:block;}
+    min-height:296mm; display:flex; flex-direction:column; justify-content:space-between; break-after:page;}
+  /* Printable stand-in for the gradient + glow (see COVER_ART). Sits behind the
+     content; the CSS background above shows through identically when backgrounds
+     are enabled. */
+  .cover-art{position:absolute; inset:0; width:100%; height:100%; z-index:0;}
+  .cover > *:not(.cover-art){position:relative; z-index:1;}
+  /* scoped to .cover-top so it can't also match the full-bleed .cover-art image */
+  .cover-top img{height:34px; width:auto; display:block;}
   .eyebrow{text-transform:uppercase; letter-spacing:.16em; font-size:11px; font-weight:700; color:var(--blue-soft); margin-top:16px;}
   .cover h1{font-size:42px; line-height:1.1; font-weight:800; margin:0 0 16px; max-width:640px;}
   .scope{font-size:14px; color:#c9d8ec;}
@@ -255,12 +291,16 @@ const STYLE = `
   .kpct{font-size:11px; font-weight:700; color:var(--ink);}
   .qoq{font-size:10px; font-weight:700; padding:1px 5px; border-radius:5px; margin-left:4px;}
   .qoq.up{background:#dcfce7; color:#15803d;} .qoq.down{background:#fee2e2; color:#b91c1c;} .qoq.flat{background:#f1f5f9; color:var(--mute);}
-  .chip{display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700; padding:3px 8px; border-radius:999px;}
-  .chip .pip{width:6px; height:6px; border-radius:50%;}
-  .chip.on{background:#dcfce7; color:#15803d;} .chip.on .pip{background:var(--green);}
-  .chip.watch{background:#fef3c7; color:#b45309;} .chip.watch .pip{background:var(--amber);}
-  .chip.behind{background:#fee2e2; color:#b91c1c;} .chip.behind .pip{background:var(--red);}
-  .chip.pending{background:#f1f5f9; color:var(--mute);} .chip.pending .pip{background:var(--mute);}
+  /* Status chips/dots: the fill is a background, so it vanishes if the print dialog's
+     "Background graphics" is off. Their COLOUR is the signal, so each also carries a
+     matching border — with fills dropped they read as coloured rings/outlines rather
+     than disappearing. Text colour is already ink-on-light, so it survives either way. */
+  .chip{display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700; padding:3px 8px; border-radius:999px; border:1px solid transparent;}
+  .chip .pip{width:6px; height:6px; border-radius:50%; border:1.5px solid transparent;}
+  .chip.on{background:#dcfce7; color:#15803d; border-color:#86efac;} .chip.on .pip{background:var(--green); border-color:var(--green);}
+  .chip.watch{background:#fef3c7; color:#b45309; border-color:#fcd34d;} .chip.watch .pip{background:var(--amber); border-color:var(--amber);}
+  .chip.behind{background:#fee2e2; color:#b91c1c; border-color:#fca5a5;} .chip.behind .pip{background:var(--red); border-color:var(--red);}
+  .chip.pending{background:#f1f5f9; color:var(--mute); border-color:var(--line);} .chip.pending .pip{background:var(--mute); border-color:var(--mute);}
 
   /* stat strip — headline figures for the Pipeline report (lighter than KPI cards) */
   .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; break-inside:avoid;}
@@ -295,8 +335,13 @@ const STYLE = `
   .tbl tr.total td{font-weight:700; background:#f6f9fd;}
   /* category band rows in the KPI register */
   .tbl tr.cat td{background:#e9f0fc; color:var(--navy); font-weight:800; text-transform:uppercase; letter-spacing:.05em; font-size:10px; padding:6px 8px;}
-  .dot{width:7px; height:7px; border-radius:50%; display:inline-block; margin-left:6px; vertical-align:middle;}
-  .dot.green{background:var(--green);} .dot.amber{background:var(--amber);} .dot.red{background:var(--red);} .dot.neu{background:var(--line);}
+  /* KPI-register status dot — border matches the fill so it still reads as a coloured
+     ring when background graphics are off (see the .chip note above). */
+  .dot{width:7px; height:7px; border-radius:50%; display:inline-block; margin-left:6px; vertical-align:middle; border:1.5px solid transparent;}
+  .dot.green{background:var(--green); border-color:var(--green);}
+  .dot.amber{background:var(--amber); border-color:var(--amber);}
+  .dot.red{background:var(--red); border-color:var(--red);}
+  .dot.neu{background:var(--line); border-color:var(--line);}
   .note{font-size:10px; color:var(--mute); font-style:italic; margin-top:8px;}
 
   /* levers */
@@ -326,6 +371,7 @@ export function pageShell({ title, eyebrow, h1, scopeLine, body }) {
 <style>${STYLE}</style></head>
 <body>
   <div class="cover">
+    <img class="cover-art" src="${COVER_ART}" alt="">
     <div class="cover-top">
       <img src="${LOGO}" alt="CWSI">
       <div class="eyebrow">${esc(eyebrow)}</div>

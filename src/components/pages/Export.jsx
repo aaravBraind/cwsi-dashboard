@@ -3,14 +3,13 @@ import { useFilters } from '../../filters/FilterContext'
 import { REGIONS, QUARTER_PILLS } from '../../data/constants'
 import { I } from '../icons'
 
-// The export libraries (jsPDF, pptxgenjs) are heavy, so the exporter module is
-// loaded ON DEMAND — only when the user actually triggers a download — keeping
-// them out of the initial dashboard bundle.
+// The exporter module is loaded ON DEMAND — only when the user actually triggers an
+// export — keeping the report builders out of the initial dashboard bundle.
 
-// T-8 — Export. Each format button opens a small dialog that asks for the
-// region + quarter scope (defaulting to the current view), then generates a
-// one-click download: CSV (Blob), PDF (jsPDF), or PPTX (pptxgenjs). Every figure
-// is fetched fresh at the chosen scope, so the file is self-contained.
+// Export. Each format button opens a small dialog that asks for the region +
+// quarter scope (defaulting to the current view), then generates the file: the PDF
+// via the browser's print-to-PDF (printPdf.js), the deck via Gamma. Every figure is
+// fetched fresh at the chosen scope, so the file is self-contained.
 
 const REPORTS = [
   { id: 'kpi', title: 'Full KPI Register', sub: 'Every KPI · actual vs target · status', formats: ['PDF', 'PPTX'] },
@@ -18,9 +17,9 @@ const REPORTS = [
   { id: 'pipeline', title: 'Pipeline Report', sub: 'Funnel + by-channel breakdown', formats: ['PDF', 'PPTX'] },
 ]
 
-// Every report now offers the same two branded routes:
-//   PDF ('BRANDED' on the board, 'PDF' elsewhere) = artifact-matching HTML →
-//     headless-Chrome (Gotenberg) PDF via n8n.
+// Every report offers the same two branded routes:
+//   PDF ('BRANDED' on the board, 'PDF' elsewhere) = artifact-matching HTML rendered
+//     by the browser's own print engine — vector, selectable text, no server.
 //   PPTX = the attractive, editable Gamma deck via n8n (preserve-mode, figures kept
 //     verbatim). 'BRANDED' is surfaced simply as "PDF".
 const FORMAT_LABEL = { BRANDED: 'PDF' }
@@ -126,7 +125,7 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
 
           {report === 'board' && format === 'BRANDED' && (
             <div className="modal-note">
-              Renders the <strong>CWSI-branded board pack</strong> (matches the on-screen design) and downloads a PDF — figures, detail sections and the saved AI narrative. Generate the narrative on the Board Pack page first for this scope so it's included.
+              Renders the <strong>CWSI-branded board pack</strong> (matches the on-screen design) as a PDF — figures, detail sections and the saved AI narrative. Generate the narrative on the Board Pack page first for this scope so it's included.
             </div>
           )}
           {report === 'board' && format === 'PPTX' && (
@@ -142,6 +141,14 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
           {report !== 'board' && format === 'PPTX' && (
             <div className="modal-note">
               Renders an <strong>editable PowerPoint deck</strong> (.pptx) from the live figures — kept verbatim, never paraphrased. This can take a minute or two.
+            </div>
+          )}
+          {/* The PDF is produced by the browser's own print-to-PDF, so the user finishes
+              in the save dialog. Two settings there change the output, so say so up
+              front rather than letting a plain-looking file be a surprise. */}
+          {format !== 'PPTX' && (
+            <div className="modal-note">
+              Your browser's <strong>Save as PDF</strong> window will open. Choose <strong>Save as PDF</strong> as the destination, then under <strong>More settings</strong> tick <strong>Background graphics</strong> so the CWSI colours are included and untick <strong>Headers and footers</strong>. Your browser remembers these for next time.
             </div>
           )}
           {err && <div className="modal-err">{err}</div>}
