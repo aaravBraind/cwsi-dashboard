@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useAuth, displayName } from '../../auth/AuthContext'
+import { useDataFreshness } from '../../hooks/useDashboardData'
+import { num } from '../../data/format'
 
 // Account self-service: change display name and password. Rendered as a normal
 // dashboard page (inside the shell). Each form reports its own success/error.
@@ -113,6 +115,77 @@ export default function Settings() {
             </button>
           </form>
         </div>
+      </div>
+
+      <DataFreshness />
+    </div>
+  )
+}
+
+// "How current is this dashboard?" — per-source refresh status.
+//
+// Two dates, deliberately separate: LAST REFRESHED is when we last pulled the feed;
+// DATA UP TO is the most recent date the data itself covers. They are not the same —
+// a feed can refresh today and still only carry activity to last week — and showing
+// one alone would misrepresent how current the numbers are.
+function DataFreshness() {
+  const q = useDataFreshness()
+  const fmt = (ts) => {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    if (Number.isNaN(d.getTime())) return String(ts)
+    return d.toLocaleString(undefined, {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  }
+  const ago = (ts) => {
+    if (!ts) return null
+    const h = (Date.now() - new Date(ts).getTime()) / 36e5
+    if (!Number.isFinite(h)) return null
+    if (h < 1) return 'just now'
+    if (h < 24) return `${Math.round(h)}h ago`
+    return `${Math.round(h / 24)}d ago`
+  }
+
+  return (
+    <div className="panel settings-panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Data refresh</div>
+          <div className="panel-sub">
+            When each source last landed. <strong>Last refreshed</strong> is when we pulled the feed;{' '}
+            <strong>data up to</strong> is the most recent date that feed's data actually covers.
+          </div>
+        </div>
+      </div>
+      <div className="panel-body no-pad">
+        {q.isLoading && <p style={{ padding: 14, opacity: 0.7 }}>Checking…</p>}
+        {q.isError && <p style={{ padding: 14, opacity: 0.7 }}>Could not read refresh status.</p>}
+        {q.data?.hasData && (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Last refreshed</th>
+                <th>Data up to</th>
+                <th className="r">Rows</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.sources.map((s) => (
+                <tr key={s.source}>
+                  <td>{s.source}</td>
+                  <td className="mono mono-d">
+                    {fmt(s.lastRefreshed)}
+                    {ago(s.lastRefreshed) && <span style={{ opacity: 0.6 }}> · {ago(s.lastRefreshed)}</span>}
+                  </td>
+                  <td className="mono mono-d">{s.latestActivity || '—'}</td>
+                  <td className="r mono">{num(s.rows)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

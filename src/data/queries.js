@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient'
 import { themeForCampaign, THEME_ORDER, themeMeta } from './themes'
+import { isSalesGenerated } from './attribution'
 import {
   REPORTING_YEAR,
   HISTORY_START_YEAR,
@@ -173,6 +174,23 @@ function funnelOf(rows) {
     margin: naIfAllZero(rows, 'margin_value'), // influenced margin = gross profit EUR (GP value, else Amount × GP margin; blank → NULL, excluded)
     marginPendingDeals, // won deals with no gross profit yet (margin not counted)
     marginKnownDeals, // won deals whose margin is counted
+    // SALES-GENERATED SPLIT (Paul: "I'd see outreach as more sales-generated leads … we
+    // should exclude that"). Always computed, never deducted here — the headline figures
+    // above still include everything, and the UI shows this alongside them with a toggle,
+    // so nothing disappears silently before CWSI confirms the classification. Keyed on
+    // campaign TYPE, not name (Robin's warning) — see data/attribution.js.
+    salesGenerated: (() => {
+      const sg = rows.filter(isSalesGenerated)
+      if (!sg.length) return null
+      return {
+        pipeline: sum(sg, 'pipeline_value') + sum(sg, 'closed_won_value'),
+        closedWon: sum(sg, 'closed_won_value'),
+        margin: sum(sg.filter((r) => r.margin_value != null), 'margin_value'),
+        createdOpps: sum(sg, 'created_opp_count'),
+        campaigns: [...new Set(sg.map((r) => r.campaign_key).filter(Boolean))],
+        campaignNames: [...new Set(sg.map((r) => r.campaign_name).filter(Boolean))],
+      }
+    })(),
     spend: naIfAllZero(rows, 'spend'),
     impressions: naIfAllZero(rows, 'impressions'),
   }
@@ -220,6 +238,47 @@ function dominantRegion(rs) {
 // their rows for different tables.
 const contributedInPeriod = (c) =>
   c.mql > 0 || c.sql > 0 || c.createdOpps > 0 || (c.pipeline ?? c.oppValue ?? 0) > 0 || c.closedWon >= 1
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAMPAIGN-LEVEL ROWS — why they are computed over the WHOLE year, not the pill.
+//
+// A campaign is ONE thing, but its results are dated by the DEAL: an open
+// opportunity by its created date, a won one by its close date (see
+// METRIC_DEFINITIONS.md). So quarter-filtering a campaign's rows splits a single
+// campaign's opportunities across the pills and makes every campaign look smaller
+// than it does in Salesforce.
+//
+// That is exactly the reported under-count. The 22.04.2026 UK "Protect Data, Power
+// AI" event holds 10 opportunities worth €143k in Salesforce; one of them (€64,655,
+// 45% of the campaign's qualified pipeline) was created on 13 Jan, so with the Q2
+// pill selected the events list showed €50,232 instead of €114,887. Across 2026, 9
+// campaigns are split across quarters and €113,450 of €546,388 (21%) of open
+// pipeline was invisible whenever a single quarter was selected.
+//
+// So each row carries BOTH bases and nothing is silently redefined:
+//   • the row's own fields  → the campaign's whole-2026 contribution (what the
+//     per-campaign tables show, so they tie to the campaign in Salesforce);
+//   • row.period            → the same shape scoped to the selected quarter (what the
+//     page's KPI tiles keep using, so "current view" still means current view).
+// WHICH campaigns are listed is still driven by the selected period — a campaign must
+// have contributed something in that period to appear (the M3 rule, see
+// contributedInPeriod) — so the quarter pill keeps working as a filter.
+//
+// periodRows — rows inside the selected quarter/region (selection + M3 rule + tiles)
+// yearRows   — the same read with quarter: 'ytd' (the displayed campaign figures)
+// shape      — (campaignKey, rows) => the row object for the table
+// ─────────────────────────────────────────────────────────────────────────────
+function campaignRows(periodRows, yearRows, shape) {
+  const period = new Map(
+    [...groupBy(periodRows, 'campaign_key')].map(([key, rs]) => [key, shape(key, rs)]),
+  )
+  const byKey = new Map([...groupBy(yearRows, 'campaign_key')].map(([key, rs]) => [key, rs]))
+  return [...period]
+    .filter(([, p]) => contributedInPeriod(p))
+    // A campaign in the period is always in the year read too (ytd is the wider window),
+    // but fall back to its period rows rather than dropping it if that ever changes.
+    .map(([key, p]) => ({ ...shape(key, byKey.get(key) || []), period: p }))
+}
 
 // Presentation channel (Margot X8 / OV6 / BP5): Salesforce collapses all event
 // campaign types into ONE channel ("Events & Webinars"), but the client wants
@@ -732,34 +791,42 @@ export async function getEmailReport(filters = {}) {
   // region + quarter only — never the global channel/campaign/pillar (these campaigns
   // span the SEO + Email channels; the scoping is by campaign_type/name below).
   const scoped = { region: filters.region, quarter: filters.quarter }
-  const rows = (await fetchAll(
-    () => applyFilters(supabase.from('v_fact_enriched').select(FACT_COLS), scoped).in('campaign_type', EMAIL_INCLUDE_TYPES),
-    ['fact_id'],
-  )).filter(isEmailReportRow)
-  const campaigns = [...groupBy(rows, 'campaign_key')]
-    .map(([key, rs]) => {
-      const won = sum(rs, 'closed_won_count')
-      const sql = Math.max(sum(rs, 'sql_count'), won)
-      const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql) // MQL = campaign members (see getChannel)
-      return {
-        campaignKey: key,
-        campaignName: rs[0]?.campaign_name ?? key,
-        regionCode: dominantRegion(rs),
-        kind: rs[0]?.campaign_type === 'Content/White Paper' ? 'Whitepaper' : 'Workflow',
-        mql,
-        sql,
-        createdOpps: sum(rs, 'created_opp_count'),
-        oppValue: sum(rs, 'pipeline_value'),
-        closedWon: sum(rs, 'closed_won_value'),
-      }
-    })
-    // M3 (Margot 14.07): drop older campaigns that "still appear" with nothing behind
-    // them — e.g. "2024 UK Intune Workflow" and the 2025 whitepaper/lead-magnet
-    // campaigns, which carry zero 2026 downloads, SQLs, opps, pipeline and won. Same
-    // rule the events list uses; see contributedInPeriod(). Totals are unaffected —
-    // these campaigns contribute 0 to every metric by definition.
-    .filter(contributedInPeriod)
-    .sort((a, b) => b.mql - a.mql)
+  // audience_size / number_sent are campaign-level (dim_campaign), exposed on the view —
+  // "how many people were actually enrolled / sent this" (Paul, review call).
+  const emailRows = (f) =>
+    fetchAll(
+      () => applyFilters(
+        supabase.from('v_fact_enriched').select(`${FACT_COLS},audience_size,number_sent`),
+        f,
+      ).in('campaign_type', EMAIL_INCLUDE_TYPES),
+      ['fact_id'],
+    ).then((rs) => rs.filter(isEmailReportRow))
+  // Period rows drive the totals + which campaigns are listed (the M3 rule); the year
+  // rows give each campaign its whole-2026 figures, so an opportunity created in an
+  // earlier quarter is no longer dropped off its campaign. See campaignRows().
+  const [rows, yearRows] = await Promise.all([emailRows(scoped), emailRows({ ...scoped, quarter: 'ytd' })])
+
+  const campaigns = campaignRows(rows, yearRows, (key, rs) => {
+    const won = sum(rs, 'closed_won_count')
+    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql) // MQL = campaign members (see getChannel)
+    return {
+      campaignKey: key,
+      campaignName: rs[0]?.campaign_name ?? key,
+      regionCode: dominantRegion(rs),
+      kind: rs[0]?.campaign_type === 'Content/White Paper' ? 'Whitepaper' : 'Workflow',
+      mql,
+      sql,
+      createdOpps: sum(rs, 'created_opp_count'),
+      oppCount: sum(rs, 'opp_count'), // qualified opps (open or won) — Paul's "marry it up" column
+      // Audience = everyone enrolled in the campaign, responded or not (campaign-level, so
+      // read off any row rather than summed). NULL until the next Salesforce refresh fills it.
+      audience: rs.find((r) => r.audience_size != null)?.audience_size ?? NA,
+      numberSent: rs.find((r) => r.number_sent != null)?.number_sent ?? NA,
+      oppValue: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }
+  }).sort((a, b) => b.mql - a.mql)
   return {
     totals: funnelOf(rows),
     campaigns,
@@ -1122,39 +1189,35 @@ export async function getEventTypeFunnel(filters = {}) {
 // the MQL-rate bars. Region + quarter scoped. campaign_type is null until the SF
 // re-run (Level B) → those rows bucket as 'Untyped'.
 export async function getEventsDetail(filters = {}) {
-  const rows = await fetchAll(
-    () => applyFilters(
-      supabase
-        .from('v_fact_enriched')
-        .select('fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'),
-      { ...filters, channel: 'Events & Webinars' },
-    ),
-    ['fact_id'],
-  )
+  const sel =
+    'fact_id,campaign_key,campaign_name,campaign_type,leads,mql_count,sql_count,opp_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'
+  const scoped = { ...filters, channel: 'Events & Webinars' }
+  // ATTRIBUTION WINDOW FIX: a campaign's row shows its WHOLE-2026 contribution, not
+  // just the slice that fell inside the selected quarter. See campaignRows().
+  const [rows, yearRows] = await Promise.all([
+    fetchAll(() => applyFilters(supabase.from('v_fact_enriched').select(sel), scoped), ['fact_id']),
+    fetchAll(() => applyFilters(supabase.from('v_fact_enriched').select(sel), { ...scoped, quarter: 'ytd' }), ['fact_id']),
+  ])
 
-  const campaigns = [...groupBy(rows, 'campaign_key')]
-    .map(([key, rs]) => {
-      // MQL = event registrants / campaign responders (Margot 14.07: "all registered
-      // attendees count as MQLs"), floored ≥ SQL — consistent with funnelOf.
-      const won = sum(rs, 'closed_won_count')
-      const sql = Math.max(sum(rs, 'sql_count'), won)
-      const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
-      return {
-        campaignKey: key,
-        campaignName: rs[0]?.campaign_name || key || 'Unattributed',
-        campaignType: rs[0]?.campaign_type || null,
-        regionCode: dominantRegion(rs),
-        mql,
-        sql,
-        createdOpps: sum(rs, 'created_opp_count'),
-        pipeline: sum(rs, 'pipeline_value'),
-        closedWon: sum(rs, 'closed_won_value'),
-      }
-    })
-    // V2 (Margot 14.07): drop older events that "still appear" but contribute NOTHING
-    // to the period. See contributedInPeriod().
-    .filter(contributedInPeriod)
-    .sort((a, b) => b.pipeline - a.pipeline)
+  const campaigns = campaignRows(rows, yearRows, (key, rs) => {
+    // MQL = event registrants / campaign responders (Margot 14.07: "all registered
+    // attendees count as MQLs"), floored ≥ SQL — consistent with funnelOf.
+    const won = sum(rs, 'closed_won_count')
+    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
+    return {
+      campaignKey: key,
+      campaignName: rs[0]?.campaign_name || key || 'Unattributed',
+      campaignType: rs[0]?.campaign_type || null,
+      regionCode: dominantRegion(rs),
+      mql,
+      sql,
+      createdOpps: sum(rs, 'created_opp_count'),
+      oppCount: sum(rs, 'opp_count'), // qualified opps (open or won) — Paul's "marry it up" column
+      pipeline: sum(rs, 'pipeline_value'),
+      closedWon: sum(rs, 'closed_won_value'),
+    }
+  }).sort((a, b) => b.pipeline - a.pipeline)
 
   const types = [...new Set(rows.map((r) => r.campaign_type).filter(Boolean))].sort()
 
@@ -1222,7 +1285,7 @@ export async function getCampaignThemes(filters = {}) {
       () => applyFilters(
         supabase
           .from('v_fact_enriched')
-          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,campaign_start_date,mql_count,sql_count,leads,pipeline_value,closed_won_value,closed_won_count'),
+          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,campaign_start_date,mql_count,sql_count,leads,opp_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'),
         { ...filters, quarter: 'ytd' },
       ),
       ['fact_id'],
@@ -1252,6 +1315,8 @@ export async function getCampaignThemes(filters = {}) {
       regionCode: dominantRegion(rs),
       mql,
       sql,
+      createdOpps: sum(rs, 'created_opp_count'),
+      oppCount: sum(rs, 'opp_count'), // qualified opps (open or won) — Paul's "marry it up" column
       pipeline: sum(rs, 'pipeline_value'),
       closedWon: sum(rs, 'closed_won_value'),
       wonCount: won,
@@ -1279,11 +1344,13 @@ export async function getCampaignThemes(filters = {}) {
       (a, c) => ({
         mql: a.mql + c.mql,
         sql: a.sql + c.sql,
+        createdOpps: a.createdOpps + c.createdOpps,
+        oppCount: a.oppCount + c.oppCount,
         pipeline: a.pipeline + c.pipeline,
         closedWon: a.closedWon + c.closedWon,
         wonCount: a.wonCount + c.wonCount,
       }),
-      { mql: 0, sql: 0, pipeline: 0, closedWon: 0, wonCount: 0 },
+      { mql: 0, sql: 0, createdOpps: 0, oppCount: 0, pipeline: 0, closedWon: 0, wonCount: 0 },
     )
     return { ...themeMeta(k), campaigns: cs, totals, activityCount: cs.length }
   })
@@ -1379,6 +1446,40 @@ export async function getOutreach(filters = {}) {
     meetings: NA, // pending Outreach meetings feed (Outreach.io meetings counter reads 0 — not yet syncing)
   }
 
+  // ── The SECOND reply-rate basis, so "8.8% looks low" can be answered on the card.
+  //
+  // The headline rate above is PER PERSON: replies ÷ prospects in cadence. Outreach.io's own
+  // reporting is usually read PER EMAIL: replies ÷ emails delivered. The same programme reads
+  // very differently on the two (people ≈ 9%, emails ≈ 1%) because a multi-step cadence sends
+  // several emails to each prospect — neither is wrong, they answer different questions. We
+  // show both rather than let the client compare our number to a differently-based one in
+  // Outreach.io and conclude the dashboard is broken.
+  //
+  // Scoped to the SAME sequences as the rows above (marketing workstreams / workstream filter),
+  // which the standalone step read does not do.
+  const seqIds = rows.map((r) => r.sequence_id).filter(Boolean)
+  let emailBasis = null
+  if (seqIds.length) {
+    const stepRows = await fetchAll(
+      () => supabase
+        .from('v_outreach_step_current')
+        .select('id,sequence_id,step_type,delivered,opens,clicks,replies,bounces,opt_outs')
+        .in('sequence_id', seqIds),
+      ['id'],
+    )
+    const emailRows = stepRows.filter((r) => isEmailStep(r.step_type))
+    const delivered = sum(emailRows, 'delivered')
+    emailBasis = {
+      delivered,
+      opens: sum(emailRows, 'opens'),
+      replies: sum(emailRows, 'replies'),
+      bounces: sum(emailRows, 'bounces'),
+      optOuts: sum(emailRows, 'opt_outs'),
+      openRate: delivered ? sum(emailRows, 'opens') / delivered : NA,
+      replyRate: delivered ? sum(emailRows, 'replies') / delivered : NA,
+    }
+  }
+
   // Pillar coverage — how much of the snapshot has no practice area mapped.
   // null pillar is bucketed as "Others" and its magnitude is surfaced.
   const nullPillarRows = rows.filter((r) => r.pillar_name == null)
@@ -1455,6 +1556,7 @@ export async function getOutreach(filters = {}) {
   return {
     snapshotDate,
     kpis,
+    emailBasis, // replies/opens per EMAIL DELIVERED — the basis Outreach.io's own reports use
     funnel: { prospects, opens: kpis.opens, clicks: kpis.clicks, replies: kpis.replies },
     groups,
     workstreams,
@@ -1915,4 +2017,31 @@ export async function getMarketingSpend(filters = {}) {
     byAudience: agg('primary_audience'),
     hasData: rows.length > 0,
   }
+}
+
+// ---- Data freshness ("when was this last refreshed?") ---------------------
+// One row per source feed, from v_data_freshness. Two different dates, kept
+// distinct because they answer different questions:
+//   • lastRefreshed  — when our ingestion last wrote to that table
+//   • latestActivity — the most recent date the DATA ITSELF covers
+// A feed can be refreshed today and still only carry data to last week, so
+// showing only one of the two would mislead. Reads as a plain snapshot — no
+// region/quarter scoping, because freshness is a property of the pipeline.
+export async function getDataFreshness() {
+  const { data, error } = await supabase
+    .from('v_data_freshness')
+    .select('source,sort_order,last_refreshed,latest_activity,rows')
+    .order('sort_order', { ascending: true })
+  if (error) throw error
+  const sources = (data || []).map((r) => ({
+    source: r.source,
+    lastRefreshed: r.last_refreshed,
+    latestActivity: r.latest_activity,
+    rows: Number(r.rows) || 0,
+  }))
+  const newest = sources.reduce(
+    (mx, s) => (s.lastRefreshed && (!mx || s.lastRefreshed > mx) ? s.lastRefreshed : mx),
+    null,
+  )
+  return { sources, lastRefreshed: newest, hasData: sources.length > 0 }
 }

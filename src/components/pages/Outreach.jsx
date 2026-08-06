@@ -75,10 +75,34 @@ export default function Outreach() {
 const MEETINGS_TARGET = 100 // Paul's Q2 outbound-generated meetings target (24 Apr call)
 
 function Body({ data, meetings }) {
-  const { kpis, funnel, workstreams, seqCounts, marketingOnly } = data
+  const { kpis, funnel, workstreams, seqCounts, marketingOnly, snapshotDate } = data
+  const eb = data.emailBasis // replies/opens per email delivered — Outreach.io's own basis
   const outbound = meetings?.tiers?.outbound ?? null
   return (
     <>
+      {/* Scope + basis, stated where the questioned figures are read. The prospect and
+          reply-rate counters are ALL-TIME per-sequence counters (the quarter pill does not
+          change them), cover the 3 marketing workstreams only, and the reply rate is per
+          PERSON — Outreach.io's own reporting is usually per EMAIL, which reads far lower. */}
+      <div className="callout" style={{ marginBottom: 14 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
+          <strong>Reading these four figures.</strong> They are <strong>all-time</strong> running counters from
+          Outreach.io{snapshotDate ? <> as at <strong>{snapshotDate}</strong></> : null} — <strong>the quarter pill
+          does not change them</strong>, because Outreach.io gives us per-sequence totals rather than dated activity.
+          They cover the <strong>three marketing workstreams only</strong>
+          {seqCounts ? <> ({num(seqCounts.marketing)} of {num(seqCounts.total)} sequences in the account)</> : null}, so
+          they are deliberately far smaller than the whole Outreach.io account — the sales and one-off account
+          sequences are excluded on purpose. <strong>Reply rate is per person</strong> (replies ÷ prospects);
+          Outreach.io's own reports are usually <strong>per email sent</strong>
+          {eb && eb.delivered > 0 ? <> — {ratePct(eb.replyRate)} on that basis</> : null}, which is always lower
+          because a cadence sends several emails to each prospect. Both are shown on the card.{' '}
+          <Explain id="outreachReplyRate" />
+        </div>
+      </div>
+
       {/* 4 KPI cards (mockup order: sequences, prospects, reply rate, meetings) */}
       <div className="kpis cols-4">
         <div className="kpi">
@@ -88,7 +112,7 @@ function Body({ data, meetings }) {
           </div>
           <div className="kpi-label">Active sequences</div>
           <div className="kpi-val">{num(kpis.activeSequences)}</div>
-          <div className="kpi-sub"><span className="kpi-target">{num(kpis.totalSequences)} total</span></div>
+          <div className="kpi-sub"><span className="kpi-target">{num(kpis.totalSequences)} total · all-time</span></div>
         </div>
         <div className="kpi">
           <div className="kpi-head">
@@ -96,7 +120,12 @@ function Body({ data, meetings }) {
           </div>
           <div className="kpi-label">Prospects in cadence <Explain id="outreachProspects" /></div>
           <div className="kpi-val">{num(kpis.prospects)}</div>
-          <div className="kpi-sub"><span className="kpi-target">unique prospects</span></div>
+          <div className="kpi-sub">
+            <span className="kpi-target">
+              unique prospects · <strong>all-time</strong>, not this quarter
+              {snapshotDate ? ` · as at ${snapshotDate}` : ''}
+            </span>
+          </div>
         </div>
         <div className="kpi">
           <div className="kpi-head">
@@ -107,7 +136,17 @@ function Body({ data, meetings }) {
           </div>
           <div className="kpi-label">Reply rate <Explain id="outreachReplyRate" /></div>
           <div className="kpi-val">{ratePct(kpis.replyRate)}</div>
-          <div className="kpi-sub"><span className="kpi-target">{num(kpis.replies)} replies</span></div>
+          <div className="kpi-sub">
+            <span className="kpi-target">
+              {num(kpis.replies)} replies ÷ {num(kpis.prospects)} people · <strong>all-time</strong>
+            </span>
+            {eb && eb.delivered > 0 && (
+              <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
+                {ratePct(eb.replyRate)} per email sent ({num(eb.replies)} ÷ {num(eb.delivered)} delivered) — the basis
+                Outreach.io reports on
+              </span>
+            )}
+          </div>
         </div>
         <div className="kpi">
           <div className="kpi-head">

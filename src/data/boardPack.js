@@ -145,13 +145,13 @@ export async function getBoardPack(filters = {}) {
       note: real(closedWonCount) ? null : 'pending Salesforce data refresh',
     },
     {
-      key: 'pipeline', order: 6, label: 'Influenced Pipeline', unit: 'gbp',
+      key: 'pipeline', order: 6, label: 'Influenced Pipeline (revenue)', unit: 'gbp',
       value: pipeline, valueDisplay: real(pipeline) ? eur(pipeline) : 'n/a',
       target: TGT.pipeline, targetDisplay: `FY ${eur(TGT.pipeline)}`,
       trace: 'Σ v_fact_enriched.pipeline_value + Σ closed_won_value (generated = open + won, scoped)',
     },
     {
-      key: 'margin', order: 7, label: 'Influenced Margin', unit: 'gbp',
+      key: 'margin', order: 7, label: 'Influenced Margin (gross profit)', unit: 'gbp',
       value: margin, valueDisplay: real(margin) ? eur(margin) : 'n/a',
       target: TGT.margin, targetDisplay: `FY ${eur(TGT.margin)}`,
       trace: 'Σ v_fact_enriched.margin_value (gross profit in EUR — Salesforce Gross_Profit_Value__c, else Amount × Gross_Profit_Margin__c; scoped; blank/invalid → NULL, excluded — never counted as full revenue)',

@@ -5,6 +5,7 @@ import { useCampaignThemes, useCampaignOverrides, useUpdateCampaignOverride } fr
 import { num, eur } from '../../data/format'
 import { THEME_ORDER, themeMeta } from '../../data/themes'
 import Explain from '../Explain'
+import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
 
 // Campaigns — the campaign-level / quarterly-theme view Margot asked for (X4/G3).
@@ -58,6 +59,25 @@ export default function Campaigns() {
         </div>
       </div>
 
+      {/* Locked definition: which date keys what. A campaign is placed by when it STARTED
+          (name date, else Salesforce Start Date) — its end/close date is never used — while
+          the money against it is dated by the DEAL (open = created date, won = close date).
+          See docs/METRIC_DEFINITIONS.md. */}
+      <div className="callout" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
+          <strong>Which date keys what.</strong> A campaign is placed in a quarter by when it{' '}
+          <strong>started</strong> — the date in its name, otherwise its Salesforce Start Date. A campaign's{' '}
+          <strong>end / close date is never used</strong>. The money against it is dated by the{' '}
+          <strong>deal</strong> instead: an open opportunity counts in the quarter it was created, a won one in the
+          quarter it closed. So a Q1 activity can still be showing revenue in Q2 — and in 2026 to date most of the
+          revenue landing in a quarter comes from campaigns that started earlier. Rows are ordered by contribution,
+          not by date. <Explain id="campaignDating" />
+        </div>
+      </div>
+
       {q.isLoading && <Loading label="Loading campaign themes…" />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState message="No campaigns for this region / quarter yet." />}
@@ -72,6 +92,9 @@ function ThemeCard({ theme, ov }) {
   const [open, setOpen] = useState(theme.key !== 'other') // named themes open; Other collapsed
   const upd = useUpdateCampaignOverride()
   const t = theme.totals
+  // Robin: order by contribution, not recency — every column is sortable, defaulting to
+  // biggest open pipeline first (the order the rows already arrived in).
+  const { rows: activities, sortProps } = useSortable(theme.campaigns, 'pipeline')
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
@@ -89,9 +112,10 @@ function ThemeCard({ theme, ov }) {
 
       {/* Theme "as a whole" rollup */}
       <div className="panel-body">
-        <div className="kpis cols-3">
+        <div className="kpis cols-4">
           <Kpi label="MQLs" val={num(t.mql)} explainId="mql" />
           <Kpi label="SQLs" val={num(t.sql)} explainId="sql" />
+          <Kpi label="Opportunities" val={num(t.createdOpps)} sub={`${num(t.oppCount)} qualified (open or won)`} explainId="createdOpps" />
           <Kpi label="Open Pipeline €" val={eur(t.pipeline)} sub={`${eur(t.closedWon)} closed-won`} explainId="pipeline" />
         </div>
       </div>
@@ -102,18 +126,20 @@ function ThemeCard({ theme, ov }) {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Activity</th>
-                <th>Region</th>
-                <th>Type</th>
-                <th className="r">MQL<Explain id="mql" /></th>
-                <th className="r">SQL<Explain id="sql" /></th>
-                <th className="r">Open Pipeline €<Explain id="pipeline" /></th>
-                <th className="r">Closed-Won €<Explain id="closedWon" /></th>
+                <SortTh {...sortProps('campaignName', 'text')}>Activity</SortTh>
+                <SortTh {...sortProps('regionCode', 'text')}>Region</SortTh>
+                <SortTh {...sortProps('campaignType', 'text')}>Type</SortTh>
+                <SortTh {...sortProps('mql')} className="r">MQL<Explain id="mql" /></SortTh>
+                <SortTh {...sortProps('sql')} className="r">SQL<Explain id="sql" /></SortTh>
+                <SortTh {...sortProps('createdOpps')} className="r">Opps<Explain id="createdOpps" /></SortTh>
+                <SortTh {...sortProps('oppCount')} className="r">Qualified<Explain id="opportunities" /></SortTh>
+                <SortTh {...sortProps('pipeline')} className="r">Open Pipeline €<Explain id="pipeline" /></SortTh>
+                <SortTh {...sortProps('closedWon')} className="r">Closed-Won €<Explain id="closedWon" /></SortTh>
                 <th>Theme</th>
               </tr>
             </thead>
             <tbody>
-              {theme.campaigns.map((c) => (
+              {activities.map((c) => (
                 <tr key={c.campaignKey}>
                   <td>
                     <EditableName
@@ -133,6 +159,8 @@ function ThemeCard({ theme, ov }) {
                   <td><span style={{ opacity: 0.6 }}>{c.campaignType || '—'}</span></td>
                   <td className="r">{num(c.mql)}</td>
                   <td className="r">{num(c.sql)}</td>
+                  <td className="r">{num(c.createdOpps)}</td>
+                  <td className="r">{num(c.oppCount)}</td>
                   <td className="r">{eur(c.pipeline)}</td>
                   <td className="r">{eur(c.closedWon)}</td>
                   <td>

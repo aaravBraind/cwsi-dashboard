@@ -85,8 +85,8 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
     ['SQLs', real(f.sql, num)],
     ['Qualified Opportunities', real(f.opp, num)],
     ['Closed-won (count)', real(f.closedWonCount, num)],
-    ['Influenced pipeline', real(f.pipeline, eur)],
-    ['Closed-won value', real(f.closedWon, eur)],
+    ['Influenced pipeline (revenue)', real(f.pipeline, eur)],
+    ['Closed-won value (revenue)', real(f.closedWon, eur)],
   ]
   const statCards = stats
     .map(([l, v]) => `<div class="stat"><div class="slabel">${esc(l)}</div><div class="sval${v === '—' ? ' na' : ''}">${esc(v)}</div></div>`)

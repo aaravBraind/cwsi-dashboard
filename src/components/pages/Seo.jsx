@@ -103,12 +103,12 @@ function WebsiteLeadsBody() {
       </div>
       <div className="kpis cols-3" style={{ marginTop: 12 }}>
         <Kpi label="New Pipeline Created · current view" val={isNA(f.createdOppsValue) ? '—' : eur(f.createdOppsValue)} explainId="createdOppsValue" />
-        <Kpi label="Influenced Pipeline · current view" val={eur(f.pipeline)} explainId="pipeline" />
+        <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(f.pipeline)} explainId="pipeline" />
         <Kpi label="Closed-Won · current view" val={eur(f.closedWon)} explainId="closedWon" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
         From the <strong>Website Leads</strong> Salesforce campaigns{q.data.campaigns.length ? ` (${q.data.campaigns.length}: ${q.data.campaigns.join(', ')})` : ''} — the accurate website source, not the whole Organic SEO channel.
-        <strong> New Pipeline Created</strong> = value of opportunities created this period; <strong>Influenced Pipeline</strong> = open + won opportunity value.
+        <strong> New Pipeline Created</strong> = revenue value of opportunities created this period; <strong>Influenced Pipeline</strong> = open + won opportunity revenue value (deal value, not gross margin).
       </p>
     </>
   )
@@ -265,7 +265,7 @@ function FunnelBody() {
         <Kpi label="MQLs · current view" val={num(t.mql)} explainId="mql" />
         <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
         <Kpi label="Created Opps · current view" val={isNA(t.createdOpps) ? '—' : num(t.createdOpps)} explainId="createdOpps" />
-        <Kpi label="Influenced Pipeline · current view" val={eur(t.pipeline)} explainId="pipeline" />
+        <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(t.pipeline)} explainId="pipeline" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
         <strong>Context only — the wider Organic SEO channel</strong> (every SF opportunity attributed to Organic SEO), a

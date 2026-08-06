@@ -44,9 +44,18 @@ function Body({ data }) {
           duplication (P1) and adopts the agreed metric set (P2). */}
       <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
-        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="open + won" explainId="pipeline" />
-        <Cell label="Closed-Won" val={eur(funnel.closedWon)} meta="won · by close date" explainId="closedWon" />
+        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="revenue · open + won" explainId="pipeline" />
+        <Cell label="Closed-Won" val={eur(funnel.closedWon)} meta="revenue · won · by close date" explainId="closedWon" />
       </div>
+
+      {/* Locked definitions (see docs/METRIC_DEFINITIONS.md): all three € figures are REVENUE
+          (deal value, not gross margin — gross profit is the separate Influenced Margin on the
+          Overview), and each is dated by the DEAL: open by created date, won by close date. */}
+      <p className="panel-note" style={{ padding: '6px 4px 12px', fontSize: 12, opacity: 0.7 }}>
+        All three figures are <strong>revenue</strong> (deal value, not gross margin — gross profit is the separate
+        Influenced Margin on the Overview), and each is dated by the <strong>deal</strong>: an open opportunity counts
+        in the quarter it was created, a won one in the quarter it closed. <Explain id="campaignDating" />
+      </p>
 
       {/* Lead Journey — count funnel, stage progression only (mirrors Overview exactly). */}
       <div className="panel">
@@ -113,7 +122,7 @@ function Body({ data }) {
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
                 <th className="r">Created Opps <Explain id="createdOpps" /></th>
-                <th className="r">Influenced Pipeline € <Explain id="pipeline" /></th>
+                <th className="r">Influenced Pipeline € (revenue) <Explain id="pipeline" /></th>
                 <th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
             </thead>

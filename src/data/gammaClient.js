@@ -230,8 +230,8 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
         ['SQLs', real(f.sql, num)],
         ['Qualified Opportunities (open + won)', real(f.opp, num)],
         ['Closed-won (count)', real(f.closedWonCount, num)],
-        ['Influenced pipeline', real(f.pipeline, eur)],
-        ['Closed-won value', real(f.closedWon, eur)],
+        ['Influenced pipeline (revenue)', real(f.pipeline, eur)],
+        ['Closed-won value (revenue)', real(f.closedWon, eur)],
       ],
     )}`,
   )

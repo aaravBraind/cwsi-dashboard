@@ -49,18 +49,18 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     has(f.closedWonCount)
       ? { t: 'live', label: 'Closed-won opportunities', val: num(f.closedWonCount), ctx: 'won deals', key: 'closedWonCount', num: f.closedWonCount }
       : { t: 'na', label: 'Closed-won opportunities', ctx: 'closed-won count arrives at the next data refresh', key: 'closedWonCount' },
-    { t: 'live', label: 'Influenced pipeline', val: eur(f.pipeline), ctx: 'generated (open + closed-won) opp value', key: 'influencedPipeline', num: f.pipeline },
-    { t: 'live', label: 'Closed-won value', val: eur(f.closedWon), ctx: 'won value', key: 'closedWonValue', num: f.closedWon },
+    { t: 'live', label: 'Influenced pipeline (revenue)', val: eur(f.pipeline), ctx: 'generated (open + closed-won) opp value — revenue basis, not gross margin', key: 'influencedPipeline', num: f.pipeline },
+    { t: 'live', label: 'Closed-won value (revenue)', val: eur(f.closedWon), ctx: 'won deal value — revenue basis, by close date', key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
       ? {
-          t: 'live', label: 'Influenced margin',
+          t: 'live', label: 'Influenced margin (gross profit)',
           val: eur(f.margin),
           ctx: f.marginPendingDeals > 0
             ? `gross profit (EUR) · ${num(f.marginKnownDeals)}/${num(f.marginKnownDeals + f.marginPendingDeals)} won deals have gross profit (rest pending in Salesforce)`
             : 'gross profit (EUR)',
           key: 'influencedMargin', num: f.margin,
         }
-      : { t: 'na', label: 'Influenced margin', ctx: 'Gross Profit blank on all won deals in scope — pending in Salesforce (not shown as revenue)', key: 'influencedMargin' },
+      : { t: 'na', label: 'Influenced margin (gross profit)', ctx: 'Gross Profit blank on all won deals in scope — pending in Salesforce (not shown as revenue)', key: 'influencedMargin' },
     { t: 'na', label: 'Cost per lead (blended)', ctx: 'per-channel spend pending (the combined per-channel spend sheet)', key: 'costPerLead' },
     { t: 'na', label: 'Return on spend (blended)', ctx: 'mixed currency; per-channel spend pending', key: 'returnOnSpend' },
 

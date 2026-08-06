@@ -443,6 +443,24 @@ body::before{
 }
 .tbl th.r{text-align:right;}
 .tbl th.c{text-align:center;}
+
+/* Click-to-sort headers (see components/SortableTable.jsx). The button inherits the
+   header's type so a sortable column is visually identical to a static one until
+   hovered — the caret is the only affordance, and it holds its own column width so
+   toggling direction never shifts the layout. */
+.tbl th.sort-th{padding:0;}
+.tbl th.sort-th .sort-btn{
+  display:flex;align-items:center;gap:6px;width:100%;
+  padding:11px 14px;background:none;border:0;cursor:pointer;
+  font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;
+  text-align:inherit;
+}
+.tbl th.sort-th.r .sort-btn{justify-content:flex-end;}
+.tbl th.sort-th .sort-btn:hover{color:var(--text);background:rgba(255,255,255,0.03);}
+.tbl th.sort-th .sort-btn:focus-visible{outline:2px solid var(--cwsi-blue);outline-offset:-2px;}
+.tbl th.sort-th.is-sorted .sort-btn{color:var(--text);}
+.tbl th.sort-th .sort-caret{font-size:9px;opacity:0.35;min-width:8px;}
+.tbl th.sort-th.is-sorted .sort-caret{opacity:0.9;}
 .tbl td{
   padding:13px 14px;font-size:13px;
   border-bottom:1px solid rgba(255,255,255,0.04);vertical-align:middle;

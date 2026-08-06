@@ -157,7 +157,7 @@ function LinkedInSnapshot() {
           </div>
           <div className="kpis cols-3" style={{ marginTop: 14, marginBottom: 0 }}>
             <RoiKpi
-              label="ROI · influenced pipeline"
+              label="ROI · influenced pipeline (revenue)"
               explainId="linkedinRoi"
               val={roiStr(eff?.roiPipeline)}
               sub={isNA(eff?.pipeline) ? 'attribution pending' : `${eur(eff.pipeline)} pipeline ÷ ${eur(totals.spend)} spend`}
@@ -304,7 +304,7 @@ function Body({ data, isLinkedIn, isEmail }) {
         // (campaign-member inflation), so LinkedIn shows commercial OUTCOMES only.
         <div className="kpis cols-3">
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(totals.pipeline)} explainId="pipeline" />
           <Kpi label="Closed-Won € · current view" val={eur(totals.closedWon)} explainId="closedWon" />
         </div>
       ) : (
@@ -312,7 +312,7 @@ function Body({ data, isLinkedIn, isEmail }) {
           <Kpi label="MQLs · current view" val={num(totals.mql)} explainId="mql" />
           <Kpi label="SQLs · current view" val={num(totals.sql)} explainId="sql" />
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(totals.pipeline)} explainId="pipeline" />
         </div>
       )}
 

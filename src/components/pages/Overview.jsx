@@ -1,5 +1,6 @@
 import QuarterPills from '../QuarterPills'
 import { LoadingSkeleton, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
+import { useState } from 'react'
 import { useOverview, useKpiTargets, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num, pct, ratio, isNA } from '../../data/format'
@@ -7,6 +8,7 @@ import { periodOf, scopeLabel, achievement, lightOf, targetAt, fmtTarget } from 
 import { I } from '../icons'
 import Explain from '../Explain'
 import MarketingBudget from '../MarketingBudget'
+import { SALES_EXCLUDED_BY_DEFAULT, SALES_CAMPAIGN_LABELS } from '../../data/attribution'
 
 // Status lights + %-of-target follow the ACTIVE quarter pill (Q1..Q4 → that
 // quarter's target; YTD → FY), reading the EDITABLE kpi_targets DB table — so a
@@ -42,7 +44,23 @@ export default function Overview() {
 }
 
 function Body({ data }) {
-  const { funnel, byChannel } = data
+  const { funnel: rawFunnel, byChannel } = data
+  // Sales/partner-generated campaigns (Paul: "I'd see outreach as more sales-generated
+  // leads … we should exclude that"). The split is always computed; this toggle decides
+  // whether the two headline money figures show marketing-only or everything. Default is
+  // EVERYTHING — the numbers do not move until CWSI confirms the classification, and the
+  // excluded amount is always visible either way. See data/attribution.js.
+  const sg = rawFunnel.salesGenerated
+  const [excludeSales, setExcludeSales] = useState(SALES_EXCLUDED_BY_DEFAULT)
+  const applySplit = excludeSales && sg
+  const funnel = applySplit
+    ? {
+        ...rawFunnel,
+        pipeline: rawFunnel.pipeline - sg.pipeline,
+        closedWon: rawFunnel.closedWon - sg.closedWon,
+        margin: isNA(rawFunnel.margin) ? rawFunnel.margin : rawFunnel.margin - sg.margin,
+      }
+    : rawFunnel
   const { filters } = useFilters()
   const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
@@ -95,7 +113,7 @@ function Body({ data }) {
               <span className="tl-dot" />{pctOf(funnel.pipeline, 'influencedPipeline')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Pipeline · current view <Explain id="pipeline" /></div>
+          <div className="kpi-label">Influenced Pipeline (revenue) · current view <Explain id="pipeline" /></div>
           <div className="kpi-val">{eur(funnel.pipeline)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">{tgtSub('influencedPipeline')}</span>
@@ -109,7 +127,7 @@ function Body({ data }) {
               <span className="tl-dot" />{isNA(funnel.margin) ? 'n/a' : pctOf(funnel.margin, 'influencedMargin')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Margin · current view <Explain id="margin" /></div>
+          <div className="kpi-label">Influenced Margin (gross profit) · current view <Explain id="margin" /></div>
           <div className="kpi-val">{isNA(funnel.margin) ? '—' : eur(funnel.margin)}</div>
           <div className="kpi-sub">
             {isNA(funnel.margin) ? (
@@ -128,6 +146,62 @@ function Body({ data }) {
               </>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Sales/partner-generated split — Paul asked for outreach-style, sales-generated
+          activity to be kept out of marketing influence, and Robin warned the filter must
+          key on campaign TYPE, not name. Salesforce has no sales type yet, so the current
+          classification is a short evidenced list of individual campaigns (attribution.js).
+          Shown as a separate row with a toggle, never deducted silently. */}
+      {sg && (
+        <div className="callout amber" style={{ marginBottom: 18 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>Sales-generated activity inside these figures.</strong>{' '}
+            <strong>{eur(sg.pipeline)}</strong> of influenced pipeline and{' '}
+            <strong>{eur(sg.closedWon)}</strong> of closed-won above{' '}
+            {applySplit ? 'has been excluded' : 'comes'} from campaigns that look sales- or
+            partner-generated rather than marketing-generated
+            {sg.campaigns.length > 0 && (
+              <> — {sg.campaigns.map((k) => SALES_CAMPAIGN_LABELS[k] || k).join(', ')}</>
+            )}
+            . Toggle it to see either view:
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+              <input type="checkbox" checked={excludeSales} onChange={(e) => setExcludeSales(e.target.checked)} />
+              <span>Exclude sales-generated campaigns</span>
+            </label>
+            <br />
+            <span style={{ opacity: 0.75 }}>
+              Pending with CWSI: Salesforce has no “sales” campaign type yet, so this is a short,
+              individually-evidenced list rather than a rule. Once a type exists the filter keys off
+              it — names are not used, because campaigns are also used to group contacts for
+              sequences and would be misread.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Locked definition: the basis of the two headline money figures. Influenced Pipeline
+          is REVENUE (Opportunity.Amount); Influenced Margin is GROSS PROFIT. CWSI tracks
+          company pipeline on a gross-margin basis, so the two are not directly divisible —
+          spelled out here because it was the first question asked of these numbers.
+          See docs/METRIC_DEFINITIONS.md. */}
+      <div className="callout" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
+          <strong>Which basis these two are on.</strong> <strong>Influenced Pipeline is revenue</strong> — the full
+          deal value of the qualified opportunities marketing touched. <strong>Influenced Margin is gross
+          profit</strong> — the profit on the won ones. Because CWSI tracks company-wide pipeline on a{' '}
+          <em>gross-margin</em> basis, dividing Influenced Pipeline into that number is not like-for-like; compare
+          Influenced Margin against the closed-won gross-margin figure instead. Note that gross profit depends on
+          deal type: for CWSI's own services revenue and margin are set equal in Salesforce, so the two figures sit
+          close together today — the gap widens as more resold product enters the mix.{' '}
+          <Explain id="pipeline" /> <Explain id="margin" />
         </div>
       </div>
 

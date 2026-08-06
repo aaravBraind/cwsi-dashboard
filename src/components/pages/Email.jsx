@@ -2,8 +2,9 @@ import { useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
 import { useEmailReport, useCampaignOverrides } from '../../hooks/useDashboardData'
-import { eur, num, isNA } from '../../data/format'
+import { eur, num, isNA, NA } from '../../data/format'
 import Explain from '../Explain'
+import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
 
 // Email page — Margot's whitepaper-download + Salesforce-workflow campaigns
@@ -64,10 +65,19 @@ const opps = (v) => (isNA(v) ? '—' : num(v))
 
 // Funnel totals = sum of the per-campaign figures (so the funnel matches the filter and
 // the panel always equals the table's Total row). MQL is the campaign-members figure.
+// Those per-campaign figures are each campaign's FULL-2026 contribution — see
+// campaignRows() in queries.js: dating an opportunity by the quarter it was created in
+// used to drop it off its own campaign, which under-reported campaigns materially.
 const sumTotals = (rows) => ({
+  // Audience is campaign-level and NULL until the next Salesforce refresh, so the total is the
+  // sum of the campaigns that HAVE it, and reads "—" while none of them do.
+  audience: rows.some((c) => !isNA(c.audience))
+    ? rows.reduce((a, c) => a + (isNA(c.audience) ? 0 : Number(c.audience) || 0), 0)
+    : NA,
   mql: rows.reduce((a, c) => a + (Number(c.mql) || 0), 0),
   sql: rows.reduce((a, c) => a + (Number(c.sql) || 0), 0),
   createdOpps: rows.reduce((a, c) => a + (Number(c.createdOpps) || 0), 0),
+  oppCount: rows.reduce((a, c) => a + (Number(c.oppCount) || 0), 0),
   pipeline: rows.reduce((a, c) => a + (Number(c.oppValue) || 0), 0),
   closedWon: rows.reduce((a, c) => a + (Number(c.closedWon) || 0), 0),
 })
@@ -78,6 +88,8 @@ function Body({ data, ov }) {
   const wpCount = campaigns.filter((c) => c.kind === 'Whitepaper').length
   const wfCount = campaigns.filter((c) => c.kind === 'Workflow').length
   const shown = kind === 'all' ? campaigns : campaigns.filter((c) => c.kind === kind)
+  // Robin: sortable columns rather than a fixed order (defaults to most MQLs).
+  const { rows: sortedCampaigns, sortProps } = useSortable(shown, 'mql')
   const t = sumTotals(shown)
   const matchedCount = shown.length
   return (
@@ -99,7 +111,7 @@ function Body({ data, ov }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · current view</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · each campaign's full-2026 contribution</div>
           </div>
           <span className="chip blue">{matchedCount} campaigns</span>
         </div>
@@ -119,33 +131,49 @@ function Body({ data, ov }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Campaign Performance</div>
-            <div className="panel-sub">Each whitepaper / workflow campaign · commercial funnel · names editable (click the pencil)</div>
+            <div className="panel-sub">Each whitepaper / workflow campaign · full-2026 contribution · names editable (click the pencil)</div>
           </div>
           <span className="chip blue">{matchedCount} campaign{matchedCount === 1 ? '' : 's'}</span>
+        </div>
+        {/* Attribution-window fix: each row is the campaign's whole-2026 contribution, so an
+            opportunity created in an earlier quarter still counts towards the campaign that
+            generated it. The quarter pill still chooses WHICH campaigns are listed. */}
+        <div className="panel-body" style={{ paddingBottom: 0 }}>
+          <p className="panel-note" style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
+            Each row is the campaign's <strong>full 2026 contribution</strong>, so it ties to the campaign in
+            Salesforce — an opportunity created in an earlier quarter still counts towards the campaign that generated
+            it. The quarter pill chooses <em>which</em> campaigns are listed. <strong>Created Opps</strong> = every
+            opportunity created off the campaign; <strong>Qualified</strong> = those at a genuine stage and still open
+            or won — what Opp Value is summed from. <Explain id="campaignWindow" />
+          </p>
         </div>
         <div className="panel-body no-pad">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Campaign</th>
-                <th>Region</th>
-                <th>Type</th>
-                <th className="r">MQLs <Explain id="mql" /></th>
-                <th className="r">SQLs <Explain id="sql" /></th>
-                <th className="r">Created Opps <Explain id="createdOpps" /></th>
-                <th className="r">Opp Value <Explain id="pipeline" /></th>
-                <th className="r">Closed-Won <Explain id="closedWon" /></th>
+                <SortTh {...sortProps('campaignName', 'text')}>Campaign</SortTh>
+                <SortTh {...sortProps('regionCode', 'text')}>Region</SortTh>
+                <SortTh {...sortProps('kind', 'text')}>Type</SortTh>
+                <SortTh {...sortProps('audience')} className="r">Audience <Explain id="emailAudience" /></SortTh>
+                <SortTh {...sortProps('mql')} className="r">MQLs <Explain id="mql" /></SortTh>
+                <SortTh {...sortProps('sql')} className="r">SQLs <Explain id="sql" /></SortTh>
+                <SortTh {...sortProps('createdOpps')} className="r">Created Opps <Explain id="createdOpps" /></SortTh>
+                <SortTh {...sortProps('oppCount')} className="r">Qualified <Explain id="opportunities" /></SortTh>
+                <SortTh {...sortProps('oppValue')} className="r">Opp Value <Explain id="pipeline" /></SortTh>
+                <SortTh {...sortProps('closedWon')} className="r">Closed-Won <Explain id="closedWon" /></SortTh>
               </tr>
             </thead>
             <tbody>
-              {shown.map((c) => (
+              {sortedCampaigns.map((c) => (
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td><span className={`chip ${c.kind === 'Whitepaper' ? 'blue' : 'neu'}`}>{c.kind}</span></td>
+                  <td className="r mono">{isNA(c.audience) ? '—' : num(c.audience)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
                   <td className="r mono">{c.createdOpps ? num(c.createdOpps) : '—'}</td>
+                  <td className="r mono">{c.oppCount ? num(c.oppCount) : '—'}</td>
                   <td className="r mono">{c.oppValue ? eur(c.oppValue) : '—'}</td>
                   <td className="r mono">{c.closedWon ? eur(c.closedWon) : '—'}</td>
                 </tr>
@@ -154,9 +182,11 @@ function Body({ data, ov }) {
                 <td>Total · {matchedCount} campaigns</td>
                 <td />
                 <td />
+                <td className="r mono">{isNA(t.audience) ? '—' : num(t.audience)}</td>
                 <td className="r mono">{num(t.mql)}</td>
                 <td className="r mono">{num(t.sql)}</td>
                 <td className="r mono">{opps(t.createdOpps)}</td>
+                <td className="r mono">{opps(t.oppCount)}</td>
                 <td className="r mono">{eur(t.pipeline)}</td>
                 <td className="r mono">{eur(t.closedWon)}</td>
               </tr>

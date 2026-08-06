@@ -42,16 +42,16 @@ export const METHODOLOGY = {
     label: 'How this page is built',
     what: 'There are two overarching quarterly campaigns — “Data Is an Asset, Not a Liability” (Q1) and “Innovation Without Risk” (Q2) — each rolled up as a whole with its individual activities beneath, plus an “Other activities” catch-all.',
     source: 'Salesforce campaigns, grouped by the quarter each one belongs to.',
-    calc: 'Each campaign is placed in its quarter from the campaign itself — the date in its name (e.g. “07.05.2026 …” → Q2), then an explicit “Q1/Q2” label, then a curated hint for the named campaigns that carry no date. Everything in Q1 rolls up under “Data Is an Asset, Not a Liability”, everything in Q2 under “Innovation Without Risk”. The page shows only the campaigns belonging to the selected quarter, so activities no longer cross between quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Each activity has a Theme dropdown to move it to Q1, Q2 or Other (it saves and sticks across refreshes).',
+    calc: 'Each campaign is placed in its quarter from the campaign itself — the date in its name (e.g. “07.05.2026 …” → Q2), then an explicit “Q1/Q2” label, then a curated hint for the named campaigns that carry no date, then the Salesforce Campaign Start Date. In other words a campaign is keyed to when it STARTED, never to when it closed or ended. Everything in Q1 rolls up under “Data Is an Asset, Not a Liability”, everything in Q2 under “Innovation Without Risk”. The page shows only the campaigns belonging to the selected quarter, so activities no longer cross between quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Each activity has a Theme dropdown to move it to Q1, Q2 or Other (it saves and sticks across refreshes). The rows are ordered by contribution (pipeline, then revenue), not by date.',
     caveat:
-      'Two different things are shown per activity: the FUNNEL (MQL / SQL) counts campaign RESPONDERS — people logged as “responded” to the campaign in Salesforce — while the MONEY (Open Pipeline / Closed-Won) counts OPPORTUNITIES linked to the campaign. They’re independent, so an activity (often an in-person event) can show pipeline or revenue with 0 responders: deals were attributed to the event, but the attendees weren’t recorded as responded members.',
+      'The money against an activity is dated by the DEAL, not by the campaign: an open opportunity counts in the quarter it was created, a won one in the quarter it closed — so an activity placed in Q1 can still be showing revenue in Q2. Two different things are also shown per activity: the FUNNEL (MQL / SQL) counts campaign RESPONDERS — people logged as “responded” to the campaign in Salesforce — while the MONEY (Open Pipeline / Closed-Won) counts OPPORTUNITIES linked to the campaign. They’re independent, so an activity (often an in-person event) can show pipeline or revenue with 0 responders: deals were attributed to the event, but the attendees weren’t recorded as responded members.',
   },
   currentVsOngoing: {
     label: 'Current-quarter activity vs ongoing impact',
     what: 'Splits this period’s pipeline and revenue by whether the campaign that drove it started this period or in an earlier one — showing marketing’s long tail.',
     source: 'Salesforce Campaign Start Date, against the opportunity/close dates behind each figure.',
-    calc: 'Each figure is bucketed by its campaign’s Start Date: “this period” if the campaign started in the selected quarter/window, “earlier activities” if it started before. The average sales-cycle is the mean days from a campaign’s start to a won deal’s close.',
-    caveat: 'A €0 for "this period" closed-won is a genuine zero, not missing data — newly-started campaigns generate pipeline first and their revenue lands in later quarters (the lag this view is built to show). Campaigns with no Start Date in Salesforce can’t be classified and are shown separately. Proposed view — the same split can be applied per channel once confirmed.',
+    calc: 'Each figure is bucketed by its campaign’s Start Date: “this period” if the campaign started in the selected quarter/window, “earlier activities” if it started before. Campaign END or close date is never used. The figures themselves stay dated by the deal (open opportunities by created date, won ones by close date), so this view shows this period’s results split by the age of the activity behind them. The average sales-cycle is the mean days from a campaign’s start to a won deal’s close.',
+    caveat: 'In 2026 to date most of the pipeline and revenue landing in a quarter comes from campaigns that started EARLIER — which is the whole point of this split. A €0 for "this period" closed-won is a genuine zero, not missing data — newly-started campaigns generate pipeline first and their revenue lands in later quarters (the lag this view is built to show). Campaigns with no Start Date in Salesforce can’t be classified and are shown separately. Proposed view — the same split can be applied per channel once confirmed.',
   },
   opportunities: {
     label: 'Opportunities',
@@ -85,32 +85,69 @@ export const METHODOLOGY = {
     label: 'New Pipeline Created',
     what: 'The pipeline value of opportunities that were actually created in the selected period.',
     source: 'Salesforce opportunities, by the date each was created (marketing-attributed).',
-    calc: 'Sum of opportunity value for opps whose created date falls in the reporting window, in EUR. Unlike Influenced Pipeline (open + won, dated by activity/close), this counts only opps created this period — so it answers "new pipeline created this period" without pulling in older deals that merely closed now.',
-    caveat: 'One of three distinct pipeline terms used consistently across the dashboard — New Pipeline Created (this), Influenced Pipeline (open + won), and Closed-Won. Lands at the next data refresh; shown as “—” until then.',
+    calc: 'Sum of opportunity REVENUE value (deal value, not gross margin) for opps whose created date falls in the reporting window, in EUR. Unlike Influenced Pipeline (open + won, dated by activity/close), this counts only opps created this period — so it answers "new pipeline created this period" without pulling in older deals that merely closed now.',
+    caveat: 'Revenue basis, like the other two pipeline figures. One of three distinct pipeline terms used consistently across the dashboard — New Pipeline Created (this), Influenced Pipeline (open + won), and Closed-Won. Lands at the next data refresh; shown as “—” until then.',
+  },
+
+  // ── How rows are dated (the client's second core definition question:
+  //    "are campaign rows keyed to start date or close date?"). Answer: results are
+  //    dated by the event that produced them (activity_date — responder date / opp
+  //    CreatedDate for open, CloseDate for closed); a CAMPAIGN is placed in a quarter
+  //    by its own start (name date, else Campaign.StartDate). Campaign end/close date
+  //    is never used. See docs/METRIC_DEFINITIONS.md.
+  campaignDating: {
+    label: 'How campaigns and results are dated',
+    what: 'Two different dates are at work: results are dated by when they happened, while a campaign is placed in a quarter by when it started. A campaign’s close / end date is never used.',
+    source: 'Salesforce — the response date on a campaign member, the created and close dates on an opportunity, and the campaign’s own date (its name date, else its Start Date).',
+    calc: 'Results (what the quarter pills filter): a campaign responder is dated by the day they responded; an OPEN opportunity by its created date; a CLOSED opportunity (won or lost) by its close date; Created Opportunities and New Pipeline Created always by created date. So a deal created in Q1 and won in Q2 shows under Q1 Created Opportunities and Q2 Closed-Won — correct in both. Campaign placement (the Campaigns page): each campaign belongs to ONE quarter, taken from the date in its name, then an explicit “Q1 / Q2” in the name, then a curated match for the named campaigns without a date, then the Salesforce Campaign Start Date; anything not tied to a 2026 quarter sits under “Other activities”.',
+    caveat:
+      'The name date deliberately beats Start Date, because Start Date is empty on around a quarter of campaigns and sometimes contradicts the real event date. Any activity can be moved between quarters with its Theme dropdown, and that choice survives every data refresh. Worth knowing why the two axes are kept apart: in 2026 to date, most of the pipeline and revenue landing in a quarter comes from campaigns that STARTED in an earlier quarter — which is exactly what the “current-quarter activity vs ongoing impact” view is built to show. Campaign tables are ordered by contribution, not by date.',
+  },
+
+  emailAudience: {
+    label: 'Audience (people enrolled)',
+    what: 'How many people the campaign was actually sent to — everyone enrolled, whether or not they went on to respond.',
+    source: 'Salesforce campaign membership — every member of the campaign, counted regardless of their response.',
+    calc: 'Count of campaign members. This is the denominator behind the MQL figure next to it: MQLs are the members who actively responded (a form fill, download or registration), so “MQLs ÷ Audience” is the campaign’s genuine response rate.',
+    caveat:
+      'Salesforce also has its own “Number Sent” field on the campaign, but it is filled in by hand and is often blank or out of date, so the count of actual members is used instead and the Salesforce field is kept only as a cross-check. Audience appears after the next Salesforce refresh; until then it reads “—” rather than a misleading zero. One caution when reading the rate: a member added by a bulk list import counts in the audience even if nothing was ever emailed to them.',
+  },
+
+  // ── Why a campaign's own row is not quarter-sliced (the reported under-count).
+  //    Rows on per-campaign tables are the campaign's whole-2026 contribution; see
+  //    campaignRows() in queries.js and docs/CAMPAIGN_ATTRIBUTION.md.
+  campaignWindow: {
+    label: 'Why a campaign shows its full-year figures',
+    what: 'On a per-campaign table, each row is that campaign’s whole-2026 contribution — not only the part that happened inside the selected quarter.',
+    source: 'Salesforce opportunities and campaign responses attributed to the campaign.',
+    calc: 'Results are dated by the deal — an open opportunity by the day it was created, a won one by the day it closed. A single campaign’s opportunities therefore land in different quarters, so slicing a campaign’s own row by the quarter pill would split the campaign in half and make it look smaller than it does in Salesforce. Instead the row totals the campaign’s whole 2026, and the quarter pill decides WHICH campaigns are listed (a campaign has to have contributed something in the selected period to appear).',
+    caveat:
+      'This is why a campaign table can add up to more than the quarter tiles above it — the tiles are the selected quarter, the rows are the campaigns in full. It matters more than it sounds: one in-person event holds an opportunity created in January that is 45% of its qualified pipeline, and across 2026 nine campaigns are split across quarters, so roughly a fifth of open pipeline used to be invisible whenever a single quarter was selected. Two opportunity columns are shown so the figures can be checked against Salesforce directly: “Opps” counts every opportunity created off the campaign (including ones still marked unqualified), and “Qualified” counts those at a genuine stage that are still open or won — the ones Open Pipeline is summed from.',
   },
 
   // ── Money
   pipeline: {
-    label: 'Influenced Pipeline',
-    what: 'The total value of qualified opportunities marketing touched — open pipeline plus deals already won.',
-    source: 'campaign-attributed opportunities in Salesforce.',
+    label: 'Influenced Pipeline (revenue)',
+    what: 'The total REVENUE value of qualified opportunities marketing touched — open pipeline plus deals already won. This is deal value, not gross margin.',
+    source: 'campaign-attributed opportunities in Salesforce (the opportunity Amount field).',
     calc: 'Sum of open qualified opportunity value plus closed-won value, converted to EUR using the Salesforce corporate exchange rate. Won deals are included so that Closed Won is always part of — never larger than — the pipeline generated.',
-    caveat: 'Three pipeline terms are used consistently on the dashboard: New Pipeline Created (opps created this period), Influenced Pipeline (open + won — this), and Closed-Won (won only). Only opportunities attributed to a marketing campaign are included — not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column (deals still open) alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
+    caveat:
+      'This is a REVENUE basis. CWSI tracks company-wide quarterly pipeline on a GROSS-MARGIN basis, so dividing this figure by that one is not like-for-like. For a like-for-like share of the business, compare Influenced Margin against the company’s closed-won gross-margin number — or ask us to add a gross-margin version of this metric (the gross-profit fields are already read for every opportunity, so it is a small change). Separately: three pipeline terms are used consistently on the dashboard — New Pipeline Created (opps created this period), Influenced Pipeline (open + won — this), and Closed-Won (won only); and only campaign-attributed opportunities are included, not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
   },
   closedWon: {
-    label: 'Closed Won',
-    what: 'Revenue from won opportunities that marketing touched.',
-    source: 'won, campaign-attributed opportunities in Salesforce.',
-    calc: 'Sum of won deal values, converted to EUR when the data is synced using the Salesforce corporate exchange rate.',
-    caveat: 'A deal is only ever in one state at a time: once it closes and is won it moves OUT of open pipeline INTO Closed-Won. So seeing a Closed-Won value alongside €0 open pipeline is expected — it means those deals have already landed. It never appears in both at once.',
+    label: 'Closed Won (revenue)',
+    what: 'The REVENUE from won opportunities that marketing touched — deal value, not gross margin.',
+    source: 'won, campaign-attributed opportunities in Salesforce (the opportunity Amount field).',
+    calc: 'Sum of won deal values, converted to EUR when the data is synced using the Salesforce corporate exchange rate. Won deals are counted in the quarter they CLOSED.',
+    caveat: 'Revenue basis — the profit on these same deals is the separate Influenced Margin figure. A deal is only ever in one state at a time: once it closes and is won it moves OUT of open pipeline INTO Closed-Won. So seeing a Closed-Won value alongside €0 open pipeline is expected — it means those deals have already landed. It never appears in both at once.',
   },
   margin: {
-    label: 'Influenced Margin',
-    what: 'The gross profit on the marketing-attributed won deals.',
+    label: 'Influenced Margin (gross profit)',
+    what: 'The GROSS PROFIT on the marketing-attributed won deals — a profit basis, unlike Influenced Pipeline and Closed-Won, which are revenue.',
     source: 'the opportunity’s Gross Profit field in Salesforce (or amount × gross-profit-margin % where only the % is set).',
     calc: 'Sum of gross profit (EUR) across won deals. A deal with neither field filled is excluded — never counted as full revenue.',
     caveat:
-      'Heads-up: as currently entered in Salesforce, most 2026 won deals show gross profit equal to the full deal value (no cost deducted), so influenced margin presently tracks close to revenue rather than true profit. This has been flagged with CWSI to confirm whether cost data is missing on those deals.',
+      'Gross profit depends on the type of deal: for CWSI’s OWN SERVICES, revenue and margin are set equal in Salesforce, while resold third-party product carries a real margin below the deal value. In the current 2026 data, 20 of the 24 won-deal records show gross profit equal to the full deal value and only 4 show a margin below it — a blended ~91% — so this figure presently tracks close to revenue. That is faithful to Salesforce, not a dashboard error. The useful signal is the GAP between this and Closed-Won: it widens as more resold product enters the marketing-influenced mix. Pending with CWSI: confirming those equal-value deals are genuinely all own-services rather than resold deals with cost not yet entered.',
   },
   retention: {
     label: 'Retained Contracts',
@@ -188,20 +225,24 @@ export const METHODOLOGY = {
     what: 'Unique people being worked through Outreach.io sales cadences.',
     source: 'Outreach.io sequence snapshot.',
     calc: 'Distinct prospects across the sequences in scope (cumulative lifetime snapshot, filtered to the selected region).',
-    caveat: 'A cumulative snapshot, not a daily trend. Currently includes all sequences; a marketing-only, defined list of sequences is planned.',
+    caveat:
+      'This is an ALL-TIME figure, not a quarter figure — the quarter pill does not change it, because Outreach.io gives us running per-sequence counters rather than dated activity. The date it was last refreshed is shown on the page. It covers the three marketing workstreams only, so it is deliberately much smaller than the whole Outreach.io account: the sales and one-off account sequences hold roughly ten times as many prospects and are excluded here on purpose.',
   },
   outreachReplyRate: {
     label: 'Reply rate',
-    what: 'How often prospects reply to outreach.',
-    source: 'Outreach.io engagement snapshot.',
-    calc: 'Replies ÷ prospects across the sequences in scope.',
+    what: 'How often prospects reply to outreach — shown on two bases, because the same programme reads very differently on each.',
+    source: 'Outreach.io engagement snapshot (per-sequence counters for the people basis, per-step counters for the email basis).',
+    calc:
+      'The headline figure is PER PERSON: replies ÷ prospects in cadence. Underneath it we also show PER EMAIL: replies ÷ emails delivered — the basis Outreach.io’s own reporting normally uses. A multi-step cadence sends several emails to each prospect, so the per-email rate is always the lower of the two. Both are all-time, across the three marketing workstreams.',
+    caveat:
+      'If this looks lower than expected, check which basis is being compared. The two are not interchangeable and neither is wrong — per person answers “how many of the people we approached answered us”, per email answers “how well does an individual email perform”. Two further things depress the blended figure honestly: the SoPro and Microsoft TUM workstreams currently sit at zero replies (the cold sending was paused over the sending-domain issue), so nearly all replies come from Historic Data Reactivation; and there is an unresolved discrepancy in Outreach.io’s own counters that we are not papering over: for the same snapshot, its per-sequence counter reports 30 people as having replied while its per-step counters record only 12 reply events, on 9 sequences. People cannot reply without generating a reply event, so one of the two is not measuring what its name suggests. Until that is settled the per-person figure should be treated as the softer of the two. The check that resolves it — counting the individual email records directly — is built and waiting on one data pull.',
   },
   outreachOpenRate: {
     label: 'Open rate',
     what: 'How often prospects open an outreach email.',
     source: 'Outreach.io engagement snapshot.',
     calc: 'Opens ÷ prospects across the sequences in scope (cumulative lifetime snapshot).',
-    caveat: 'A cumulative snapshot, not a per-quarter figure. Open tracking is approximate (image-pixel based).',
+    caveat: 'An all-time figure, not a per-quarter one — the quarter pill does not change it. Open tracking is approximate: it counts tracking-pixel fires, so it over-counts (one person opening twice, or a mail client pre-loading images, both register).',
   },
   outreachOpps: {
     label: 'Opportunities from Outreach (outbound)',

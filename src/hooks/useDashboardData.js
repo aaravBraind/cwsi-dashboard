@@ -24,6 +24,7 @@ import {
   getOutreach,
   getOutreachAttributedMeetings,
   getOutreachSteps,
+  getDataFreshness,
   getEvents,
   getEventTypeFunnel,
   getEventsDetail,
@@ -334,5 +335,15 @@ export function useGenerateBoardPack() {
         .then(() => qc.invalidateQueries({ queryKey: ['board-pack-saved', filters.region, filters.quarter] }))
         .catch((e) => console.error('Board pack persist failed (narrative still shown):', e))
     },
+  })
+}
+
+// Data freshness — when each source feed last landed. Not region/quarter scoped
+// (freshness is a property of the pipeline, not of a slice of the data), so it
+// deliberately sits outside the filter-keyed queries above.
+export function useDataFreshness() {
+  return useQuery({
+    queryKey: ['data-freshness'],
+    queryFn: getDataFreshness,
   })
 }
