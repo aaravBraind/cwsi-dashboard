@@ -13,7 +13,7 @@ const FilterContext = createContext(null)
 
 const DEFAULTS = {
   region: 'all',
-  quarter: 'q2',
+  quarter: 'q3',
   channel: null,
   campaign: 'all',
   pillar: null,

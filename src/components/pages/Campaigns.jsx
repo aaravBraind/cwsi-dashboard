@@ -35,9 +35,10 @@ export default function Campaigns() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          There are <strong>two quarterly campaigns</strong>: everything in <strong>Q1</strong> rolls up under{' '}
-          <strong>“Data Is an Asset, Not a Liability”</strong> and everything in <strong>Q2</strong> under{' '}
-          <strong>“Innovation Without Risk”</strong>. Each is an overarching campaign, rolled up from all its
+          Each quarter has <strong>one overarching quarterly campaign</strong>: everything in <strong>Q1</strong> rolls
+          up under <strong>“Data Is an Asset, Not a Liability”</strong>, everything in <strong>Q2</strong> under{' '}
+          <strong>“Innovation Without Risk”</strong>, and everything in <strong>Q3</strong> under the Q3 campaign
+          (theme name to be confirmed — see the note below). Each is an overarching campaign, rolled up from all its
           activities — expand a card to see the individual touchpoints within it. A campaign is placed in its quarter
           from its own date (not from when its leads or deals happen to fall), so activities no longer cross between
           quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Campaign names are editable
@@ -50,11 +51,23 @@ export default function Campaigns() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
+          <strong>Q3 theme name pending.</strong> Q3 2026 reporting is now open, but the Q3 overarching campaign
+          theme <strong>hasn’t been named yet</strong>. Until it is, all Q3 activities are grouped under a
+          provisional <strong>“Q3 2026 Campaign (theme to be confirmed)”</strong> heading — the figures are real and
+          final; only the heading will change once the Q3 theme is agreed.
+        </div>
+      </div>
+
+      <div className="callout" style={{ marginBottom: 18 }}>
+        <div className="callout-icn">
+          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+        </div>
+        <div className="callout-body">
           <strong>The "Theme" dropdown on each activity.</strong> Every activity is placed in a quarter
           <strong> automatically, from its own campaign date</strong> — so it can occasionally be off (for example a
           campaign whose Salesforce name has no date). Use the <strong>Theme</strong> dropdown on any activity row to
-          move it to <strong>Q1</strong> (Data Is an Asset), <strong>Q2</strong> (Innovation Without Risk) or{' '}
-          <strong>Other</strong>; leave it on <strong>"Auto"</strong> to keep the automatic choice. Your change saves
+          move it to <strong>Q1</strong> (Data Is an Asset), <strong>Q2</strong> (Innovation Without Risk),{' '}
+          <strong>Q3</strong> or <strong>Other</strong>; leave it on <strong>"Auto"</strong> to keep the automatic choice. Your change saves
           instantly and sticks through every data refresh.
         </div>
       </div>

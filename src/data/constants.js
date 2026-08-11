@@ -39,21 +39,23 @@ export const CHANNELS = [
 
 export const channelByPage = (page) => CHANNELS.find((c) => c.page === page)
 
-// Reporting window is fixed to H1 2026 (Q1 + Q2) per the client (Margot, 1 Jul
-// 2026): the dashboard shows Q1 2026 and Q2 2026 ONLY. Q3/Q4 are intentionally
-// omitted — the pills are removed here so they can't be selected, and every
-// to-date read is capped at REPORTING_END_ISO so YTD (= Q1+Q2 combined) can
-// never leak Q3+ rows either. To re-open later quarters, add the pills back and
-// move REPORTING_END_ISO forward (or set it to null to fall back to "today").
+// Reporting window covers Q1–Q3 2026 (Q3 opened 11 Aug 2026, while the quarter
+// is in progress — figures accrue as data lands). Q4 is intentionally omitted —
+// its pill is absent so it can't be selected, and every to-date read is capped
+// at REPORTING_END_ISO so YTD can never leak Q4 rows either. To re-open later
+// quarters, add the pills back and move REPORTING_END_ISO forward (or set it
+// to null to fall back to "today").
 export const QUARTER_PILLS = [
   { q: 'q1', label: 'Q1' },
   { q: 'q2', label: 'Q2' },
+  { q: 'q3', label: 'Q3' },
   { q: 'ytd', label: 'YTD' },
 ]
 
-// End of the visible reporting window (inclusive). Q2 2026 close. Every
-// date-scoped query caps activity_date at min(today, REPORTING_END_ISO).
-export const REPORTING_END_ISO = '2026-06-30'
+// End of the visible reporting window (inclusive). Q3 2026 close. Every
+// date-scoped query caps activity_date at min(today, REPORTING_END_ISO) —
+// so while Q3 is in progress the effective cap is "today".
+export const REPORTING_END_ISO = '2026-09-30'
 
 // Sentinel used by the pillar filter for the null ("Unmapped") bucket.
 export const PILLAR_UNMAPPED = '__unmapped__'

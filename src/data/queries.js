@@ -29,10 +29,10 @@ const FACT_COLS =
 // Today (YYYY-MM-DD, browser runtime).
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
-// Upper bound for every "to date" read. The reporting window is fixed to H1 2026
-// (client, 1 Jul 2026), so we cap at the EARLIER of today and REPORTING_END_ISO
-// (Q2 2026 close). Because the window has closed, this is 2026-06-30 in practice
-// — so Q3/Q4 return empty and YTD stops at end of Q2 (never leaks Q3+ rows).
+// Upper bound for every "to date" read. The reporting window runs Q1–Q3 2026,
+// so we cap at the EARLIER of today and REPORTING_END_ISO (Q3 2026 close).
+// While Q3 is in progress that means "today" — so Q4 returns empty and YTD
+// stops at today (never leaks Q4 rows).
 // If REPORTING_END_ISO is set null later, this falls back to plain "today".
 const toDateCapIso = () => {
   const today = todayIso()
@@ -841,9 +841,9 @@ export async function getEmailReport(filters = {}) {
 // totals, so each ingestion run writes a complete fresh snapshot). Reads the
 // LATEST snapshot only — summing across snapshots would double-count.
 //
-// QUARTER scope = the email's SEND date, under the same H1-2026 window rules as
-// every other read (q1/q2 → that quarter; ytd → Jan 1 to the Q2-close cap; Q3/Q4
-// therefore empty until the client extends REPORTING_END_ISO). Engagement keeps
+// QUARTER scope = the email's SEND date, under the same 2026 window rules as
+// every other read (q1/q2/q3 → that quarter; ytd → Jan 1 to the to-date cap;
+// quarters beyond REPORTING_END_ISO therefore stay empty). Engagement keeps
 // accruing after the send — an email sent in March gains opens in June — which is
 // exactly why the send date picks the bucket and the counters are "to date".
 //
@@ -1150,7 +1150,7 @@ export async function getEmailEngagement(filters = {}) {
   // activity-year, so a legacy campaign (e.g. a 2021/2022 send) would otherwise
   // surface here regardless of the reporting window. Restrict to campaigns that
   // actually had Email-channel activity inside the window (v_fact_enriched,
-  // year >= 2026, capped at Q2 close) — a campaign is "in scope" if it appears
+  // year >= 2026, capped at the to-date cap) — a campaign is "in scope" if it appears
   // there. NOT region-filtered (a campaign is a 2026 campaign globally); the
   // region filter still applies to the engagement rows above.
   const active = await fetchAll(() =>
@@ -1943,7 +1943,7 @@ function applyWebFilters(q, f = {}) {
   } else {
     q = q.gte('year', HISTORY_START_YEAR)
   }
-  q = q.lte('activity_date', toDateCapIso()) // to-date cap (Q2 2026 close) — GA4/SEO stop at end of Q2
+  q = q.lte('activity_date', toDateCapIso()) // to-date cap — GA4/SEO stop at the reporting window end
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   return q
 }

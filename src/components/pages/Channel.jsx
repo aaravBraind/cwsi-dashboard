@@ -326,7 +326,7 @@ function Body({ data, isLinkedIn, isEmail }) {
           <strong>A note on campaign names &amp; the year in them.</strong> Some Salesforce campaigns are
           named after the year they launched (e.g. <em>“2024 …”</em>, <em>“2023 …”</em>) but are long-running
           and still active. <strong>The year in the name is just a label, not the period of the data.</strong>{' '}
-          Every figure in this table is the campaign’s <strong>real 2026 activity only</strong> (Q1–Q2 2026,
+          Every figure in this table is the campaign’s <strong>real 2026 activity only</strong> (Q1–Q3 2026,
           the current reporting window) — any earlier-year activity for the same campaign is excluded by the
           2026 scope. So a campaign named “2024 …” can correctly show 2026 numbers here.
         </div>
