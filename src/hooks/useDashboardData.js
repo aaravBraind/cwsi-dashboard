@@ -16,6 +16,7 @@ import {
   getOpportunityStage,
   getChannel,
   getEmailReport,
+  getAeEmailEngagement,
   getCampaignsForChannel,
   getCampaignThemes,
   getLinkedInSnapshot,
@@ -144,6 +145,18 @@ export function useEmailReport() {
   const { filters } = useFilters()
   const scoped = { region: filters.region, quarter: filters.quarter }
   return useQuery({ queryKey: ['email-report', scoped], queryFn: () => getEmailReport(scoped) })
+}
+
+// Email engagement (opens/clicks/unsubscribes) from the marketing email platform.
+// Quarter-scoped by SEND date only — region is deliberately not applied (one send
+// covers several regions' lists at once; see getAeEmailEngagement).
+export function useAeEmailEngagement() {
+  const { filters } = useFilters()
+  const scoped = { quarter: filters.quarter }
+  return useQuery({
+    queryKey: ['ae-email-engagement', scoped],
+    queryFn: () => getAeEmailEngagement(scoped),
+  })
 }
 
 // Campaign-level theme rollup (X4/G3) — region + quarter scoped.

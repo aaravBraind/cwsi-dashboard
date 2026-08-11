@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useEmailReport, useCampaignOverrides } from '../../hooks/useDashboardData'
+import { useEmailReport, useCampaignOverrides, useAeEmailEngagement } from '../../hooks/useDashboardData'
 import { eur, num, isNA, NA } from '../../data/format'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
 
-// Email page — Margot's whitepaper-download + Salesforce-workflow campaigns
-// (July 2026 feedback). Scoped to a named set of campaigns (getEmailReport /
-// EMAIL_CAMPAIGN_KEYS), NOT to Salesforce Campaign.Type = Email — three of the four
-// are stored as "Content / White Paper". Commercial funnel only: this org has no
-// email-send / open / click data (no Account Engagement), so engagement KPIs and
-// per-individual-email breakdowns aren't shown.
+// Email page — two halves:
+//   1. COMMERCIAL funnel for Margot's whitepaper-download + Salesforce-workflow
+//      campaigns (getEmailReport — scoped by campaign_type/name, NOT Type='Email').
+//   2. ENGAGEMENT (added Aug 2026) — real per-email opens/clicks/unsubscribes from
+//      the marketing email platform (v_ae_email; getAeEmailEngagement). Broader
+//      scope than the campaign list above: every marketing email sent in 2026,
+//      including webinar invites — and not region-scoped (one send covers several
+//      regions' lists). The long-standing "engagement is impossible in this org"
+//      note is dead: that was true of Salesforce only, not the email platform.
 export default function Email() {
   const q = useEmailReport()
   const ov = useCampaignOverrides().data || {}
@@ -21,8 +24,8 @@ export default function Email() {
     <>
       <div className="page-head">
         <div>
-          <div className="page-title">Email — Whitepaper &amp; Workflow Campaigns</div>
-          <div className="page-sub">Whitepaper downloads + Salesforce workflows · commercial funnel · FY2026</div>
+          <div className="page-title">Email — Campaigns &amp; Engagement</div>
+          <div className="page-sub">Whitepaper &amp; workflow campaigns · commercial funnel + per-email engagement · FY2026</div>
         </div>
         <QuarterPills />
       </div>
@@ -49,6 +52,158 @@ export default function Email() {
         <EmptyState message="No activity for these email campaigns in this region / quarter yet." />
       )}
       {q.data && q.data.hasData && <Body data={q.data} ov={ov} />}
+
+      {/* Engagement renders independently of the commercial block: it has its own
+          feed, its own (quarter-only) scope, and should not vanish when a region
+          filter empties the campaign list above. */}
+      <Engagement />
+    </>
+  )
+}
+
+// Percentage display for the 0–1 rate fields (numeric columns arrive as strings).
+const ratePct = (v, digits = 1) =>
+  isNA(v) || v == null ? '—' : `${(Number(v) * 100).toFixed(digits)}%`
+
+function Engagement() {
+  const q = useAeEmailEngagement()
+  if (q.isLoading) return <Loading label="Loading email engagement…" />
+  if (q.isError) return <ErrorState error={q.error} />
+  const d = q.data
+  if (!d || !d.hasFeed) return null // feed not populated yet — say nothing rather than promise
+  return <EngagementBody d={d} />
+}
+
+function EngagementBody({ d }) {
+  const { rows: sortedEmails, sortProps } = useSortable(d.emails, 'sent')
+  const t = d.totals
+  return (
+    <>
+      {/* Engagement summary — real opens/clicks/unsubs from the email platform */}
+      <div className="panel">
+        <div className="panel-head">
+          <div className="left">
+            <div className="panel-title">Email Engagement <Explain id="emailEngagement" /></div>
+            <div className="panel-sub">
+              Every marketing email sent in the selected period · all regions (a send covers several regions' lists) ·
+              engagement counted to {d.asOf}
+            </div>
+          </div>
+          <span className="chip blue">{num(t.emails)} emails</span>
+        </div>
+        <div className="panel-body">
+          {!d.hasData ? (
+            <p className="panel-note" style={{ margin: 0 }}>
+              No marketing emails were sent in this period.
+            </p>
+          ) : (
+            <div className="h-funnel">
+              <Stage name="Sent" val={num(t.sent)} extra={`${num(t.emails)} emails`} />
+              <Stage name="Delivered" val={num(t.delivered)} extra={`${ratePct(t.deliveryRate)} delivery rate`} />
+              <Stage name="Open Rate" val={ratePct(t.openRate)} extra={`${num(t.uniqueOpens)} unique opens`} />
+              <Stage name="Click-Through" val={ratePct(t.ctr)} extra={`${num(t.uniqueClicks)} people clicked`} />
+              <Stage name="Unsubscribes" val={ratePct(t.unsubRate, 2)} extra={`${num(t.optOuts)} opt-outs`} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {d.hasData && (
+        <>
+          {/* Aggregated per-campaign engagement (EM2's campaign view) */}
+          <div className="panel">
+            <div className="panel-head">
+              <div className="left">
+                <div className="panel-title">Engagement by Campaign</div>
+                <div className="panel-sub">All emails grouped under their Salesforce campaign — includes webinar-invite and whitepaper emails, so this list is broader than the campaign table above</div>
+              </div>
+              <span className="chip blue">{d.campaigns.length} campaigns</span>
+            </div>
+            <div className="panel-body no-pad">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th className="r">Emails</th>
+                    <th className="r">Sent</th>
+                    <th className="r">Delivered</th>
+                    <th className="r">Open Rate <Explain id="aeOpenRate" /></th>
+                    <th className="r">CTR <Explain id="aeCtr" /></th>
+                    <th className="r">Unsubs <Explain id="aeUnsubRate" /></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.campaigns.map((c) => (
+                    <tr key={c.campaignKey}>
+                      <td>{c.campaignName}</td>
+                      <td className="r mono">{num(c.emails)}</td>
+                      <td className="r mono">{num(c.sent)}</td>
+                      <td className="r mono">{num(c.delivered)}</td>
+                      <td className="r mono">{ratePct(c.openRate)}</td>
+                      <td className="r mono">{ratePct(c.ctr)}</td>
+                      <td className="r mono">{num(c.optOuts)}</td>
+                    </tr>
+                  ))}
+                  <tr className="total">
+                    <td>Total · {d.campaigns.length} campaigns</td>
+                    <td className="r mono">{num(t.emails)}</td>
+                    <td className="r mono">{num(t.sent)}</td>
+                    <td className="r mono">{num(t.delivered)}</td>
+                    <td className="r mono">{ratePct(t.openRate)}</td>
+                    <td className="r mono">{ratePct(t.ctr)}</td>
+                    <td className="r mono">{num(t.optOuts)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Per-email breakdown (EM2's per-email KPIs) */}
+          <div className="panel">
+            <div className="panel-head">
+              <div className="left">
+                <div className="panel-title">Per-Email Performance</div>
+                <div className="panel-sub">Every individual send · click a column to sort</div>
+              </div>
+              <span className="chip blue">{sortedEmails.length} emails</span>
+            </div>
+            <div className="panel-body no-pad">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <SortTh {...sortProps('name', 'text')}>Email</SortTh>
+                    <SortTh {...sortProps('campaignName', 'text')}>Campaign</SortTh>
+                    <SortTh {...sortProps('sentDate', 'text')}>Sent</SortTh>
+                    <SortTh {...sortProps('sent')} className="r">Recipients</SortTh>
+                    <SortTh {...sortProps('delivered')} className="r">Delivered</SortTh>
+                    <SortTh {...sortProps('uniqueOpens')} className="r">Opens</SortTh>
+                    <SortTh {...sortProps('openRate')} className="r">Open Rate</SortTh>
+                    <SortTh {...sortProps('uniqueClicks')} className="r">Clicks</SortTh>
+                    <SortTh {...sortProps('ctr')} className="r">CTR</SortTh>
+                    <SortTh {...sortProps('optOuts')} className="r">Unsubs</SortTh>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedEmails.map((e) => (
+                    <tr key={e.id}>
+                      <td>{e.name}</td>
+                      <td>{e.campaignName}</td>
+                      <td className="mono">{e.sentDate}</td>
+                      <td className="r mono">{num(e.sent)}</td>
+                      <td className="r mono">{num(e.delivered)}</td>
+                      <td className="r mono">{num(e.uniqueOpens)}</td>
+                      <td className="r mono">{ratePct(e.openRate)}</td>
+                      <td className="r mono">{num(e.uniqueClicks)}</td>
+                      <td className="r mono">{ratePct(e.ctr)}</td>
+                      <td className="r mono">{num(e.optOuts)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 }
@@ -195,18 +350,6 @@ function Body({ data, ov }) {
         </div>
       </div>
 
-      <div className="callout amber" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          <strong>Why no open / click-through / send figures?</strong> These campaigns promote a whitepaper or run a
-          nurture workflow, but Salesforce holds no email-engagement data for them — send counts read zero and there
-          are no opens, clicks or unsubscribes (no email-marketing platform is connected). So this page reports the{' '}
-          <strong>commercial funnel</strong> — the leads, qualified leads and pipeline the campaigns generated — rather
-          than per-email engagement. Connect an email platform and the per-email metrics can be added.
-        </div>
-      </div>
     </>
   )
 }

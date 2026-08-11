@@ -113,6 +113,37 @@ export const METHODOLOGY = {
       'Salesforce also has its own “Number Sent” field on the campaign, but it is filled in by hand and is often blank or out of date, so the count of actual members is used instead and the Salesforce field is kept only as a cross-check. Audience appears after the next Salesforce refresh; until then it reads “—” rather than a misleading zero. One caution when reading the rate: a member added by a bulk list import counts in the audience even if nothing was ever emailed to them.',
   },
 
+  // ── Email engagement (per-email opens/clicks/unsubscribes) — fed from the
+  //    marketing email platform behind Salesforce (fact_ae_email / v_ae_email).
+  emailEngagement: {
+    label: 'Email engagement — where these figures come from',
+    what: 'Real per-email results — how many were delivered, opened and clicked, and who unsubscribed — for every marketing email sent in 2026.',
+    source: 'Read directly from your marketing email platform (the system behind the Engagement History on your Salesforce records). Each email is linked back to its Salesforce campaign, so engagement sits alongside the leads and pipeline the same campaign produced.',
+    calc: 'Counters are lifetime totals per email — an email sent in March keeps gaining opens afterwards — so figures are “to date” as of the refresh date shown, and the quarter selector groups emails by their send date.',
+    caveat: 'Not split by region: one send typically goes to several regions’ mailing lists at once, so a regional split would be a guess rather than a measurement. Scheduled emails that haven’t gone out yet are excluded so they can’t drag the rates down.',
+  },
+  aeOpenRate: {
+    label: 'Open rate',
+    what: 'The share of delivered emails that were opened by at least one person.',
+    source: 'Your marketing email platform’s own counters.',
+    calc: 'Unique opens ÷ delivered. “Unique” counts each recipient once, however many times they re-open — the same basis your email platform’s own reports use, so the two will agree.',
+    caveat: 'Apple Mail and some corporate filters pre-load images, which can count as an open — an industry-wide effect that slightly flatters every sender’s open rate, not something specific to this dashboard.',
+  },
+  aeCtr: {
+    label: 'Click-through rate (CTR)',
+    what: 'The share of delivered emails where the recipient clicked a link.',
+    source: 'Your marketing email platform’s own counters.',
+    calc: 'People who clicked ÷ delivered — each recipient counted once, however many links they clicked.',
+    caveat: 'This is deliberately NOT the email platform’s headline click rate, which counts every click event and reads far higher (roughly 29% on this account) — corporate mail filters open and “click” links automatically to scan them for threats, and those machine clicks land in the total. The per-person figure is the honest measure of reader behaviour; if you compare against the platform’s own report, expect its headline number to be much larger for this reason.',
+  },
+  aeUnsubRate: {
+    label: 'Unsubscribe rate',
+    what: 'The share of delivered emails that led the recipient to opt out of future marketing email.',
+    source: 'Your marketing email platform’s opt-out counter.',
+    calc: 'Opt-outs ÷ delivered.',
+    caveat: 'An opt-out removes the person from all future marketing sends, not just this email’s list — which is why keeping this rate low matters more than any single campaign.',
+  },
+
   // ── Why a campaign's own row is not quarter-sliced (the reported under-count).
   //    Rows on per-campaign tables are the campaign's whole-2026 contribution; see
   //    campaignRows() in queries.js and docs/CAMPAIGN_ATTRIBUTION.md.

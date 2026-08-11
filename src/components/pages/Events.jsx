@@ -82,7 +82,7 @@ export default function Events() {
           <strong>Webinars</strong> and <strong>in-person events</strong> use the <strong>same metric set</strong> —
           MQLs → SQLs → Created Opps → pipeline &amp; closed-won — all Salesforce campaign-attributed, so the two
           sections read consistently. Webinars add GoToWebinar attendance (registrants / attendees) on top; in-person
-          attendance comes from the Outreach attendee lists (shown once exported). Region &amp; quarter scope every figure.
+          attendance comes from the attendee lists in your marketing email platform (shown once the feed loads). Region &amp; quarter scope every figure.
           <br /><strong>How MQL &amp; SQL are defined for events:</strong> <strong>MQL = every registered attendee</strong>{' '}
           (the Salesforce campaign members for the event); <strong>SQL = the registrants who progressed to a qualified
           opportunity</strong> (any opportunity stage except “Unqualified opp”). <em>Note:</em> GoToWebinar’s raw
@@ -121,9 +121,11 @@ export default function Events() {
 // Bases differ per metric, and rather than blur them the tiles say so in their sub-labels:
 //   • Registrations — webinars from GoToWebinar; in-person from Salesforce campaign members
 //     (per V4, an event's members ARE its registrants). Two systems, so the split is shown.
-//   • Attendees — webinars from GoToWebinar. In-person attendance only exists in the Outreach
-//     attendee lists, so until those are exported this tile is webinar-only and SAYS so
-//     rather than presenting a partial figure as the programme total.
+//   • Attendees — webinars from GoToWebinar. In-person attendance comes from the attendee /
+//     non-attendee segmentation lists in the marketing email platform (fact_event_attendance,
+//     fed by pardot_event_attendance_ingestion — webinar lists excluded there to avoid
+//     double-counting against GoToWebinar). Until that feed loads, the tile is webinar-only
+//     and SAYS so rather than presenting a partial figure as the programme total.
 //   • Created Opps / Influenced Pipeline / Closed-Won — Salesforce campaign-attributed for
 //     both types, so these are true combined totals. Influenced = open + won (the S3 glossary).
 function EventsSummary({ ev, det }) {
@@ -186,8 +188,8 @@ function EventsSummary({ ev, det }) {
             <strong>Registrations</strong> combine two systems: GoToWebinar sign-ups for webinars and Salesforce
             campaign members for in-person events, so the split is shown beneath.{' '}
             {hasInPersonAtt
-              ? 'Attendees combine GoToWebinar with the Outreach attendee lists.'
-              : <><strong>Attendees is webinars only for now</strong> — in-person attendance lives in the Outreach attendee lists, which aren’t available through the API; the figure completes once those are exported.</>}{' '}
+              ? 'Attendees combine GoToWebinar (webinars) with the attendee lists kept in your marketing email platform (in-person).'
+              : <><strong>Attendees is webinars only for now</strong> — in-person attendance lives in the attendee lists kept in your marketing email platform; we've confirmed we can read those directly, and the figure completes once that feed loads.</>}{' '}
             The sections below break the same programme down by type.
           </div>
         </div>

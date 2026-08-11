@@ -835,6 +835,126 @@ export async function getEmailReport(filters = {}) {
   }
 }
 
+// ---- Email engagement — real opens / clicks / unsubscribes -----------------
+// v_ae_email: one row per marketing email per DAILY SNAPSHOT, fed from the email
+// marketing platform behind Salesforce (fact_ae_email; the counters are lifetime
+// totals, so each ingestion run writes a complete fresh snapshot). Reads the
+// LATEST snapshot only — summing across snapshots would double-count.
+//
+// QUARTER scope = the email's SEND date, under the same H1-2026 window rules as
+// every other read (q1/q2 → that quarter; ytd → Jan 1 to the Q2-close cap; Q3/Q4
+// therefore empty until the client extends REPORTING_END_ISO). Engagement keeps
+// accruing after the send — an email sent in March gains opens in June — which is
+// exactly why the send date picks the bucket and the counters are "to date".
+//
+// REGION is intentionally NOT applied: engagement is recorded per email, and one
+// send typically covers several regions' prospect lists at once, so a region split
+// would be invented, not measured. The page labels the section all-regions.
+//
+// Rate bases: open / unsubscribe / delivery mirror the email platform's own
+// reporting exactly (verified to 2dp against its UI). CTR alone diverges on
+// purpose — see the note inside rollup().
+const rateNum = (v) => (v == null ? NA : Number(v)) // numeric cols arrive as strings
+
+export async function getAeEmailEngagement(filters = {}) {
+  const { data: latestRows, error: e1 } = await supabase
+    .from('v_ae_email')
+    .select('snapshot_date')
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
+  if (e1) throw e1
+  const asOf = latestRows?.[0]?.snapshot_date
+  if (!asOf) return { hasData: false, hasFeed: false, asOf: null, totals: null, emails: [], campaigns: [] }
+
+  const rows = await fetchAll(
+    () => supabase.from('v_ae_email').select('*').eq('snapshot_date', asOf),
+    ['ae_email_id'],
+  )
+
+  // Send-date window, JS-side (the view carries no year/quarter columns; the whole
+  // snapshot is ~150 rows, so filtering client-side is cheaper than a second view).
+  const cap = toDateCapIso()
+  const inWindow = (r) => {
+    const d = String(r.sent_at || '').slice(0, 10)
+    if (!d || d > cap) return false
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      const qn = Number(String(filters.quarter).replace('q', ''))
+      const from = `${REPORTING_YEAR}-${String((qn - 1) * 3 + 1).padStart(2, '0')}-01`
+      const to = [`${REPORTING_YEAR}-03-31`, `${REPORTING_YEAR}-06-30`, `${REPORTING_YEAR}-09-30`, `${REPORTING_YEAR}-12-31`][qn - 1]
+      return d >= from && d <= to
+    }
+    return d >= `${HISTORY_START_YEAR}-01-01`
+  }
+  const scoped = rows.filter(inWindow)
+
+  const sumF = (rs, k) => rs.reduce((a, r) => a + (Number(r[k]) || 0), 0)
+  const rollup = (rs) => {
+    const sent = sumF(rs, 'sent')
+    const delivered = sumF(rs, 'delivered')
+    return {
+      emails: rs.length,
+      sent,
+      delivered,
+      uniqueOpens: sumF(rs, 'unique_opens'),
+      totalClicks: sumF(rs, 'total_clicks'),
+      uniqueClicks: sumF(rs, 'unique_clicks'),
+      optOuts: sumF(rs, 'opt_outs'),
+      hardBounces: sumF(rs, 'hard_bounces'),
+      deliveryRate: sent ? delivered / sent : NA,
+      openRate: delivered ? sumF(rs, 'unique_opens') / delivered : NA,
+      // CTR is the PER-PERSON basis (unique clicks ÷ delivered) — deliberately NOT the
+      // platform's headline total-clicks basis, which computes to ~29% on this account
+      // because corporate security scanners auto-click every link. Same call as the
+      // Outreach reply-rate: the per-person figure is the honest one; total clicks stay
+      // visible alongside so nothing is hidden.
+      ctr: delivered ? sumF(rs, 'unique_clicks') / delivered : NA,
+      unsubRate: delivered ? sumF(rs, 'opt_outs') / delivered : NA,
+    }
+  }
+
+  const emails = scoped
+    .map((r) => ({
+      id: r.ae_email_id,
+      name: r.email_name,
+      campaignKey: r.campaign_key,
+      campaignName: r.campaign_name ?? '—',
+      sentDate: String(r.sent_at || '').slice(0, 10),
+      sent: Number(r.sent) || 0,
+      delivered: Number(r.delivered) || 0,
+      uniqueOpens: Number(r.unique_opens) || 0,
+      uniqueClicks: Number(r.unique_clicks) || 0,
+      optOuts: Number(r.opt_outs) || 0,
+      openRate: rateNum(r.open_rate),
+      ctr: rateNum(r.unique_ctr), // per-person basis — see rollup() note
+    }))
+    .sort((a, b) => b.sent - a.sent)
+
+  // Aggregated per-campaign view (EM2's second half). Grouped by the linked
+  // Salesforce campaign; an email whose campaign hasn't synced groups under "—".
+  const byCampaign = new Map()
+  for (const r of scoped) {
+    const k = r.campaign_key || '—'
+    if (!byCampaign.has(k)) byCampaign.set(k, [])
+    byCampaign.get(k).push(r)
+  }
+  const campaigns = [...byCampaign.entries()]
+    .map(([key, rs]) => ({
+      campaignKey: key,
+      campaignName: rs[0].campaign_name ?? '—',
+      ...rollup(rs),
+    }))
+    .sort((a, b) => b.sent - a.sent)
+
+  return {
+    hasFeed: true,             // the feed exists (rows in some window)
+    hasData: scoped.length > 0, // …and this quarter window has sends
+    asOf,
+    totals: rollup(scoped),
+    emails,
+    campaigns,
+  }
+}
+
 // Current-state campaign attributes (SCD2 resolved) — used to populate the
 // campaign picker. Reads v_campaign_current per the rules.
 export async function getCampaignsForChannel(channelId) {
@@ -1233,9 +1353,13 @@ export async function getEventsDetail(filters = {}) {
 }
 
 // In-person event registrations + attendance by region (EV1/EV2/EV3). Reads
-// fact_event_attendance (seeded from Margot's Outreach attendee / non-attendee lists —
-// "Region – Attendees/Non-Attendees – Event"). Empty until those lists are exported +
-// seeded; the Events page shows an honest "pending" state until then.
+// fact_event_attendance, fed from the marketing email platform's attendee /
+// non-attendee segmentation lists ("REGION - Attendees|Non-Attendees - Event") by
+// workflows/pardot_event_attendance_ingestion.json — the lists turned out to live
+// there, not in Outreach, so no client export is needed (10 Aug). Webinar lists are
+// excluded at ingest (GoToWebinar owns webinar attendance; EventsSummary ADDS this
+// table on top, so including them would double-count). The Events page shows an
+// honest "pending" state until the feed's first run.
 export async function getEventAttendance(filters = {}) {
   const rows = await fetchAll(() => {
     let q = supabase.from('fact_event_attendance').select('event_name,region_code,registered,attended')
