@@ -19,6 +19,8 @@
 import {
   getKpiTracker, getKpiTargets, getWebTraffic, getEventTypeFunnel, getEvents,
   getPipeline, getOutreach, getOutreachAttributedMeetings,
+  getLinkedInSnapshot, getAeEmailEngagement, getEventAttendance,
+  getEmailReport, getChannel,
 } from './queries'
 import { buildKpiRegisterRows, periodOf, scopeLabel } from './kpiRegister'
 
@@ -42,7 +44,7 @@ export function download(content, filename, mime) {
 // scoped figures, mirroring the dashboard pages.
 
 export async function assembleKpiRegister(filters) {
-  const [kpi, webRes, events, evtRes, targets, outreach, outreachMeetings] = await Promise.all([
+  const [kpi, webRes, events, evtRes, targets, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailReport, webChannel, eventsChannel] = await Promise.all([
     getKpiTracker(filters),
     getWebTraffic(filters),
     getEventTypeFunnel(filters),
@@ -50,6 +52,12 @@ export async function assembleKpiRegister(filters) {
     getKpiTargets(),
     getOutreach({ region: filters.region }),
     getOutreachAttributedMeetings(filters),
+    getLinkedInSnapshot(filters),
+    getAeEmailEngagement(filters),
+    getEventAttendance(filters),
+    getEmailReport(filters),
+    getChannel('Organic SEO', filters, ['Content/White Paper']),
+    getChannel('Events & Webinars', filters),
   ])
   const rows = buildKpiRegisterRows({
     funnel: kpi.funnel,
@@ -59,6 +67,12 @@ export async function assembleKpiRegister(filters) {
     attendance: evtRes?.hasData ? evtRes.totals : null,
     outreach,
     outreachMeetings,
+    linkedin,
+    aeEmail,
+    eventAttendance: eventAttendance?.hasData ? eventAttendance : null,
+    emailFunnel: emailReport?.totals,
+    webFunnel: webChannel?.totals,
+    eventsFunnel: eventsChannel?.totals,
   })
   return { rows, targets, period: periodOf(filters.quarter), scope: scopeLabel(filters.quarter) }
 }

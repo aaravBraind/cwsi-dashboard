@@ -88,7 +88,10 @@ export async function getBoardPack(filters = {}) {
 
   const mql = funnel.mql
   const sql = funnel.sql
-  const pipeline = funnel.pipeline
+  // Influenced Pipeline on the GROSS-PROFIT basis (11 Aug decision) — same field the
+  // Overview headline shows, so board and pages can never diverge on basis.
+  const pipeline = funnel.marginPipeline
+  const pipelineRevenue = funnel.pipeline
   const margin = funnel.margin
   const closedWonCount = funnel.closedWonCount
   const opp = funnel.opp
@@ -105,7 +108,7 @@ export async function getBoardPack(filters = {}) {
     mqlToSql: prevRate,
     createdOpps: prevFunnel ? prevFunnel.createdOpps : null,
     closedOpps: prevFunnel ? prevFunnel.closedWonCount : null,
-    pipeline: prevFunnel ? prevFunnel.pipeline : null,
+    pipeline: prevFunnel ? prevFunnel.marginPipeline : null,
     margin: prevFunnel ? prevFunnel.margin : null,
   }
 
@@ -138,17 +141,24 @@ export async function getBoardPack(filters = {}) {
       note: real(createdOpps) ? null : 'pending Salesforce data refresh',
     },
     {
-      key: 'closedOpps', order: 5, label: 'Closed Opportunities', unit: 'count',
+      // W10: this row counts WON deals only, and now says so — the old "Closed
+      // Opportunities" label read as won+lost, which broke the Created = Open + Closed
+      // arithmetic on inspection. The full identity (created = still open + closed,
+      // where closed = won + lost) is asserted in the reconciliation audit.
+      key: 'closedOpps', order: 5, label: 'Closed-Won Opportunities', unit: 'count',
       value: closedWonCount, valueDisplay: real(closedWonCount) ? num(closedWonCount) : 'n/a',
       target: TGT.closedWonCount, targetDisplay: `FY ${num(TGT.closedWonCount)}`,
-      trace: 'Σ v_fact_enriched.closed_won_count (scoped)',
-      note: real(closedWonCount) ? null : 'pending Salesforce data refresh',
+      trace: 'Σ v_fact_enriched.closed_won_count (scoped) — won deals only; lost deals are not in this count',
+      note: real(closedWonCount)
+        ? 'won only — deals lost are neither here nor in pipeline (created opportunities = still open + closed won + closed lost)'
+        : 'pending Salesforce data refresh',
     },
     {
-      key: 'pipeline', order: 6, label: 'Influenced Pipeline (revenue)', unit: 'gbp',
+      key: 'pipeline', order: 6, label: 'Influenced Pipeline (gross profit)', unit: 'gbp',
       value: pipeline, valueDisplay: real(pipeline) ? eur(pipeline) : 'n/a',
       target: TGT.pipeline, targetDisplay: `FY ${eur(TGT.pipeline)}`,
-      trace: 'Σ v_fact_enriched.pipeline_value + Σ closed_won_value (generated = open + won, scoped)',
+      trace: 'Σ v_fact_enriched.pipeline_margin_value (open-opp gross profit) + Σ margin_value (won-deal gross profit), scoped — gross-profit basis, 11 Aug decision',
+      note: real(pipelineRevenue) && real(pipeline) ? `${eur(pipelineRevenue)} on the revenue basis (full deal value)` : (real(pipeline) ? null : 'open-deal gross profit pending the next data refresh'),
     },
     {
       key: 'margin', order: 7, label: 'Influenced Margin (gross profit)', unit: 'gbp',
@@ -157,8 +167,8 @@ export async function getBoardPack(filters = {}) {
       trace: 'Σ v_fact_enriched.margin_value (gross profit in EUR — Salesforce Gross_Profit_Value__c, else Amount × Gross_Profit_Margin__c; scoped; blank/invalid → NULL, excluded — never counted as full revenue)',
       note: real(margin)
         ? (funnel.marginPendingDeals > 0
-            ? `${funnel.marginKnownDeals}/${funnel.marginKnownDeals + funnel.marginPendingDeals} won deals have gross profit; rest pending in Salesforce`
-            : null)
+            ? `${funnel.marginKnownDeals}/${funnel.marginKnownDeals + funnel.marginPendingDeals} won deals have gross profit; rest pending in Salesforce · includes sales-generated campaigns (the Overview's exclude toggle is a what-if view and never changes the board)`
+            : 'includes sales-generated campaigns (the Overview’s exclude toggle is a what-if view and never changes the board)')
         : 'gross profit pending on all won deals',
     },
   ].map((m) => ({

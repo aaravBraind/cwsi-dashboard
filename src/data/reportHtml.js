@@ -85,7 +85,8 @@ export function buildPipelineHtml({ funnel, bySource }, { region, quarter } = {}
     ['SQLs', real(f.sql, num)],
     ['Qualified Opportunities', real(f.opp, num)],
     ['Closed-won (count)', real(f.closedWonCount, num)],
-    ['Influenced pipeline (revenue)', real(f.pipeline, eur)],
+    ['Influenced pipeline (gross profit)', real(f.marginPipeline, eur)],
+    ['Influenced pipeline — revenue basis', real(f.pipeline, eur)],
     ['Closed-won value (revenue)', real(f.closedWon, eur)],
   ]
   const statCards = stats

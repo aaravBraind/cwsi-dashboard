@@ -13,6 +13,7 @@ import {
   getPipeline,
   getCurrentVsOngoing,
   getSalesCycle,
+  getUnassignedOpps,
   getOpportunityStage,
   getChannel,
   getEmailReport,
@@ -77,11 +78,17 @@ export function usePipeline() {
 }
 
 // Current-quarter activity vs ongoing impact of prior-quarter activities (X6) — region +
-// quarter scoped. Optional `channel` override scopes it to one channel (EV5: Events page).
-export function useCurrentVsOngoing(channel = null) {
+// quarter scoped. Optional `channel` scopes it to one channel (EV5: Events page); optional
+// `keys` scopes it to a pinned campaign list (W6: the Email page's 4 named campaigns).
+export function useCurrentVsOngoing(channel = null, keys = null) {
   const { filters } = useFilters()
-  const scoped = channel ? { ...filters, channel } : filters
+  const scoped = { ...filters, ...(channel ? { channel } : {}), ...(keys ? { keys } : {}) }
   return useQuery({ queryKey: ['current-vs-ongoing', scoped], queryFn: () => getCurrentVsOngoing(scoped) })
+}
+
+// W10 — the UNASSIGNED-region opportunity list for the Board's regional footnote.
+export function useUnassignedOpps() {
+  return useQuery({ queryKey: ['unassigned-opps'], queryFn: getUnassignedOpps })
 }
 
 // Sales-cycle view (G5) — per-opp created→close durations by outcome + source.
@@ -172,13 +179,14 @@ export function useCampaigns(channelId) {
   })
 }
 
-// LinkedIn delivery snapshot — region-scoped; quarter intentionally excluded
-// (cumulative snapshot, not a quarter slice).
+// LinkedIn delivery snapshot — region-scoped AND quarter-aware since W11 (11 Aug):
+// each campaign carries its quarter (all 2026 campaigns ran in Q2), so Q1/Q3 return an
+// explicit out-of-quarter state instead of repeating the same lifetime figures.
 export function useLinkedInSnapshot(includePrior = false) {
   const { filters } = useFilters()
   return useQuery({
-    queryKey: ['linkedin-snapshot', filters.region, includePrior],
-    queryFn: () => getLinkedInSnapshot({ region: filters.region, includePrior }),
+    queryKey: ['linkedin-snapshot', filters.region, filters.quarter, includePrior],
+    queryFn: () => getLinkedInSnapshot({ region: filters.region, quarter: filters.quarter, includePrior }),
   })
 }
 

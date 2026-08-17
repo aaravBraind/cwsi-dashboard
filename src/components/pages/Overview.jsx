@@ -8,6 +8,7 @@ import { periodOf, scopeLabel, achievement, lightOf, targetAt, fmtTarget } from 
 import { I } from '../icons'
 import Explain from '../Explain'
 import MarketingBudget from '../MarketingBudget'
+import CurrentVsOngoing from '../CurrentVsOngoing'
 import { SALES_EXCLUDED_BY_DEFAULT, SALES_CAMPAIGN_LABELS } from '../../data/attribution'
 
 // Status lights + %-of-target follow the ACTIVE quarter pill (Q1..Q4 → that
@@ -57,6 +58,7 @@ function Body({ data }) {
     ? {
         ...rawFunnel,
         pipeline: rawFunnel.pipeline - sg.pipeline,
+        marginPipeline: isNA(rawFunnel.marginPipeline) ? rawFunnel.marginPipeline : rawFunnel.marginPipeline - sg.marginPipeline,
         closedWon: rawFunnel.closedWon - sg.closedWon,
         margin: isNA(rawFunnel.margin) ? rawFunnel.margin : rawFunnel.margin - sg.margin,
       }
@@ -95,7 +97,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Marketing Budget — Actual Spend</div>
-            <div className="panel-sub">From the budget tracker (EUR) · total budget &amp; MDF split pending from CWSI</div>
+            <div className="panel-sub">From the budget tracker (EUR) · annual budget €466,394.92 · of which MDF €86,394.92</div>
           </div>
           <span className="chip blue">EUR</span>
         </div>
@@ -109,14 +111,28 @@ function Body({ data }) {
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.euro}</svg></div>
-            <span className={`tl ${lightFor(funnel.pipeline, 'influencedPipeline')}`}>
-              <span className="tl-dot" />{pctOf(funnel.pipeline, 'influencedPipeline')}
+            <span className={`tl ${isNA(funnel.marginPipeline) ? 'neu' : lightFor(funnel.marginPipeline, 'influencedPipeline')}`}>
+              <span className="tl-dot" />{isNA(funnel.marginPipeline) ? 'n/a' : pctOf(funnel.marginPipeline, 'influencedPipeline')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Pipeline (revenue) · current view <Explain id="pipeline" /></div>
-          <div className="kpi-val">{eur(funnel.pipeline)}</div>
+          <div className="kpi-label">Influenced Pipeline (gross profit) · current view <Explain id="pipeline" /></div>
+          <div className="kpi-val">{isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">{tgtSub('influencedPipeline')}</span>
+            {isNA(funnel.marginPipeline) ? (
+              <NotAvailable
+                what="Influenced pipeline (gross profit)"
+                why="open-deal gross profit arrives at the next data refresh"
+              />
+            ) : (
+              <>
+                <span className="kpi-target">{tgtSub('influencedPipeline')}</span>
+                <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
+                  {eur(funnel.pipeline)} on the revenue basis (full deal value)
+                  {funnel.marginPipelinePendingOpps > 0 &&
+                    ` · gross profit known for ${num(funnel.marginPipelineKnownOpps)} of ${num(funnel.marginPipelineKnownOpps + funnel.marginPipelinePendingOpps)} deals · rest pending in Salesforce`}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -184,23 +200,22 @@ function Body({ data }) {
         </div>
       )}
 
-      {/* Locked definition: the basis of the two headline money figures. Influenced Pipeline
-          is REVENUE (Opportunity.Amount); Influenced Margin is GROSS PROFIT. CWSI tracks
-          company pipeline on a gross-margin basis, so the two are not directly divisible —
-          spelled out here because it was the first question asked of these numbers.
+      {/* Basis of the two headline money figures — GROSS PROFIT on both since the 11 Aug
+          decision (supersedes the earlier revenue basis for Influenced Pipeline). The revenue
+          figure stays visible as the secondary line under the pipeline KPI.
           See docs/METRIC_DEFINITIONS.md. */}
       <div className="callout" style={{ marginBottom: 18 }}>
         <div className="callout-icn">
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>Which basis these two are on.</strong> <strong>Influenced Pipeline is revenue</strong> — the full
-          deal value of the qualified opportunities marketing touched. <strong>Influenced Margin is gross
-          profit</strong> — the profit on the won ones. Because CWSI tracks company-wide pipeline on a{' '}
-          <em>gross-margin</em> basis, dividing Influenced Pipeline into that number is not like-for-like; compare
-          Influenced Margin against the closed-won gross-margin figure instead. Note that gross profit depends on
-          deal type: for CWSI's own services revenue and margin are set equal in Salesforce, so the two figures sit
-          close together today — the gap widens as more resold product enters the mix.{' '}
+          <strong>Which basis these two are on.</strong> Both headline figures are <strong>gross profit</strong>,
+          matching how CWSI tracks company pipeline. <strong>Influenced Pipeline</strong> is the gross profit on the
+          qualified opportunities marketing touched — open deals plus the ones already won.{' '}
+          <strong>Influenced Margin</strong> is the gross profit on the won ones only. The full deal value (revenue)
+          is shown as the smaller line under Influenced Pipeline for reference. Gross profit depends on deal type:
+          for CWSI's own services revenue and margin are set equal in Salesforce, so figures can sit close to deal
+          value today — the gap widens as more resold product enters the mix.{' '}
           <Explain id="pipeline" /> <Explain id="margin" />
         </div>
       </div>
@@ -245,18 +260,22 @@ function Body({ data }) {
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
-            <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Opp n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Opp`}</span>
-            <span className="conv">▶ {isNA(funnel.closedWonCount) || isNA(funnel.opp) ? 'Opp → Closed n/a' : `${pct(funnel.closedWonCount, funnel.opp)} Opp → Won`}</span>
+            <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Qualified n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Qualified`}</span>
+            <span className="conv">▶ {isNA(funnel.closedWonCount) || isNA(funnel.opp) ? 'Qualified → Won n/a' : `${pct(funnel.closedWonCount, funnel.opp)} Qualified → Won`}</span>
           </div>
         </div>
       </div>
+
+      {/* 2b. Run-this-period vs ongoing impact (W6 — Margot's "apply the same logic here
+          as well": the split already on Pipeline/Events/Board, now on the Overview too) */}
+      <CurrentVsOngoing />
 
       {/* 3. Pipeline vs Closed-Won by Channel */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
-            <div className="panel-title">Pipeline vs Closed-Won by Channel</div>
-            <div className="panel-sub">Influenced pipeline against the revenue it converted into · per channel · current view</div>
+            <div className="panel-title">Pipeline vs Closed-Won by Channel <Explain id="otherChannel" /></div>
+            <div className="panel-sub">Influenced pipeline against the revenue it converted into · per channel (revenue basis) · current view · the eye explains the "Other / Unmapped" bucket</div>
           </div>
           <span className="chip blue">current view</span>
         </div>

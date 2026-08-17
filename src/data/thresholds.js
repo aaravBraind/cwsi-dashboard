@@ -86,12 +86,15 @@ export const CPL_TARGET_GBP = 150
 // Outreach meetings feed is unblocked (stale-token, SALESFORCE_TODO §4).
 export const MEETINGS_TARGET_PER_QUARTER = 100
 
-// Marketing budget PLAN (EUR) for budget-vs-actual. fact_marketing_spend only
-// holds ACTUALS (status='Spent'); the planned budget is client-gated and not in
-// the store. Leave null until CWSI confirms it — the UI shows actuals live and
-// flags the budget as "not set" rather than fabricating a number. Set e.g.
-// 250_000 once confirmed.
-export const MARKETING_BUDGET_EUR = null
+// Marketing budget PLAN (EUR) for budget-vs-actual — supplied by CWSI in the
+// 11 Aug 2026 written feedback: total available budget €466,394.92, of which
+// available MDF (vendor market-development funds) is €86,394.92. The split is
+// exact: 466,394.92 − 86,394.92 = 380,000.00, i.e. a €380k core budget plus the
+// MDF on top — so MDF is presented as "of which", not additional to the total.
+// fact_marketing_spend holds ACTUALS (status='Spent'); MDF actuals are the
+// tracker rows with budget_line = 'MDF'.
+export const MARKETING_BUDGET_EUR = 466_394.92
+export const MDF_BUDGET_EUR = 86_394.92
 
 // NOTE: there is intentionally NO hardcoded fallback FX rate. The live ECB rate
 // is fetched + pinned per day in src/data/fx.js. If the API is unavailable, the

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useBoardPack, useGenerateBoardPack, useSavedBoardPack, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
+import { useBoardPack, useGenerateBoardPack, useSavedBoardPack, useOutreachAttributedMeetings, useUnassignedOpps } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { I } from '../icons'
 import Explain from '../Explain'
@@ -189,7 +189,7 @@ function ChannelSection({ channels, meta }) {
     <Expandable
       icon={I.grid}
       title="Channel Contribution"
-      sub={`Pipeline & MQL share by channel · ${meta.regionLabel} · ${meta.quarterLabel}`}
+      sub={`Pipeline & MQL share by channel · revenue basis (shares are basis-independent; the headline Influenced Pipeline is gross profit) · ${meta.regionLabel} · ${meta.quarterLabel}`}
       chip={<span className="chip blue">{channels.length} channel{channels.length === 1 ? '' : 's'}</span>}
     >
       <ShareDonut title="Pipeline share" items={channels.map((c) => ({ label: c.channel, share: c.pipelineShare, display: c.pipelineShareDisplay }))} />
@@ -350,19 +350,51 @@ function RegionSection({ regions }) {
           </tbody>
         </table>
       </div>
-      {regions.some((r) => /unassign/i.test(r.region)) && (
-        <div className="callout" style={{ marginTop: 12 }}>
-          <div className="callout-icn">
-            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-          </div>
-          <div className="callout-body">
-            <strong>Unassigned</strong> = records whose region couldn't be resolved from Salesforce — the
-            Account has no <em>Region</em> or billing country set, so we can't place them in UK&I / BeLux / NL.
-            It's a data-completeness gap in Salesforce, not a real region.
-          </div>
-        </div>
-      )}
+      {regions.some((r) => /unassign/i.test(r.region)) && <UnassignedFootnote />}
     </Expandable>
+  )
+}
+
+// W10 — the deal-level answer to "review the regional roll-up": exactly WHICH
+// opportunities couldn't be placed in a region, so each can be fixed at source.
+function UnassignedFootnote() {
+  const q = useUnassignedOpps()
+  const opps = q.data?.opps || []
+  return (
+    <div className="callout" style={{ marginTop: 12 }}>
+      <div className="callout-icn">
+        <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+      </div>
+      <div className="callout-body">
+        <strong>Unassigned</strong> = deals whose Salesforce Account has no <em>Region</em> and no billing
+        country, so they can't be placed in UK&I / BeLux / NL — a data-completeness gap in Salesforce, not a
+        real region. The regional rows plus this bucket always add up to the all-regions total.
+        {opps.length > 0 && (
+          <>
+            {' '}These are the {opps.length} deals — setting the Account's Region (or billing country) in
+            Salesforce moves each into its region at the next refresh:
+            <div className="tbl-scroll" style={{ marginTop: 8 }}>
+              <table className="tbl">
+                <thead>
+                  <tr><th>Salesforce opportunity ID</th><th>Channel</th><th>Created</th><th className="r">Value €</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {opps.map((o) => (
+                    <tr key={o.oppId}>
+                      <td className="mono">{o.oppId}</td>
+                      <td>{o.channel}</td>
+                      <td className="mono mono-d">{o.created}</td>
+                      <td className="r mono">{eur(o.amount)}</td>
+                      <td>{o.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

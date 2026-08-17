@@ -43,18 +43,24 @@ function Body({ data }) {
           below; keeping euros here and counts there removes the old top-strip/funnel
           duplication (P1) and adopts the agreed metric set (P2). */}
       <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-        <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period'} explainId="createdOppsValue" />
-        <Cell label="Influenced Pipeline" val={eur(funnel.pipeline)} meta="revenue · open + won" explainId="pipeline" />
+        <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period · revenue'} explainId="createdOppsValue" />
+        <Cell
+          label="Influenced Pipeline (gross profit)"
+          val={isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}
+          meta={isNA(funnel.marginPipeline) ? 'open-deal gross profit at next refresh' : `open + won · ${eur(funnel.pipeline)} on the revenue basis`}
+          explainId="pipeline"
+        />
         <Cell label="Closed-Won" val={eur(funnel.closedWon)} meta="revenue · won · by close date" explainId="closedWon" />
       </div>
 
-      {/* Locked definitions (see docs/METRIC_DEFINITIONS.md): all three € figures are REVENUE
-          (deal value, not gross margin — gross profit is the separate Influenced Margin on the
-          Overview), and each is dated by the DEAL: open by created date, won by close date. */}
+      {/* Basis (see docs/METRIC_DEFINITIONS.md): Influenced Pipeline is GROSS PROFIT since the
+          11 Aug decision; New Pipeline Created and Closed-Won stay revenue (deal value). Every
+          figure is dated by the DEAL: open by created date, won by close date. */}
       <p className="panel-note" style={{ padding: '6px 4px 12px', fontSize: 12, opacity: 0.7 }}>
-        All three figures are <strong>revenue</strong> (deal value, not gross margin — gross profit is the separate
-        Influenced Margin on the Overview), and each is dated by the <strong>deal</strong>: an open opportunity counts
-        in the quarter it was created, a won one in the quarter it closed. <Explain id="campaignDating" />
+        <strong>Influenced Pipeline is gross profit</strong> (the profit on those deals, matching how CWSI tracks
+        pipeline) — its full deal value is shown alongside for reference. New Pipeline Created and Closed-Won are{' '}
+        <strong>revenue</strong> (deal value). Each figure is dated by the <strong>deal</strong>: an open opportunity
+        counts in the quarter it was created, a won one in the quarter it closed. <Explain id="campaignDating" />
       </p>
 
       {/* Lead Journey — count funnel, stage progression only (mirrors Overview exactly). */}
@@ -118,11 +124,11 @@ function Body({ data }) {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Source / Channel</th>
+                <th>Source / Channel <Explain id="otherChannel" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
                 <th className="r">Created Opps <Explain id="createdOpps" /></th>
-                <th className="r">Influenced Pipeline € (revenue) <Explain id="pipeline" /></th>
+                <th className="r">Influenced Pipeline € (gross profit) <Explain id="pipeline" /></th>
                 <th className="r">Closed-Won € <Explain id="closedWon" /></th>
               </tr>
             </thead>
@@ -133,7 +139,7 @@ function Body({ data }) {
                   <td className="r mono">{num(s.mql)}</td>
                   <td className="r mono">{num(s.sql)}</td>
                   <td className="r mono">{num(s.createdOpps)}</td>
-                  <td className="r mono">{eur(s.pipeline)}</td>
+                  <td className="r mono">{isNA(s.marginPipeline) ? '—' : eur(s.marginPipeline)}</td>
                   <td className="r mono">{eur(s.closedWon)}</td>
                 </tr>
               ))}
@@ -143,7 +149,8 @@ function Body({ data }) {
                   <td className="r mono">—</td>
                   <td className="r mono">—</td>
                   <td className="r mono">{num(outbound.createdOpps)}</td>
-                  <td className="r mono">{eur(outbound.pipeline)}</td>
+                  {/* contact-attributed path carries deal value only (no per-opp GP yet) — labelled to avoid a silent basis mix */}
+                  <td className="r mono">{eur(outbound.pipeline)} <span style={{ opacity: 0.6 }}>(revenue)</span></td>
                   <td className="r mono">{eur(outbound.won)}</td>
                 </tr>
               )}
@@ -152,7 +159,7 @@ function Body({ data }) {
                 <td className="r mono">{num(funnel.mql)}</td>
                 <td className="r mono">{num(funnel.sql)}</td>
                 <td className="r mono">{isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)}</td>
-                <td className="r mono">{eur(funnel.pipeline)}</td>
+                <td className="r mono">{isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}</td>
                 <td className="r mono">{eur(funnel.closedWon)}</td>
               </tr>
             </tbody>
@@ -165,11 +172,11 @@ function Body({ data }) {
               campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
               Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. <strong>Paid social
               (LinkedIn)</strong> (P5) is already represented here through its linked Salesforce campaigns — each LinkedIn
-              ad is tied to a specific SF campaign (e.g. the BeNeLux "Data That Moves" ad → SF campaign
-              <span className="mono"> 701Tm00000ZUJUEIA5</span>), so its leads &amp; pipeline appear under the
+              ad is tied to a specific Salesforce campaign (the BeNeLux "Data That Moves" ad is linked to the
+              "BeNeLux LinkedIn Ads — Data That Moves Your Business Forward" campaign), so its leads &amp; pipeline appear under the
               <strong> LinkedIn Paid</strong> channel row rather than being counted twice. <strong>Paid Search</strong> has
               no Salesforce campaigns for the period, so there's nothing to list. Every campaign row here is
-              marketing-campaign-attributed (each opp carries a Campaign).
+              marketing-campaign-attributed (each opp carries a Campaign). <strong>"Other / Unmapped"</strong> groups the Salesforce campaign types we can’t place under a marketing channel (Other, Telemarketing, Partners, Referral Program), blank types, and system/list-import entries — kept so the table always adds up to the total (the eye-button on the header has the full definition).
               <br /><strong>Closed-Won reconciles here:</strong> the Closed-Won total in this table equals the
               Closed-Won figure at the top of the page — both count won deals by their <strong>close date</strong>.
               The <em>Pipeline Stage Distribution</em> lower down is a different measure (all <strong>open</strong>{' '}
@@ -202,7 +209,8 @@ function StageDistribution() {
         <div className="left">
           <div className="panel-title">Pipeline Stage Distribution</div>
           <div className="panel-sub">
-            Open opportunities (created 2026) by stage · count &amp; value{snapshotDate ? ` · snapshot ${snapshotDate}` : ''}
+            Open opportunities (created 2026) by stage · count &amp; value ·{' '}
+            <strong>point-in-time snapshot{snapshotDate ? ` as of ${snapshotDate}` : ''} — the quarter pill does not apply here</strong>
           </div>
         </div>
         <span className="chip blue">open pipeline</span>
@@ -232,8 +240,10 @@ function StageDistribution() {
             <strong>total value</strong> of open deals sitting in it, and <strong>how many</strong> deals. Deals begin at
             the low-confidence stages and move up as they get more likely to close. <strong>"Unqualified opp" (5%) means
             brand-new, not-yet-qualified deals</strong> — these are deliberately <strong>excluded from the "Influenced
-            Pipeline" figure</strong> shown elsewhere on the dashboard, which counts qualified deals only. That's why
-            this list (all open deals) adds up to more than Influenced Pipeline.
+            Pipeline" figure</strong> shown elsewhere on the dashboard, which counts qualified deals only. Note the
+            values here are <strong>full deal value (revenue)</strong> of every open deal, while Influenced Pipeline is
+            the <strong>gross profit</strong> of the qualified ones — so this list adds up to more than Influenced
+            Pipeline, for both reasons.
           </div>
         </div>
       </div>

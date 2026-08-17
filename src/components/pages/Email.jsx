@@ -6,6 +6,8 @@ import { eur, num, isNA, NA } from '../../data/format'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
+import CurrentVsOngoing from '../CurrentVsOngoing'
+import { EMAIL_FAMILY_FACT_KEYS } from '../../data/pinnedCampaigns'
 
 // Email page — two halves:
 //   1. COMMERCIAL funnel for Margot's whitepaper-download + Salesforce-workflow
@@ -35,14 +37,16 @@ export default function Email() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>What's shown here:</strong> your <strong>whitepaper-download campaigns</strong> and the
-          <strong> Salesforce email workflows</strong> — including the four you named (Data That Moves, Apple for
-          Enterprise Tech Deep Dive, Becoming Frontier, and the Microsoft E7 Offering Workflow). Figures are the{' '}
+          <strong>What's shown here: exactly the four campaigns you named</strong> — Data That Moves Your Business
+          Forward Whitepaper, Whitepaper: Becoming Frontier: Leading the Next Phase of AI, Apple for Enterprise Tech
+          Deep Dive Whitepaper, and the Microsoft E7 Offering Workflow — and nothing else. Each row aggregates the
+          whole campaign (all its emails and Salesforce entries together). Figures are the{' '}
           <strong>commercial funnel</strong> (MQLs through to revenue), measured from <strong>Salesforce campaign
-          members</strong>. For a whitepaper, the <strong>MQL</strong> count is its <strong>downloads</strong> — the
-          people Salesforce records as having responded to the campaign. Region &amp; quarter scope every figure.
-          <br /><em>Note:</em> this counts contacts logged as campaign members in Salesforce; if a landing-page tool
-          shows more form-fills, those extra contacts aren't yet recorded against the Salesforce campaign.
+          members</strong>. For a whitepaper, the <strong>MQL</strong> count is its <strong>downloads</strong>.{' '}
+          <strong>Audience</strong> = deliveries of the campaign's emails (from the email platform).
+          <br /><em>One correction you spotted:</em> in the email platform, the whitepaper's own emails were filed
+          under the <em>Q1 Data is an Asset webinar</em> bucket alongside the webinar promos. They're separated here
+          by name, so whitepaper figures contain <strong>only whitepaper emails</strong> — no webinar promotions.
         </div>
       </div>
 
@@ -76,6 +80,7 @@ function Engagement() {
 
 function EngagementBody({ d }) {
   const { rows: sortedEmails, sortProps } = useSortable(d.emails, 'sent')
+  const [showEmails, setShowEmails] = useState(false) // per-email drill-down collapsed by default (W5)
   const t = d.totals
   return (
     <>
@@ -85,7 +90,7 @@ function EngagementBody({ d }) {
           <div className="left">
             <div className="panel-title">Email Engagement <Explain id="emailEngagement" /></div>
             <div className="panel-sub">
-              Every marketing email sent in the selected period · all regions (a send covers several regions' lists) ·
+              The named campaigns' emails sent in the selected period · all regions (a send covers several regions' lists) ·
               engagement counted to {d.asOf}
             </div>
           </div>
@@ -110,12 +115,14 @@ function EngagementBody({ d }) {
 
       {d.hasData && (
         <>
-          {/* Aggregated per-campaign engagement (EM2's campaign view) */}
+          {/* Aggregated per-campaign engagement — the campaign-level read Margot asked for
+              ("I'm not interested in individual email performance. Please aggregate results
+              at the campaign level.") */}
           <div className="panel">
             <div className="panel-head">
               <div className="left">
                 <div className="panel-title">Engagement by Campaign</div>
-                <div className="panel-sub">All emails grouped under their Salesforce campaign — includes webinar-invite and whitepaper emails, so this list is broader than the campaign table above</div>
+                <div className="panel-sub">The named campaigns only, each aggregating all its emails · whitepaper campaigns exclude the webinar promos that shared their bucket in the email platform</div>
               </div>
               <span className="chip blue">{d.campaigns.length} campaigns</span>
             </div>
@@ -158,15 +165,21 @@ function EngagementBody({ d }) {
             </div>
           </div>
 
-          {/* Per-email breakdown (EM2's per-email KPIs) */}
+          {/* Per-email breakdown — demoted to a collapsed drill-down (Margot: "I'm not
+              interested in individual email performance"); it stays for auditing the
+              campaign-level figures above. */}
           <div className="panel">
-            <div className="panel-head">
+            <div className="panel-head" style={{ cursor: 'pointer' }} onClick={() => setShowEmails((s) => !s)}>
               <div className="left">
-                <div className="panel-title">Per-Email Performance</div>
-                <div className="panel-sub">Every individual send · click a column to sort</div>
+                <div className="panel-title">
+                  <span style={{ display: 'inline-block', width: 14, opacity: 0.6 }}>{showEmails ? '▾' : '▸'}</span>
+                  Individual Emails — drill-down
+                </div>
+                <div className="panel-sub">The sends behind the campaign figures above · collapsed by default · click to {showEmails ? 'hide' : 'expand'}</div>
               </div>
               <span className="chip blue">{sortedEmails.length} emails</span>
             </div>
+            {showEmails && (
             <div className="panel-body no-pad">
               <table className="tbl">
                 <thead>
@@ -201,6 +214,7 @@ function EngagementBody({ d }) {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </>
       )}
@@ -239,34 +253,19 @@ const sumTotals = (rows) => ({
 
 function Body({ data, ov }) {
   const { campaigns } = data
-  const [kind, setKind] = useState('all') // EM1: filter Whitepaper vs Workflow
-  const wpCount = campaigns.filter((c) => c.kind === 'Whitepaper').length
-  const wfCount = campaigns.filter((c) => c.kind === 'Workflow').length
-  const shown = kind === 'all' ? campaigns : campaigns.filter((c) => c.kind === kind)
-  // Robin: sortable columns rather than a fixed order (defaults to most MQLs).
-  const { rows: sortedCampaigns, sortProps } = useSortable(shown, 'mql')
-  const t = sumTotals(shown)
-  const matchedCount = shown.length
+  // W5: the list is fixed at Margot's 4 campaigns — the old Whitepaper/Workflow filter
+  // dropdown had nothing left to filter and was removed.
+  const { rows: sortedCampaigns, sortProps } = useSortable(campaigns, 'mql')
+  const t = sumTotals(campaigns)
+  const matchedCount = campaigns.length
   return (
     <>
-      {/* EM1 — filter by campaign type (whitepaper downloads vs email workflows) */}
-      <div className="filters" style={{ marginBottom: 14 }}>
-        <div className="filter">
-          <span className="label">Campaign type</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="all">All ({campaigns.length})</option>
-            <option value="Whitepaper">Whitepaper downloads ({wpCount})</option>
-            <option value="Workflow">Email workflows ({wfCount})</option>
-          </select>
-        </div>
-      </div>
-
       {/* Commercial funnel — Margot's requested order (same style as Overview) */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} {kind === 'all' ? 'whitepaper & workflow' : kind === 'Whitepaper' ? 'whitepaper' : 'workflow'} campaign{matchedCount === 1 ? '' : 's'} · each campaign's full-2026 contribution</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} named campaigns · each campaign's full-2026 contribution</div>
           </div>
           <span className="chip blue">{matchedCount} campaigns</span>
         </div>
@@ -281,12 +280,15 @@ function Body({ data, ov }) {
         </div>
       </div>
 
+      {/* W6 — run-this-period vs ongoing impact, scoped to the four named campaigns */}
+      <CurrentVsOngoing keys={EMAIL_FAMILY_FACT_KEYS} />
+
       {/* Per-campaign breakdown */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Campaign Performance</div>
-            <div className="panel-sub">Each whitepaper / workflow campaign · full-2026 contribution · names editable (click the pencil)</div>
+            <div className="panel-sub">The four named campaigns · full-2026 contribution each · names editable (click the pencil)</div>
           </div>
           <span className="chip blue">{matchedCount} campaign{matchedCount === 1 ? '' : 's'}</span>
         </div>

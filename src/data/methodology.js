@@ -50,8 +50,8 @@ export const METHODOLOGY = {
     label: 'Current-quarter activity vs ongoing impact',
     what: 'Splits this period’s pipeline and revenue by whether the campaign that drove it started this period or in an earlier one — showing marketing’s long tail.',
     source: 'Salesforce Campaign Start Date, against the opportunity/close dates behind each figure.',
-    calc: 'Each figure is bucketed by its campaign’s Start Date: “this period” if the campaign started in the selected quarter/window, “earlier activities” if it started before. Campaign END or close date is never used. The figures themselves stay dated by the deal (open opportunities by created date, won ones by close date), so this view shows this period’s results split by the age of the activity behind them. The average sales-cycle is the mean days from a campaign’s start to a won deal’s close.',
-    caveat: 'In 2026 to date most of the pipeline and revenue landing in a quarter comes from campaigns that started EARLIER — which is the whole point of this split. A €0 for "this period" closed-won is a genuine zero, not missing data — newly-started campaigns generate pipeline first and their revenue lands in later quarters (the lag this view is built to show). Campaigns with no Start Date in Salesforce can’t be classified and are shown separately. Proposed view — the same split can be applied per channel once confirmed.',
+    calc: 'Each figure is bucketed by its campaign’s start date (the event date in the campaign’s name, else its Salesforce Start Date): “run this period” if the campaign started in the selected quarter/window, “ongoing impact” if it started before, “undated” if no start date exists (mostly system and list-import entries). Campaign END or close date is never used. The figures themselves stay dated by the deal (open opportunities by created date, won ones by close date). The average sales-cycle is the mean days from a campaign’s start to a won deal’s close.',
+    caveat: 'The three buckets are a complete split — run this period + ongoing impact + undated always equals the view’s total, and the panel states that sum so it can be checked at a glance. In 2026 to date most of the pipeline and revenue landing in a quarter comes from campaigns that started EARLIER — the whole point of this split. A €0 for “run this period” closed-won is a genuine zero, not missing data — newly-started campaigns generate pipeline first and their revenue lands in later quarters. The split is relative to the selected period (a Q1 campaign is “run this period” under YTD but “ongoing impact” under the Q2 pill); the quarterly TOTALS still sum to the YTD totals.',
   },
   opportunities: {
     label: 'Opportunities',
@@ -105,12 +105,12 @@ export const METHODOLOGY = {
   },
 
   emailAudience: {
-    label: 'Audience (people enrolled)',
-    what: 'How many people the campaign was actually sent to — everyone enrolled, whether or not they went on to respond.',
-    source: 'Salesforce campaign membership — every member of the campaign, counted regardless of their response.',
-    calc: 'Count of campaign members. This is the denominator behind the MQL figure next to it: MQLs are the members who actively responded (a form fill, download or registration), so “MQLs ÷ Audience” is the campaign’s genuine response rate.',
+    label: 'Audience (emails delivered)',
+    what: 'How many times the campaign’s emails actually landed in inboxes — deliveries across all of the campaign’s sends.',
+    source: 'the email marketing platform’s per-email delivery counters (changed 11 Aug 2026 — previously this was the Salesforce enrolment list, which counts people added to a campaign whether or not anything was ever sent to them).',
+    calc: 'Sum of delivered counts across every email in the campaign (operational/system emails excluded). Whitepaper campaigns count only their whitepaper emails — the webinar promos that shared their bucket in the platform are excluded by name.',
     caveat:
-      'Salesforce also has its own “Number Sent” field on the campaign, but it is filled in by hand and is often blank or out of date, so the count of actual members is used instead and the Salesforce field is kept only as a cross-check. Audience appears after the next Salesforce refresh; until then it reads “—” rather than a misleading zero. One caution when reading the rate: a member added by a bulk list import counts in the audience even if nothing was ever emailed to them.',
+      'These are DELIVERIES, not unique people: a reminder send reaches many of the same inboxes as the first send, so one person on three sends counts three times. It is therefore an upper bound on unique individuals reached — a de-duplicated person count needs recipient-level list data the platform feed doesn’t carry at this grain. Where a campaign has no emails in the platform (e.g. a Salesforce-only workflow), Audience reads “—”.',
   },
 
   // ── Email engagement (per-email opens/clicks/unsubscribes) — fed from the
@@ -158,12 +158,12 @@ export const METHODOLOGY = {
 
   // ── Money
   pipeline: {
-    label: 'Influenced Pipeline (revenue)',
-    what: 'The total REVENUE value of qualified opportunities marketing touched — open pipeline plus deals already won. This is deal value, not gross margin.',
-    source: 'campaign-attributed opportunities in Salesforce (the opportunity Amount field).',
-    calc: 'Sum of open qualified opportunity value plus closed-won value, converted to EUR using the Salesforce corporate exchange rate. Won deals are included so that Closed Won is always part of — never larger than — the pipeline generated.',
+    label: 'Influenced Pipeline (gross profit)',
+    what: 'The GROSS PROFIT on the qualified opportunities marketing touched — open pipeline plus deals already won. Presented on the gross-profit basis (the profit in the deals), matching how CWSI tracks company pipeline; the full deal value (revenue) is shown alongside as a secondary reference.',
+    source: 'campaign-attributed opportunities in Salesforce — each opportunity’s Gross Profit Value (or Amount × Gross Profit Margin % where only the % is set); the secondary revenue figure uses the Amount field.',
+    calc: 'Sum of gross profit (EUR) across open qualified opportunities plus gross profit across won deals, converted to EUR using the Salesforce corporate exchange rate. Won deals are included so that the won gross profit is always part of — never larger than — the pipeline generated. An opportunity with no Gross Profit in Salesforce is excluded from the sum (never counted at full revenue) and reported in the “gross profit known for X of Y deals” coverage note.',
     caveat:
-      'This is a REVENUE basis. CWSI tracks company-wide quarterly pipeline on a GROSS-MARGIN basis, so dividing this figure by that one is not like-for-like. For a like-for-like share of the business, compare Influenced Margin against the company’s closed-won gross-margin number — or ask us to add a gross-margin version of this metric (the gross-profit fields are already read for every opportunity, so it is a small change). Separately: three pipeline terms are used consistently on the dashboard — New Pipeline Created (opps created this period), Influenced Pipeline (open + won — this), and Closed-Won (won only); and only campaign-attributed opportunities are included, not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
+      'The basis changed on 11 Aug 2026 at CWSI’s request — figures before that date were shown on the REVENUE basis (full deal value), so earlier screenshots read higher. Gross profit depends on deal type: for CWSI’s own services revenue and margin are set equal in Salesforce, so gross profit can sit close to deal value today. Three pipeline terms are used consistently on the dashboard — New Pipeline Created (opps created this period, revenue), Influenced Pipeline (open + won, gross profit — this), and Closed-Won (won only, revenue); only campaign-attributed opportunities are included, not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
   },
   closedWon: {
     label: 'Closed Won (revenue)',
@@ -229,10 +229,10 @@ export const METHODOLOGY = {
   },
   otherChannel: {
     label: 'Other / Unmapped',
-    what: 'Campaigns whose Salesforce type has no dedicated channel of its own.',
-    source: 'Salesforce campaign types Other, Telemarketing, Partners or Referral (or a blank / unmapped type).',
-    calc: 'Everything not mapped to a named channel (LinkedIn, Email, Events, Organic SEO) is grouped here.',
-    caveat: 'Some Outreach activity currently lands here or in Email/LinkedIn via its campaign type — a dedicated Outreach channel is being added.',
+    what: 'Salesforce campaign types we can’t map to a marketing channel — plus campaigns with no type set at all.',
+    source: 'Salesforce campaigns whose Type is Other, Telemarketing, Partners or Referral Program, is blank, or belongs to a system/list-import campaign (e.g. the “Salesforce Connector” integration bucket, newsletter contact lists).',
+    calc: 'Every campaign that can’t be placed under LinkedIn Paid, Email, Events & Webinars or Organic SEO is grouped here, so nothing is silently dropped — the channel table always adds up to the total.',
+    caveat: 'This bucket is mostly system and housekeeping campaigns rather than marketing activity, but deals genuinely attributed to them are real revenue and stay counted. Outreach is deliberately NOT a row here: outreach deals are identified by contact matching (a different method), so they appear as the separately-labelled “Outreach · outbound” row instead.',
   },
 
   // ── Events
@@ -261,39 +261,39 @@ export const METHODOLOGY = {
   },
   outreachReplyRate: {
     label: 'Reply rate',
-    what: 'How often prospects reply to outreach — shown on two bases, because the same programme reads very differently on each.',
-    source: 'Outreach.io engagement snapshot (per-sequence counters for the people basis, per-step counters for the email basis).',
+    what: 'How often outreach emails get a reply. The headline basis is PER EMAIL DELIVERED — the basis Outreach.io’s own reporting uses, and one that can never read above 100%.',
+    source: 'Outreach.io engagement snapshot (per-step counters for the email basis, per-sequence counters for the secondary people basis).',
     calc:
-      'The headline figure is PER PERSON: replies ÷ prospects in cadence. Underneath it we also show PER EMAIL: replies ÷ emails delivered — the basis Outreach.io’s own reporting normally uses. A multi-step cadence sends several emails to each prospect, so the per-email rate is always the lower of the two. Both are all-time, across the three marketing workstreams.',
+      'The headline figure is PER EMAIL: replies ÷ emails delivered (changed 11 Aug 2026 — it was per person before). The smaller secondary line is PER PERSON: replies ÷ prospects in cadence, which always reads higher because a multi-step cadence sends several emails to each prospect. Both are all-time, across the three marketing workstreams.',
     caveat:
-      'If this looks lower than expected, check which basis is being compared. The two are not interchangeable and neither is wrong — per person answers “how many of the people we approached answered us”, per email answers “how well does an individual email perform”. Two further things depress the blended figure honestly: the SoPro and Microsoft TUM workstreams currently sit at zero replies (the cold sending was paused over the sending-domain issue), so nearly all replies come from Historic Data Reactivation; and there is an unresolved discrepancy in Outreach.io’s own counters that we are not papering over: for the same snapshot, its per-sequence counter reports 30 people as having replied while its per-step counters record only 12 reply events, on 9 sequences. People cannot reply without generating a reply event, so one of the two is not measuring what its name suggests. Until that is settled the per-person figure should be treated as the softer of the two. The check that resolves it — counting the individual email records directly — is built and waiting on one data pull.',
+      'If this looks lower than a previous screenshot, check the basis: before 11 Aug the headline was per person (~9% vs ~1% per email for the same programme). Neither basis is wrong — per person answers “how many of the people we approached answered us”, per email answers “how well does an individual email perform”. Two further things depress the blended figure honestly: the SoPro and Microsoft TUM workstreams currently sit at zero replies (the cold sending was paused over the sending-domain issue), so nearly all replies come from Historic Data Reactivation; and Outreach.io’s own counters disagree with each other for the same snapshot (30 people marked replied vs 12 reply events on 9 sequences) — until that is settled the per-person figure is the softer of the two. The check that resolves it — counting the individual email records directly — is built and waiting on one data pull.',
   },
   outreachOpenRate: {
     label: 'Open rate',
-    what: 'How often prospects open an outreach email.',
-    source: 'Outreach.io engagement snapshot.',
-    calc: 'Opens ÷ prospects across the sequences in scope (cumulative lifetime snapshot).',
-    caveat: 'An all-time figure, not a per-quarter one — the quarter pill does not change it. Open tracking is approximate: it counts tracking-pixel fires, so it over-counts (one person opening twice, or a mail client pre-loading images, both register).',
+    what: 'How often outreach emails are opened, per email delivered.',
+    source: 'Outreach.io per-step engagement snapshot.',
+    calc: 'Opens ÷ emails delivered across the sequences in scope (cumulative lifetime snapshot). Changed 11 Aug 2026: the old formula divided open EVENTS by PEOPLE, which read above 100% by construction (each person receives several emails and one email can register several opens) — that reading was the formula, not bad data.',
+    caveat: 'An all-time figure, not a per-quarter one — the quarter pill does not change it. Open tracking is approximate: it counts tracking-pixel fires, so it over-counts (one person opening twice, or a mail client pre-loading images, both register) — the displayed rate is capped at 100%.',
   },
   outreachOpps: {
     label: 'Opportunities from Outreach (outbound)',
     what: 'Salesforce opportunities whose contact is a member of an outbound Outreach sequence — created count, influenced pipeline (open + won) and closed-won value.',
     source: 'Salesforce opportunities joined to Outreach sequence membership by the contact’s email; scoped to the current view.',
-    calc: 'An opportunity is credited to a sequence when its Salesforce contact matches a prospect in that sequence. Counted DISTINCT per opportunity for the Outbound-prospecting tier only. Influenced pipeline = open-qualified value + closed-won value; closed-won = won value.',
-    caveat: 'Contact-attributed (a sequenced contact is on the opp), NOT campaign-attributed — so these can overlap the campaign channels on the Pipeline page and are shown separately, not added to the campaign total. Pipeline reads as contact-touch, not "generated", and can be dominated by a single large sales-led deal.',
+    calc: 'An opportunity is credited to a sequence when its Salesforce contact matches a prospect in that sequence AND that prospect was actually contacted (tightened 11 Aug 2026: queued, failed and bounced prospects no longer claim credit — they never received anything). Counted DISTINCT per opportunity for the Outbound-prospecting tier only. Influenced pipeline = open-qualified value + closed-won value; closed-won = won value.',
+    caveat: 'Contact-attributed (a sequenced contact is on the opp), NOT campaign-attributed — so these can overlap the campaign channels on the Pipeline page and are shown separately, not added to the campaign total. Pipeline reads as contact-touch (full deal value, revenue), not "generated", and can be dominated by a single large sales-led deal.',
   },
   marketingSpend: {
     label: 'Marketing Spend (actual)',
     what: 'Actual marketing spend recorded to date.',
     source: 'The marketing budget tracker (EUR-native).',
     calc: 'Sum of spend line items, net of correction rows (negative adjustments are subtracted, not counted as events).',
-    caveat: 'This is actual spend. The planned budget (for budget-vs-actual and MDF split) is client-gated and shows “not set” until CWSI provides it.',
+    caveat: 'This is actual spend from the tracker; the sync date is shown on the tile because a stale sync reads as "spend too low". The annual budget (€466,394.92) and available MDF (€86,394.92, part of the total — the remainder is an exact €380,000 core budget) were supplied by CWSI on 11 Aug 2026. Budget and MDF utilisation are always full-year, all-regions figures, even when a quarter or region is selected.',
   },
   outreachMeetings: {
     label: 'Meetings booked (Outreach-attributed)',
     what: 'Salesforce meetings whose contact is a member of a marketing Outreach sequence — the agreed attribution method.',
     source: 'Salesforce meetings joined to Outreach sequence membership by the contact’s email address.',
-    calc: 'A meeting is credited to a sequence when the meeting’s contact email matches a prospect email in that sequence. Sequences are grouped into three tiers — Outbound prospecting (SoPro / Microsoft TUM / Historic Data Reactivation), Events & campaigns, and Broadcast/newsletter — and each tier counts DISTINCT meetings (a meeting can relate to several sequences, so per-sequence counts overlap).',
+    calc: 'A meeting is credited to a sequence when the meeting’s contact email matches a prospect email in that sequence AND that prospect was actually contacted (tightened 11 Aug 2026: people still waiting in a sequence’s queue, or whose emails failed or bounced, can no longer claim credit — they never received anything). Sequences are grouped into three tiers — Outbound prospecting (SoPro / Microsoft TUM / Historic Data Reactivation), Events & campaigns, and Broadcast/newsletter — and each tier counts DISTINCT meetings (a meeting can relate to several sequences, so per-sequence counts overlap).',
     caveat: 'The match is email-based, so coverage is partial — a contact who used a different email in Outreach vs Salesforce won’t match. “Broadcast/newsletter” matches (e.g. monthly updates everyone is on) indicate correlation, not that the sequence generated the meeting; the Outbound tier is the strict, defensible figure and is what the 100-meetings target measures.',
   },
 }

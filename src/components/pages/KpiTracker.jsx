@@ -6,10 +6,15 @@ import {
   useWebTraffic,
   useEventTypeFunnel,
   useEvents,
+  useEventAttendance,
   useKpiTargets,
   useUpdateKpiTarget,
   useOutreach,
   useOutreachAttributedMeetings,
+  useLinkedInSnapshot,
+  useAeEmailEngagement,
+  useEmailReport,
+  useChannel,
 } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num } from '../../data/format'
@@ -30,6 +35,21 @@ const REGISTER_EXPLAIN = {
   outreachReplyRate: 'outreachReplyRate', outreachMeetings: 'outreachMeetings',
   outreachCreatedOpps: 'outreachOpps', outreachClosedWon: 'outreachOpps',
   outreachPipeline: 'outreachOpps',
+  // W9 — the newly-wired rows
+  impressions: 'linkedinSpend', cpc: 'linkedinSpend', cpm: 'linkedinSpend',
+  costPerLead: 'linkedinRoi', returnOnSpend: 'linkedinRoi',
+  overallConversion: 'conversion', totalConversions: 'organicTraffic',
+  emailOpenRate: 'aeOpenRate', emailCtr: 'aeCtr', unsubscribeRate: 'aeUnsubRate',
+  // Post-QA review (17 Aug) — the per-section funnel rows
+  clicks: 'linkedinSpend',
+  emailMqlToSql: 'conversion', emailSqlToWon: 'conversion', emailClosedOpps: 'closedWon',
+  emailInfluencedPipeline: 'pipeline', emailInfluencedMargin: 'margin',
+  webTotalLeads: 'mql', webMqlToSql: 'conversion', webSqlToWon: 'conversion',
+  webClosedOpps: 'closedWon', webInfluencedPipeline: 'pipeline', webInfluencedMargin: 'margin',
+  eventsSqlToWon: 'conversion', eventsClosedOpps: 'closedWon',
+  eventsInfluencedPipeline: 'pipeline', eventsInfluencedMargin: 'margin',
+  outreachCtr: 'outreachOpenRate', outreachUnsubRate: 'outreachOpenRate',
+  outreachMqls: 'outreachMeetings',
 }
 
 // The KPI register, in the agreed category order. `live` rows are computed from
@@ -59,6 +79,14 @@ export default function KpiTracker() {
   const att = useEvents() // GoToWebinar attendance — webinar actual is real
   const outreach = useOutreach() // K1: prospects/open/reply (lifetime snapshot)
   const outreachMtg = useOutreachAttributedMeetings() // K1: meetings/opps (current view)
+  const linkedin = useLinkedInSnapshot() // W9: paid-media rows (impressions/CPC/CPM/CPL/return on spend)
+  const aeEmail = useAeEmailEngagement() // W9: email open/CTR/unsub — the four named campaigns
+  const eventAtt = useEventAttendance() // W9: in-person attendee lists, combined with GoToWebinar
+  // Post-QA review (17 Aug): channel-scoped funnels for Margot's per-section metric lists —
+  // the same scopes their pages use, so the register can never disagree with a page.
+  const emailFunnel = useEmailReport() // the four named campaigns
+  const webFunnel = useChannel('Organic SEO', 'all', ['Content/White Paper'])
+  const eventsFunnel = useChannel('Events & Webinars')
   const targetsQ = useKpiTargets()
   const { filters } = useFilters()
 
@@ -84,6 +112,12 @@ export default function KpiTracker() {
           attendance={att.data?.hasData ? att.data.totals : null}
           outreach={outreach.data}
           outreachMeetings={outreachMtg.data}
+          linkedin={linkedin.data}
+          aeEmail={aeEmail.data}
+          eventAttendance={eventAtt.data?.hasData ? eventAtt.data : null}
+          emailFunnel={emailFunnel.data?.totals}
+          webFunnel={webFunnel.data?.totals}
+          eventsFunnel={eventsFunnel.data?.totals}
           quarter={filters.quarter}
           targets={targetsQ.data || {}}
         />
@@ -152,8 +186,8 @@ function TargetCell({ kpiKey, row, period, scope }) {
   )
 }
 
-function Register({ f, web, events, attendance, outreach, outreachMeetings, quarter, targets }) {
-  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings })
+function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets }) {
+  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
   const kpiCount = rows.filter((r) => r.t !== 'cat').length

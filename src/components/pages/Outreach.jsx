@@ -2,7 +2,7 @@ import { useState, Fragment } from 'react'
 import { Loading, ErrorState, EmptyState } from '../States'
 import { useOutreach, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
-import { replyLight } from '../../data/thresholds'
+import { outreachProduct } from '../../data/queries'
 import Explain from '../Explain'
 
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
@@ -75,9 +75,21 @@ export default function Outreach() {
 const MEETINGS_TARGET = 100 // Paul's Q2 outbound-generated meetings target (24 Apr call)
 
 function Body({ data, meetings }) {
-  const { kpis, funnel, workstreams, seqCounts, marketingOnly, snapshotDate } = data
-  const eb = data.emailBasis // replies/opens per email delivered — Outreach.io's own basis
+  const { kpis, workstreams, sellers, seqCounts, marketingOnly, snapshotDate } = data
+  const eb = data.emailBasis // replies/opens per email delivered — the PRIMARY basis (W3)
   const outbound = meetings?.tiers?.outbound ?? null
+  // Attribution (meetings / opps / won) per sequence, for merging onto product & seller rows.
+  // A meeting or opp can match several sequences, so these merged sums can overlap — noted
+  // under each table; the de-duplicated truth is the tier figure on the attribution panel.
+  const seqAttr = new Map((meetings?.bySequence || []).map((s) => [s.sequence, s]))
+  const attrFor = (names) => {
+    const acc = { meetings: 0, createdOpps: 0, oppValue: 0, closedWon: 0 }
+    for (const n of names || []) {
+      const s = seqAttr.get(n)
+      if (s) { acc.meetings += s.meetings; acc.createdOpps += s.createdOpps; acc.oppValue += s.oppValue; acc.closedWon += s.closedWon }
+    }
+    return acc
+  }
   return (
     <>
       {/* Scope + basis, stated where the questioned figures are read. The prospect and
@@ -95,10 +107,12 @@ function Body({ data, meetings }) {
           They cover the <strong>three marketing workstreams only</strong>
           {seqCounts ? <> ({num(seqCounts.marketing)} of {num(seqCounts.total)} sequences in the account)</> : null}, so
           they are deliberately far smaller than the whole Outreach.io account — the sales and one-off account
-          sequences are excluded on purpose. <strong>Reply rate is per person</strong> (replies ÷ prospects);
-          Outreach.io's own reports are usually <strong>per email sent</strong>
-          {eb && eb.delivered > 0 ? <> — {ratePct(eb.replyRate)} on that basis</> : null}, which is always lower
-          because a cadence sends several emails to each prospect. Both are shown on the card.{' '}
+          sequences are excluded on purpose. <strong>Open and reply rates are per email delivered</strong> — the same
+          basis Outreach.io's own reports use, and one that can never read above 100%. The per-person rate
+          (replies ÷ prospects, which reads higher because a cadence sends several emails to each person) is kept as
+          the smaller secondary line. <strong>Meetings and opportunities</strong> are credited only when the matched
+          prospect was <strong>actually contacted</strong> — people sitting in a sequence's queue who have not yet
+          received an email cannot claim credit.{' '}
           <Explain id="outreachReplyRate" />
         </div>
       </div>
@@ -130,22 +144,19 @@ function Body({ data, meetings }) {
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg></div>
-            <span className={`tl ${replyLight(kpis.replyRate) === 'g' ? 'green' : replyLight(kpis.replyRate) === 'a' ? 'amber' : 'neu'}`}>
-              <span className="tl-dot" />{ratePct(kpis.replyRate)}
-            </span>
           </div>
-          <div className="kpi-label">Reply rate <Explain id="outreachReplyRate" /></div>
-          <div className="kpi-val">{ratePct(kpis.replyRate)}</div>
+          <div className="kpi-label">Reply rate · per email <Explain id="outreachReplyRate" /></div>
+          <div className="kpi-val">{eb && eb.delivered > 0 ? ratePct(eb.replyRate) : '—'}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">
-              {num(kpis.replies)} replies ÷ {num(kpis.prospects)} people · <strong>all-time</strong>
-            </span>
             {eb && eb.delivered > 0 && (
-              <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                {ratePct(eb.replyRate)} per email sent ({num(eb.replies)} ÷ {num(eb.delivered)} delivered) — the basis
-                Outreach.io reports on
+              <span className="kpi-target">
+                {num(eb.replies)} replies ÷ {num(eb.delivered)} emails delivered · <strong>all-time</strong>
               </span>
             )}
+            <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
+              {ratePct(kpis.replyRate)} per person ({num(kpis.replies)} ÷ {num(kpis.prospects)} prospects) — reads
+              higher because each person gets several emails
+            </span>
           </div>
         </div>
         <div className="kpi">
@@ -163,28 +174,29 @@ function Body({ data, meetings }) {
         </div>
       </div>
 
-      {/* Engagement funnel */}
+      {/* Engagement funnel — per-EMAIL basis (W3): every rate here has emails delivered as its
+          denominator, so nothing can read above 100%. The old per-person open rate (open EVENTS
+          ÷ people) is gone — it exceeded 100% by construction and read as a data error. */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Outreach Engagement Funnel</div>
-            <div className="panel-sub">Prospect → Open → Click → Reply → Meeting</div>
+            <div className="panel-sub">Prospects → Emails delivered → Opens → Replies → Meetings · rates per email delivered</div>
           </div>
           <span className="chip blue">snapshot</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="Prospects" val={num(funnel.prospects)} extra="in cadence" />
-            <Stage name="Opens" val={num(funnel.opens)} extra={`${ratePct(kpis.openRate)} open`} />
-            <Stage name="Clicks" val={num(funnel.clicks)} extra={`${ratePct(kpis.clickRate)} click`} />
-            <Stage name="Replies" val={num(funnel.replies)} extra={`${ratePct(kpis.replyRate)} reply`} />
-            <Stage name="Meetings" val={outbound == null ? '—' : num(outbound)} extra="outbound-attributed" />
+            <Stage name="Prospects" val={num(kpis.prospects)} extra="people in cadence" />
+            <Stage name="Emails delivered" val={eb ? num(eb.delivered) : '—'} extra={eb && kpis.prospects ? `≈${(eb.delivered / kpis.prospects).toFixed(1)} per prospect` : 'per-step feed'} />
+            <Stage name="Opens" val={eb ? num(eb.opens) : '—'} extra={eb && eb.delivered > 0 ? `${ratePct(eb.openRate, 0)} of delivered` : 'n/a'} />
+            <Stage name="Replies" val={eb ? num(eb.replies) : '—'} extra={eb && eb.delivered > 0 ? `${ratePct(eb.replyRate)} of delivered` : 'n/a'} />
+            <Stage name="Meetings" val={outbound == null ? '—' : num(outbound)} extra="attributed via Salesforce" />
           </div>
           <div className="h-funnel-conv">
-            <span className="conv">▶ {ratePct(kpis.openRate)} Open</span>
-            <span className="conv">▶ {ratePct(kpis.clickRate)} Click</span>
-            <span className="conv">▶ {ratePct(kpis.replyRate)} Reply</span>
-            <span className="conv">▶ Meeting → attributed via SF</span>
+            <span className="conv">▶ {eb && eb.delivered > 0 ? `${ratePct(eb.openRate, 0)} Open` : 'Open n/a'}</span>
+            <span className="conv">▶ {eb && eb.delivered > 0 ? `${ratePct(eb.replyRate)} Reply` : 'Reply n/a'}</span>
+            <span className="conv">▶ Meeting → attributed via SF · contacted prospects only</span>
           </div>
         </div>
       </div>
@@ -212,24 +224,40 @@ function Body({ data, meetings }) {
               <tr>
                 <th>Product / flow</th>
                 <th className="r">Prospects</th>
-                <th className="r">Open %</th>
-                <th className="r">Reply %</th>
-                <th className="c">Status</th>
+                <th className="r">Emails sent</th>
+                <th className="r">Open % <span style={{ opacity: 0.55 }}>per email</span></th>
+                <th className="r">Reply % <span style={{ opacity: 0.55 }}>per email</span></th>
+                <th className="r">Meetings</th>
+                <th className="r">Created Opps</th>
+                <th className="r">Closed Won €</th>
               </tr>
             </thead>
             <tbody>
-              {workstreams.map((g) => <WorkstreamGroup key={g.workstream} g={g} />)}
+              {workstreams.map((g) => <WorkstreamGroup key={g.workstream} g={g} attrFor={attrFor} />)}
               <tr className="total">
                 <td>Total · {num(kpis.totalSequences)} sequences</td>
                 <td className="r mono">{num(kpis.prospects)}</td>
-                <td className="r mono">{ratePct(kpis.openRate, 0)}</td>
-                <td className="r mono">{ratePct(kpis.replyRate)}</td>
-                <td />
+                <td className="r mono">{eb ? num(eb.delivered) : '—'}</td>
+                <td className="r mono">{eb && eb.delivered > 0 ? ratePct(eb.openRate, 0) : 'n/a'}</td>
+                <td className="r mono">{eb && eb.delivered > 0 ? ratePct(eb.replyRate) : 'n/a'}</td>
+                <td className="r mono">{meetings ? num(meetings.tiers.outbound) : '—'}</td>
+                <td className="r mono">{meetings?.oppTiers?.outbound ? num(meetings.oppTiers.outbound.createdOpps) : '—'}</td>
+                <td className="r mono">{meetings?.oppTiers?.outbound ? eur(meetings.oppTiers.outbound.won) : '—'}</td>
               </tr>
             </tbody>
           </table>
+          <div className="panel-note" style={{ padding: '8px 12px 12px', fontSize: 12, opacity: 0.7 }}>
+            Meetings, Created Opps and Closed Won are Salesforce-attributed (contacted prospects only). A meeting or
+            deal can involve prospects from several flows, so those columns can overlap across rows — the{' '}
+            <strong>Total row shows the de-duplicated truth</strong>, counting each meeting and deal once.
+          </div>
         </div>
       </div>
+
+      {/* W3 — Seller performance (marketing campaigns only): the rep segment retained */}
+      {sellers && sellers.length > 0 && (
+        <SellerTable sellers={sellers} attrFor={attrFor} />
+      )}
 
       <div className="callout amber" style={{ marginBottom: 18 }}>
         <div className="callout-icn">
@@ -238,24 +266,29 @@ function Body({ data, meetings }) {
           </svg>
         </div>
         <div className="callout-body">
-          <strong>Open % / Reply %</strong> show "n/a" only where a sequence has no prospects yet (the rate
-          has no denominator). Engagement counts (prospects → replies) are the live Outreach snapshot;
-          <strong> Meetings booked</strong> are attributed from Salesforce (see the panel above) — the
-          per-region "Meetings" column here is intentionally omitted because a meeting can span several
-          sequences and is best read at the tier level, not per workstream. <strong>Sequence set:</strong> per your
+          <strong>Open % / Reply %</strong> are per <strong>email delivered</strong> and show "n/a" only where the
+          per-step feed has no delivered count for a flow yet. Engagement counts (prospects → replies) are the live
+          Outreach snapshot; <strong>Meetings booked / Created Opps / Closed Won</strong> are attributed from
+          Salesforce, counting only prospects who were actually contacted. <strong>Sequence set:</strong> per your
           feedback this view shows <strong>only the three marketing workstreams</strong> — Historic Data Reactivation,
           Outbound Prospecting · SoPro, and Outbound Prospecting · Microsoft TUM — with sales &amp;
-          one-off account sequences excluded. Switch "Sequence set" to "All sequences" to see everything.
+          one-off account sequences excluded throughout.
         </div>
       </div>
     </>
   )
 }
 
-function WorkstreamGroup({ g }) {
+// Per-email rates (W3): opens/replies ÷ emails delivered for the row's sequences — never
+// above 100% (open events are capped at delivered). 'n/a' where the per-step feed has no
+// delivered count for the flow yet.
+const rowOpenPct = (r) => (r.delivered > 0 ? `${Math.min(r.emailOpens / r.delivered, 1) * 100 < 100 ? (Math.min(r.emailOpens / r.delivered, 1) * 100).toFixed(0) : '100'}%` : 'n/a')
+const rowReplyPct = (r) => (r.delivered > 0 ? `${((r.emailReplies / r.delivered) * 100).toFixed(1)}%` : 'n/a')
+
+function WorkstreamGroup({ g, attrFor }) {
   const sub = g.subtotal
-  const subOpen = sub.prospects ? sub.opens / sub.prospects : null
-  const subReply = sub.prospects ? sub.replies / sub.prospects : null
+  const subEmail = g.rows.reduce((a, r) => ({ delivered: a.delivered + (r.delivered || 0), emailOpens: a.emailOpens + (r.emailOpens || 0), emailReplies: a.emailReplies + (r.emailReplies || 0) }), { delivered: 0, emailOpens: 0, emailReplies: 0 })
+  const subAttr = attrFor(g.rows.flatMap((r) => r.sequenceNames || []))
   // Group this workstream's product flows BY REGION so the region name shows ONCE (a
   // sub-header), not repeated on every product row (Margot, 20 Jul). Regions ordered by size.
   const byRegion = new Map()
@@ -269,25 +302,26 @@ function WorkstreamGroup({ g }) {
     .sort((a, b) => b.prospects - a.prospects)
   return (
     <>
-      <tr className="cat"><td colSpan={5}>{g.workstream} · {num(sub.sequences)} sequences</td></tr>
+      <tr className="cat"><td colSpan={8}>{g.workstream} · {num(sub.sequences)} sequences</td></tr>
       {regionGroups.map((rg) => (
         <Fragment key={rg.region}>
           <tr>
-            <td colSpan={5} style={{ paddingLeft: 22, fontWeight: 600, opacity: 0.7, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            <td colSpan={8} style={{ paddingLeft: 22, fontWeight: 600, opacity: 0.7, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.04em' }}>
               {regionLabel(rg.region)} · {num(rg.prospects)} prospects
             </td>
           </tr>
           {rg.rows.map((r, i) => {
-            const open = r.prospects ? r.opens / r.prospects : null
-            const reply = r.prospects ? r.replies / r.prospects : null
-            const lt = replyLight(reply)
+            const a = attrFor(r.sequenceNames)
             return (
               <tr key={r.label + '|' + r.region + i}>
                 <td style={{ paddingLeft: 34 }}>{r.label}{r.sequences > 1 ? <span style={{ opacity: 0.55 }}> · {num(r.sequences)} flows</span> : null}</td>
                 <td className="r mono">{num(r.prospects)}</td>
-                <td className="r mono">{open == null ? 'n/a' : `${(open * 100).toFixed(0)}%`}</td>
-                <td className="r mono">{reply == null ? 'n/a' : `${(reply * 100).toFixed(1)}%`}</td>
-                <td className="c"><span className={`tl-bare ${lt}`} /></td>
+                <td className="r mono">{r.delivered > 0 ? num(r.delivered) : '—'}</td>
+                <td className="r mono">{rowOpenPct(r)}</td>
+                <td className="r mono">{rowReplyPct(r)}</td>
+                <td className="r mono">{a.meetings ? num(a.meetings) : '—'}</td>
+                <td className="r mono">{a.createdOpps ? num(a.createdOpps) : '—'}</td>
+                <td className="r mono">{a.closedWon ? eur(a.closedWon) : '—'}</td>
               </tr>
             )
           })}
@@ -296,11 +330,71 @@ function WorkstreamGroup({ g }) {
       <tr className="total">
         <td>subtotal</td>
         <td className="r mono">{num(sub.prospects)}</td>
-        <td className="r mono">{subOpen == null ? 'n/a' : `${(subOpen * 100).toFixed(0)}%`}</td>
-        <td className="r mono">{subReply == null ? 'n/a' : `${(subReply * 100).toFixed(1)}%`}</td>
-        <td />
+        <td className="r mono">{subEmail.delivered > 0 ? num(subEmail.delivered) : '—'}</td>
+        <td className="r mono">{rowOpenPct(subEmail)}</td>
+        <td className="r mono">{rowReplyPct(subEmail)}</td>
+        <td className="r mono">{subAttr.meetings ? num(subAttr.meetings) : '—'}</td>
+        <td className="r mono">{subAttr.createdOpps ? num(subAttr.createdOpps) : '—'}</td>
+        <td className="r mono">{subAttr.closedWon ? eur(subAttr.closedWon) : '—'}</td>
       </tr>
     </>
+  )
+}
+
+// W3 — Seller performance (marketing sequences only): engagement from the Outreach snapshot,
+// meetings/opps/won merged from the Salesforce attribution rows via the rep segment of each
+// sequence name. Sellers whose sequences carry no rep segment (e.g. Historic Data
+// Reactivation) aren't listed — that workstream reports in the table above.
+function SellerTable({ sellers, attrFor }) {
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Seller Performance — marketing sequences</div>
+          <div className="panel-sub">Per seller across the SoPro / Microsoft TUM prospecting flows · engagement all-time · outcomes Salesforce-attributed</div>
+        </div>
+        <span className="chip blue">{num(sellers.length)} sellers</span>
+      </div>
+      <div className="panel-body no-pad">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Seller</th>
+              <th className="r">Sequences</th>
+              <th className="r">Prospects</th>
+              <th className="r">Emails sent</th>
+              <th className="r">Open % <span style={{ opacity: 0.55 }}>per email</span></th>
+              <th className="r">Reply % <span style={{ opacity: 0.55 }}>per email</span></th>
+              <th className="r">Meetings</th>
+              <th className="r">Opps created</th>
+              <th className="r">Closed Won €</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sellers.map((s) => {
+              const a = attrFor(s.sequenceNames)
+              return (
+                <tr key={s.seller}>
+                  <td>{s.seller}</td>
+                  <td className="r mono">{num(s.sequences)}</td>
+                  <td className="r mono">{num(s.prospects)}</td>
+                  <td className="r mono">{s.delivered > 0 ? num(s.delivered) : '—'}</td>
+                  <td className="r mono">{rowOpenPct(s)}</td>
+                  <td className="r mono">{rowReplyPct(s)}</td>
+                  <td className="r mono">{a.meetings ? num(a.meetings) : '—'}</td>
+                  <td className="r mono">{a.createdOpps ? num(a.createdOpps) : '—'}</td>
+                  <td className="r mono">{a.closedWon ? eur(a.closedWon) : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div className="panel-note" style={{ padding: '8px 12px 12px', fontSize: 12, opacity: 0.7 }}>
+          A meeting or deal can involve prospects from several sellers' sequences, so the outcome columns can overlap
+          between rows. Engagement covers each seller's marketing prospecting sequences only.
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -331,6 +425,9 @@ function MeetingAttribution({ m }) {
         <span className="chip blue">{num(coverage.totalMeetings)} meetings in scope</span>
       </div>
       <div className="panel-body">
+        {/* The "Matched from" tile was removed (Margot, 11 Aug: "I'm not sure what value the
+            Matched from metric adds — please remove it"); the match coverage stays in the
+            how-to-read note below for anyone auditing the attribution. */}
         <div className="kpis cols-2" style={{ marginBottom: 4 }}>
           <div className="kpi">
             <div className="kpi-head">
@@ -341,11 +438,6 @@ function MeetingAttribution({ m }) {
             <div className="kpi-label">Meetings booked · marketing workstreams</div>
             <div className="kpi-val">{num(tiers.outbound)}</div>
             <div className="kpi-sub"><span className="kpi-target">Historic Data Reactivation · SoPro · Microsoft TUM — the 100 target</span></div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-label" style={{ marginTop: 26 }}>Matched from</div>
-            <div className="kpi-val">{num(coverage.attributed)}<span style={{ fontSize: 15, opacity: 0.55 }}> / {num(coverage.withEmail)}</span></div>
-            <div className="kpi-sub"><span className="kpi-target">meetings with a contact email we could match ({num(coverage.totalMeetings)} in scope)</span></div>
           </div>
         </div>
 
@@ -380,30 +472,44 @@ function MeetingAttribution({ m }) {
           </div>
         )}
 
+        {/* Grouped by product / flow cluster (W3): the raw per-sequence list leaked seller
+            names into a client-facing table and repeated the same product once per rep.
+            Sellers now have their own table on this page. */}
         <table className="tbl">
           <thead>
             <tr>
-              <th>Sequence</th><th>Type</th><th>Region</th>
+              <th>Product / flow</th><th>Type</th>
               <th className="r">Meetings</th><th className="r">Created Opps</th>
               <th className="r">Opp Value</th><th className="r">Closed Won</th>
             </tr>
           </thead>
           <tbody>
-            {bySequence.slice(0, 15).map((s) => (
-              <tr key={s.sequence}>
-                <td>{s.sequence}</td>
-                <td><span className={`chip ${catClass(s.category)}`}>{s.category}</span></td>
-                <td>{s.region === 'UNASSIGNED' ? 'Unassigned' : s.region}</td>
-                <td className="r mono">{num(s.meetings)}</td>
-                <td className="r mono">{s.createdOpps ? num(s.createdOpps) : '—'}</td>
-                <td className="r mono">{s.oppValue ? eur(s.oppValue) : '—'}</td>
-                <td className="r mono">{s.closedWon ? eur(s.closedWon) : '—'}</td>
-              </tr>
-            ))}
+            {(() => {
+              const byCluster = new Map()
+              for (const s of bySequence) {
+                const label = outreachProduct(s.sequence) || s.sequence
+                if (!byCluster.has(label)) byCluster.set(label, { label, category: s.category, meetings: 0, createdOpps: 0, oppValue: 0, closedWon: 0, flows: 0 })
+                const c = byCluster.get(label)
+                c.meetings += s.meetings; c.createdOpps += s.createdOpps; c.oppValue += s.oppValue; c.closedWon += s.closedWon; c.flows += 1
+              }
+              return [...byCluster.values()]
+                .sort((a, b) => (b.meetings - a.meetings) || (b.createdOpps - a.createdOpps))
+                .slice(0, 15)
+                .map((c) => (
+                  <tr key={c.label}>
+                    <td>{c.label}{c.flows > 1 ? <span style={{ opacity: 0.55 }}> · {num(c.flows)} flows</span> : null}</td>
+                    <td><span className={`chip ${catClass(c.category)}`}>{c.category}</span></td>
+                    <td className="r mono">{num(c.meetings)}</td>
+                    <td className="r mono">{c.createdOpps ? num(c.createdOpps) : '—'}</td>
+                    <td className="r mono">{c.oppValue ? eur(c.oppValue) : '—'}</td>
+                    <td className="r mono">{c.closedWon ? eur(c.closedWon) : '—'}</td>
+                  </tr>
+                ))
+            })()}
           </tbody>
         </table>
         <div className="panel-note" style={{ padding: '8px 4px 0', fontSize: 12, opacity: 0.7 }}>
-          Meetings &amp; opportunities can each match several sequences, so per-sequence counts overlap and add up to more
+          Meetings &amp; opportunities can each match several flows, so rows overlap and add up to more
           than the tier totals above. Opportunity Value = open qualified pipeline; Closed Won = won amount (EUR).
         </div>
       </div>

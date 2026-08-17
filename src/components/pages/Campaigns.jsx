@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useCampaignThemes, useCampaignOverrides, useUpdateCampaignOverride } from '../../hooks/useDashboardData'
+import { useCampaignThemes, useCampaignOverrides } from '../../hooks/useDashboardData'
 import { num, eur } from '../../data/format'
-import { THEME_ORDER, themeMeta } from '../../data/themes'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
+import CurrentVsOngoing from '../CurrentVsOngoing'
 
 // Campaigns — the campaign-level / quarterly-theme view Margot asked for (X4/G3).
 // Every campaign rolls up into its overarching THEME (themes.js), shown "as a whole"
@@ -35,14 +35,15 @@ export default function Campaigns() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          Each quarter has <strong>one overarching quarterly campaign</strong>: everything in <strong>Q1</strong> rolls
-          up under <strong>“Data Is an Asset, Not a Liability”</strong>, everything in <strong>Q2</strong> under{' '}
-          <strong>“Innovation Without Risk”</strong>, and everything in <strong>Q3</strong> under the Q3 campaign
-          (theme name to be confirmed — see the note below). Each is an overarching campaign, rolled up from all its
-          activities — expand a card to see the individual touchpoints within it. A campaign is placed in its quarter
-          from its own date (not from when its leads or deals happen to fall), so activities no longer cross between
-          quarters. Anything not tied to a 2026 quarter sits under “Other activities”. Campaign names are editable
-          (click the pencil). <Explain id="campaignTheme" />
+          Each quarter has <strong>one overarching quarterly campaign</strong>: <strong>Q1</strong> is{' '}
+          <strong>“Data Is an Asset, Not a Liability”</strong>, <strong>Q2</strong> is{' '}
+          <strong>“Innovation Without Risk”</strong>, and <strong>Q3</strong> is the Q3 campaign (theme name to be
+          confirmed — see the note below). <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
+          7 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
+          activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
+          plus its on-demand version, is one row). Everything else sits under{' '}
+          <strong>“Other activities”</strong>, kept so the page still adds up to the Overview totals. Campaign names
+          are editable (click the pencil). <Explain id="campaignTheme" />
         </div>
       </div>
 
@@ -58,19 +59,9 @@ export default function Campaigns() {
         </div>
       </div>
 
-      <div className="callout" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          <strong>The "Theme" dropdown on each activity.</strong> Every activity is placed in a quarter
-          <strong> automatically, from its own campaign date</strong> — so it can occasionally be off (for example a
-          campaign whose Salesforce name has no date). Use the <strong>Theme</strong> dropdown on any activity row to
-          move it to <strong>Q1</strong> (Data Is an Asset), <strong>Q2</strong> (Innovation Without Risk),{' '}
-          <strong>Q3</strong> or <strong>Other</strong>; leave it on <strong>"Auto"</strong> to keep the automatic choice. Your change saves
-          instantly and sticks through every data refresh.
-        </div>
-      </div>
+      {/* The "Theme" dropdown column was removed (Margot, 11 Aug: "I'm not sure what value
+          the Theme column adds. I'd remove it.") — Q1/Q2 placement is now fixed by her
+          curated campaign list, so there is nothing left to override. */}
 
       {/* Locked definition: which date keys what. A campaign is placed by when it STARTED
           (name date, else Salesforce Start Date) — its end/close date is never used — while
@@ -91,6 +82,9 @@ export default function Campaigns() {
         </div>
       </div>
 
+      {/* W6 — run-this-period vs ongoing impact across all campaigns */}
+      <CurrentVsOngoing />
+
       {q.isLoading && <Loading label="Loading campaign themes…" />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState message="No campaigns for this region / quarter yet." />}
@@ -103,7 +97,6 @@ export default function Campaigns() {
 // individual activities within it.
 function ThemeCard({ theme, ov }) {
   const [open, setOpen] = useState(theme.key !== 'other') // named themes open; Other collapsed
-  const upd = useUpdateCampaignOverride()
   const t = theme.totals
   // Robin: order by contribution, not recency — every column is sortable, defaulting to
   // biggest open pipeline first (the order the rows already arrived in).
@@ -145,10 +138,9 @@ function ThemeCard({ theme, ov }) {
                 <SortTh {...sortProps('mql')} className="r">MQL<Explain id="mql" /></SortTh>
                 <SortTh {...sortProps('sql')} className="r">SQL<Explain id="sql" /></SortTh>
                 <SortTh {...sortProps('createdOpps')} className="r">Opps<Explain id="createdOpps" /></SortTh>
-                <SortTh {...sortProps('oppCount')} className="r">Qualified<Explain id="opportunities" /></SortTh>
+                <SortTh {...sortProps('oppCount')} className="r">Qualified Opportunities<Explain id="opportunities" /></SortTh>
                 <SortTh {...sortProps('pipeline')} className="r">Open Pipeline €<Explain id="pipeline" /></SortTh>
                 <SortTh {...sortProps('closedWon')} className="r">Closed-Won €<Explain id="closedWon" /></SortTh>
-                <th>Theme</th>
               </tr>
             </thead>
             <tbody>
@@ -176,20 +168,6 @@ function ThemeCard({ theme, ov }) {
                   <td className="r">{num(c.oppCount)}</td>
                   <td className="r">{eur(c.pipeline)}</td>
                   <td className="r">{eur(c.closedWon)}</td>
-                  <td>
-                    <select
-                      className="theme-select"
-                      value={c.themeOverridden ? c.theme.key : ''}
-                      title={c.themeOverridden ? `Pinned to ${c.theme.label} (Salesforce name suggests ${c.autoTheme.label})` : `Auto-classified as ${c.autoTheme.label} — pick to override`}
-                      onChange={(e) => upd.mutate({ campaignKey: c.campaignKey, field: 'theme', value: e.target.value })}
-                    >
-                      <option value="">Auto · {c.autoTheme.label}</option>
-                      {THEME_ORDER.map((k) => {
-                        const m = themeMeta(k)
-                        return <option key={k} value={k}>{m.label}</option>
-                      })}
-                    </select>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -202,8 +180,8 @@ function ThemeCard({ theme, ov }) {
             <strong>0 Leads/MQL/SQL but pipeline or revenue?</strong> Leads/MQL/SQL count campaign <strong>responders</strong>
             (people logged as “responded” in Salesforce), while Pipeline &amp; Closed-Won count <strong>opportunities linked
             to the campaign</strong>. In-person events often have deals attributed to them without the attendees being recorded
-            as responders — so the funnel reads 0 while the pipeline/revenue is real (e.g. Samenwerkingsdag Zorg: 0 leads, but
-            3 opportunities → €96k pipeline + €46k won).
+            as responders — so the funnel reads 0 while the pipeline/revenue is real (Samenwerkingsdag Zorg is the standing
+            example: no recorded responders, yet real opportunities and won revenue).
           </p>
         </div>
       )}

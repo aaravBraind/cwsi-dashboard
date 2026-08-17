@@ -15,14 +15,53 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel } = {}) {
   const f = funnel || {}
   const w = web || {}
   const o = outreach?.kpis || {}
+  const oe = outreach?.emailBasis || {} // per-email rates (W3: the primary basis)
   const ot = outreachMeetings?.oppTiers?.outbound || null
   const outMeetings = outreachMeetings?.tiers?.outbound
   const outInfluenced = ot ? ot.pipeline + ot.won : null
   // Retained contracts + expansion removed from the register (Margot, 9 Jul call).
+
+  // W9 (11 Aug): the stub rows are wired to the data that already exists —
+  //   linkedin  — the LinkedIn Ads snapshot (linkedin_campaign_2026 totals + efficiency)
+  //   aeEmail   — email-platform engagement for the four named campaigns (open/CTR/unsub)
+  //   eventAttendance — the in-person attendee lists, combined with GoToWebinar
+  const li = linkedin?.totals || {}
+  const lie = linkedin?.efficiency || {}
+  const ae = aeEmail?.totals || {}
+  const ea = eventAttendance?.totals || null
+  // Post-QA review (17 Aug): Margot re-listed the funnel metrics PER SECTION and the
+  // register only showed each once — these channel-scoped funnels fill her lists.
+  //   emailFunnel  — the four named email campaigns (same scope as the Email page)
+  //   webFunnel    — the Organic SEO channel excl. whitepapers (same as the SEO page)
+  //   eventsFunnel — the Events & Webinars channel (same as the Events page)
+  const ef = emailFunnel || {}
+  const wf = webFunnel || {}
+  const evf = eventsFunnel || {}
+  // Channel-scoped derived-rate + funnel rows, built one way for all three sections.
+  const chRows = (p, ctx, fn) => {
+    const won = has(fn.closedWonCount) ? fn.closedWonCount : null
+    return [
+      has(fn.sql) && fn.mql
+        ? { t: 'live', label: 'MQL → SQL conversion', val: pct(fn.sql, fn.mql), ctx, key: `${p}MqlToSql`, num: fn.sql / fn.mql }
+        : { t: 'na', label: 'MQL → SQL conversion', ctx, key: `${p}MqlToSql` },
+      won != null && fn.sql
+        ? { t: 'live', label: 'SQL → Closed/Won', val: pct(won, fn.sql), ctx, key: `${p}SqlToWon`, num: won / fn.sql }
+        : { t: 'na', label: 'SQL → Closed/Won', ctx: `${ctx} — no closed deals in scope yet`, key: `${p}SqlToWon` },
+      won != null
+        ? { t: 'live', label: 'Closed-won opportunities', val: num(won), ctx, key: `${p}ClosedOpps`, num: won }
+        : { t: 'na', label: 'Closed-won opportunities', ctx: `${ctx} — none in scope yet`, key: `${p}ClosedOpps` },
+      has(fn.marginPipeline)
+        ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(fn.marginPipeline), ctx, key: `${p}InfluencedPipeline`, num: fn.marginPipeline }
+        : { t: 'na', label: 'Influenced pipeline (gross profit)', ctx: `${ctx} — none in scope yet`, key: `${p}InfluencedPipeline` },
+      has(fn.margin)
+        ? { t: 'live', label: 'Influenced margin (gross profit)', val: eur(fn.margin), ctx, key: `${p}InfluencedMargin`, num: fn.margin }
+        : { t: 'na', label: 'Influenced margin (gross profit)', ctx: `${ctx} — no won deals with gross profit in scope yet`, key: `${p}InfluencedMargin` },
+    ]
+  }
 
   const convCtx = has(w.keyEvents) && w.sessions ? `${pct(w.keyEvents, w.sessions)} of sessions` : 'GA4 conversions'
 
@@ -34,8 +73,14 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
   const visitorToMqlV = has(w.keyEvents) && Number(w.sessions) > 0 ? w.keyEvents / w.sessions : null
   const mqlToSqlV = has(f.sql) && f.mql ? f.sql / f.mql : null
   const sqlToWonV = has(f.closedWonCount) && f.sql ? f.closedWonCount / f.sql : null
+  const overallConvV = has(f.closedWonCount) && f.mql ? f.closedWonCount / f.mql : null
   const eventsMqlSqlV = evMql > 0 ? evSql / evMql : null
   const attendanceV = attendance && attendance.registrants > 0 ? attendance.attendees / attendance.registrants : null
+  // Combined attendance = GoToWebinar (webinars) + the attendee lists (in-person), when loaded.
+  const combRegs = (attendance?.registrants || 0) + (ea?.registered || 0)
+  const combAtt = (attendance?.attendees || 0) + (ea?.attended || 0)
+  const combAttendanceV = ea && combRegs > 0 ? combAtt / combRegs : null
+  const money2 = (v) => (v == null || isNA(v) ? null : `€${Number(v).toFixed(2)}`)
 
   return [
     // ── Overall marketing summary (KR1/KR2: merged Pipeline Volumes + Commercial
@@ -49,7 +94,9 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     has(f.closedWonCount)
       ? { t: 'live', label: 'Closed-won opportunities', val: num(f.closedWonCount), ctx: 'won deals', key: 'closedWonCount', num: f.closedWonCount }
       : { t: 'na', label: 'Closed-won opportunities', ctx: 'closed-won count arrives at the next data refresh', key: 'closedWonCount' },
-    { t: 'live', label: 'Influenced pipeline (revenue)', val: eur(f.pipeline), ctx: 'generated (open + closed-won) opp value — revenue basis, not gross margin', key: 'influencedPipeline', num: f.pipeline },
+    has(f.marginPipeline)
+      ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(f.marginPipeline), ctx: `gross profit on generated (open + closed-won) opps · ${eur(f.pipeline)} on the revenue basis`, key: 'influencedPipeline', num: f.marginPipeline }
+      : { t: 'na', label: 'Influenced pipeline (gross profit)', ctx: 'open-deal gross profit arrives at the next data refresh', key: 'influencedPipeline' },
     { t: 'live', label: 'Closed-won value (revenue)', val: eur(f.closedWon), ctx: 'won deal value — revenue basis, by close date', key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
       ? {
@@ -61,34 +108,64 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
           key: 'influencedMargin', num: f.margin,
         }
       : { t: 'na', label: 'Influenced margin (gross profit)', ctx: 'Gross Profit blank on all won deals in scope — pending in Salesforce (not shown as revenue)', key: 'influencedMargin' },
-    { t: 'na', label: 'Cost per lead (blended)', ctx: 'per-channel spend pending (the combined per-channel spend sheet)', key: 'costPerLead' },
-    { t: 'na', label: 'Return on spend (blended)', ctx: 'mixed currency; per-channel spend pending', key: 'returnOnSpend' },
+    lie.cplForm != null && !isNA(lie.cplForm)
+      ? { t: 'live', label: 'Cost per lead', val: money2(lie.cplForm), ctx: 'LinkedIn paid — the only channel with spend recorded; a blended CPL needs per-channel spend for the rest', key: 'costPerLead', num: Number(lie.cplForm) }
+      : { t: 'na', label: 'Cost per lead', ctx: 'no data source yet — per-channel spend beyond LinkedIn is not recorded', key: 'costPerLead' },
+    lie.roiPipeline != null && !isNA(lie.roiPipeline)
+      ? { t: 'live', label: 'Return on spend', val: `${Number(lie.roiPipeline).toFixed(1)}×`, ctx: 'LinkedIn paid — SF-attributed pipeline (revenue) ÷ spend; blended return needs per-channel spend', key: 'returnOnSpend', num: Number(lie.roiPipeline) }
+      : { t: 'na', label: 'Return on spend', ctx: 'no data source yet — per-channel spend beyond LinkedIn is not recorded', key: 'returnOnSpend' },
 
     // ── Paid & Digital Acquisition (the acquisition funnel; conversions shown once here) ──
     { t: 'cat', label: 'Paid & Digital Acquisition' },
-    { t: 'na', label: 'Impressions (non-LinkedIn)', ctx: 'LinkedIn impressions live on LinkedIn page', key: 'impressions' },
-    { t: 'na', label: 'Cost per click (CPC)', ctx: 'LinkedIn CTR/clicks on LinkedIn page (GBP)', key: 'cpc' },
-    { t: 'na', label: 'Cost per thousand (CPM)', ctx: 'LinkedIn-only; on LinkedIn page', key: 'cpm' },
+    li.impressions > 0
+      ? { t: 'live', label: 'Impressions', val: num(li.impressions), ctx: 'LinkedIn Ads — the only paid channel running in 2026', key: 'impressions', num: li.impressions }
+      : { t: 'na', label: 'Impressions', ctx: 'no paid campaigns delivering in scope (LinkedIn is the only paid channel)', key: 'impressions' },
+    li.clicks > 0
+      ? { t: 'live', label: 'Clicks', val: num(li.clicks), ctx: 'LinkedIn Ads', key: 'clicks', num: li.clicks }
+      : { t: 'na', label: 'Clicks', ctx: 'no paid campaigns delivering in scope', key: 'clicks' },
+    lie.cpc != null && !isNA(lie.cpc)
+      ? { t: 'live', label: 'Cost per click (CPC)', val: money2(lie.cpc), ctx: 'LinkedIn Ads (EUR)', key: 'cpc', num: Number(lie.cpc) }
+      : { t: 'na', label: 'Cost per click (CPC)', ctx: 'LinkedIn spend/clicks pending', key: 'cpc' },
+    lie.cpm != null && !isNA(lie.cpm)
+      ? { t: 'live', label: 'Cost per thousand (CPM)', val: money2(lie.cpm), ctx: 'LinkedIn Ads (EUR)', key: 'cpm', num: Number(lie.cpm) }
+      : { t: 'na', label: 'Cost per thousand (CPM)', ctx: 'LinkedIn spend/impressions pending', key: 'cpm' },
+    has(w.keyEvents)
+      ? { t: 'live', label: 'Total conversions (downloads & form fills)', val: num(w.keyEvents), ctx: `GA4 on-site conversions, paid + organic traffic · ${convCtx}`, key: 'totalConversions', num: w.keyEvents }
+      : { t: 'na', label: 'Total conversions (downloads & form fills)', ctx: 'GA4 key events (on-site conversions)', key: 'totalConversions' },
     { t: 'live', label: 'MQL → SQL conversion', val: pct(f.sql, f.mql), ctx: 'derived', key: 'mqlToSql', num: mqlToSqlV },
     has(f.closedWonCount)
       ? { t: 'live', label: 'SQL → Closed/Won', val: pct(f.closedWonCount, f.sql), ctx: 'derived', key: 'sqlToWon', num: sqlToWonV }
       : { t: 'na', label: 'SQL → Closed/Won', ctx: 'closed-count arrives at the next data refresh', key: 'sqlToWon' },
+    has(f.closedWonCount)
+      ? { t: 'live', label: 'Overall conversion (MQL → closed-won)', val: pct(f.closedWonCount, f.mql), ctx: 'derived — end-to-end', key: 'overallConversion', num: overallConvV }
+      : { t: 'na', label: 'Overall conversion (MQL → closed-won)', ctx: 'closed-count arrives at the next data refresh', key: 'overallConversion' },
 
     // ── Organic Social (KR3 — distinct group) ──
     { t: 'cat', label: 'Organic Social' },
-    { t: 'na', label: 'Engagement rate', ctx: 'no organic-social feed (reactions/comments/shares)', key: 'engagementRate' },
+    { t: 'na', label: 'Engagement rate', ctx: 'awaiting LinkedIn company-page analytics access — no feed exists yet for page reactions/comments/shares', key: 'engagementRate' },
     has(w.socialSessions)
       ? { t: 'live', label: 'Traffic from organic social (sessions)', val: num(w.socialSessions), ctx: 'GA4 channel = Organic Social', key: 'socialSessions', num: w.socialSessions }
       : { t: 'na', label: 'Traffic from organic social', ctx: 'GA4 Organic Social channel', key: 'socialSessions' },
-    { t: 'na', label: 'Follower growth', ctx: 'no organic-social follower feed', key: 'followerGrowth' },
+    { t: 'na', label: 'Follower growth', ctx: 'awaiting LinkedIn company-page analytics access — no follower feed exists yet', key: 'followerGrowth' },
 
-    // ── Email Performance ──
+    // ── Email Performance — live from the email platform (W9), scoped to the four
+    //    named campaigns, matching the Email page ──
     { t: 'cat', label: 'Email Performance' },
-    { t: 'na', label: 'Open rate', ctx: 'from our email-marketing platform — not available from the current email setup', key: 'emailOpenRate' },
-    { t: 'na', label: 'Click-through rate', ctx: 'from our email-marketing platform — not available from the current email setup', key: 'emailCtr' },
-    { t: 'na', label: 'Unsubscribe rate', ctx: 'from our email-marketing platform — not available from the current email setup', key: 'unsubscribeRate' },
-    { t: 'na', label: 'Reader → MQL', ctx: 'email engagement pending (our email-marketing platform)', key: 'readerToMql' },
-    { t: 'na', label: 'Conversions from email', ctx: 'email engagement pending (our email-marketing platform)', key: 'conversionsFromEmail' },
+    has(ae.openRate)
+      ? { t: 'live', label: 'Open rate', val: `${(ae.openRate * 100).toFixed(1)}%`, ctx: 'unique opens ÷ delivered · the four named campaigns · email platform', key: 'emailOpenRate', num: ae.openRate }
+      : { t: 'na', label: 'Open rate', ctx: 'no sends from the named campaigns in this period', key: 'emailOpenRate' },
+    has(ae.ctr)
+      ? { t: 'live', label: 'Click-through rate', val: `${(ae.ctr * 100).toFixed(1)}%`, ctx: 'people who clicked ÷ delivered · the four named campaigns', key: 'emailCtr', num: ae.ctr }
+      : { t: 'na', label: 'Click-through rate', ctx: 'no sends from the named campaigns in this period', key: 'emailCtr' },
+    has(ae.unsubRate)
+      ? { t: 'live', label: 'Unsubscribe rate', val: `${(ae.unsubRate * 100).toFixed(2)}%`, ctx: 'opt-outs ÷ delivered · the four named campaigns', key: 'unsubscribeRate', num: ae.unsubRate }
+      : { t: 'na', label: 'Unsubscribe rate', ctx: 'no sends from the named campaigns in this period', key: 'unsubscribeRate' },
+    { t: 'na', label: 'Reader → MQL', ctx: 'no data source yet — needs each campaign’s downloads joined to its email opens (planned once download attribution lands)', key: 'readerToMql' },
+    { t: 'na', label: 'Conversions from email', ctx: 'no data source yet — form-fill attribution back to the sending email is not recorded', key: 'conversionsFromEmail' },
+    // Post-QA review: her Email Performance list also names the funnel + money metrics,
+    // scoped to email — same figures as the Email page's four named campaigns.
+    ...chRows('email', 'the four named campaigns · Salesforce-attributed', ef),
+    { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — email-channel spend is not recorded in the tracker', key: 'emailCostPerConversion' },
 
     // ── Website Performance (GA4-sourced; visitor conversions shown here) ──
     { t: 'cat', label: 'Website Performance' },
@@ -101,18 +178,29 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     visitorToMqlV != null
       ? { t: 'live', label: 'Visitor → MQL conversion', val: pct(w.keyEvents, w.sessions, 2), ctx: 'GA4 conv ÷ sessions', key: 'visitorToMql', num: visitorToMqlV }
       : { t: 'na', label: 'Visitor → MQL conversion', ctx: 'GA4 key events ÷ sessions', key: 'visitorToMql' },
+    // Post-QA review: her Website Performance list also names the lead-funnel + money
+    // metrics — the Organic SEO channel funnel (whitepapers excluded; same as the SEO page).
+    has(wf.mql)
+      ? { t: 'live', label: 'Total leads', val: num(wf.mql), ctx: 'Organic SEO channel · campaign responders', key: 'webTotalLeads', num: wf.mql }
+      : { t: 'na', label: 'Total leads', ctx: 'Organic SEO channel · campaign responders', key: 'webTotalLeads' },
+    ...chRows('web', 'Organic SEO channel · Salesforce-attributed', wf),
 
     { t: 'cat', label: 'Events Performance' },
     evLeads > 0
       ? { t: 'live', label: 'Registrations (leads)', val: num(evLeads), ctx: 'campaign membership · event campaigns', key: 'registrations', num: evLeads }
       : { t: 'na', label: 'Registrations (leads)', ctx: 'event-campaign members (at the next data refresh)', key: 'registrations' },
-    attendanceV != null
-      ? { t: 'live', label: 'Attendance rate (webinar)', val: pct(attendance.attendees, attendance.registrants), ctx: 'GoToWebinar · webinar only; in-person attendance not yet available', key: 'attendanceRate', num: attendanceV }
+    combAttendanceV != null
+      ? { t: 'live', label: 'Attendance rate', val: `${(combAttendanceV * 100).toFixed(0)}%`, ctx: `webinars (GoToWebinar) + in-person (attendee lists) combined · ${num(combAtt)} of ${num(combRegs)}`, key: 'attendanceRate', num: combAttendanceV }
+      : attendanceV != null
+      ? { t: 'live', label: 'Attendance rate (webinar)', val: pct(attendance.attendees, attendance.registrants), ctx: 'GoToWebinar · webinar only until the in-person attendee lists load', key: 'attendanceRate', num: attendanceV }
       : { t: 'na', label: 'Attendance rate', ctx: 'GoToWebinar attendance match pending', key: 'attendanceRate' },
     eventsMqlSqlV != null
       ? { t: 'live', label: 'MQL → SQL conversion (events)', val: pct(evSql, evMql), ctx: 'event-campaign funnel', key: 'mqlToSqlEvents', num: eventsMqlSqlV }
       : { t: 'na', label: 'MQL → SQL conversion (events)', ctx: 'event-campaign funnel (at the next data refresh)', key: 'mqlToSqlEvents' },
-    { t: 'na', label: 'Cost per conversion', ctx: 'event spend pending', key: 'costPerConversion' },
+    // Post-QA review: her Events Performance list also names SQL→Won + the money metrics
+    // (MQL→SQL already lives just above, so chRows' first entry is dropped).
+    ...chRows('events', 'Events & Webinars channel · Salesforce-attributed', evf).slice(1),
+    { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — per-event spend is not recorded in the tracker', key: 'costPerConversion' },
 
     // ── Outreach (Prospecting) — K1. Engagement (prospects/opens/replies) is a
     //    lifetime cadence snapshot; meetings/opps are Salesforce, contact-attributed
@@ -121,12 +209,29 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     o.prospects > 0
       ? { t: 'live', label: 'Prospects in cadence', val: num(o.prospects), ctx: 'marketing sequences · lifetime snapshot', key: 'outreachProspects', num: o.prospects }
       : { t: 'na', label: 'Prospects in cadence', ctx: 'Outreach sequence snapshot', key: 'outreachProspects' },
-    has(o.openRate)
-      ? { t: 'live', label: 'Open rate', val: pct(o.opens, o.prospects), ctx: 'opens ÷ prospects · lifetime snapshot', key: 'outreachOpenRate', num: o.openRate }
-      : { t: 'na', label: 'Open rate', ctx: 'Outreach engagement snapshot', key: 'outreachOpenRate' },
-    has(o.replyRate)
-      ? { t: 'live', label: 'Reply rate', val: pct(o.replies, o.prospects), ctx: 'replies ÷ prospects · lifetime snapshot', key: 'outreachReplyRate', num: o.replyRate }
-      : { t: 'na', label: 'Reply rate', ctx: 'Outreach engagement snapshot', key: 'outreachReplyRate' },
+    // W3 (11 Aug): open/reply rates are per EMAIL DELIVERED (Outreach.io's own basis, never
+    // >100%) — the old opens-events ÷ people formula produced the >100% readings.
+    has(oe.openRate)
+      ? { t: 'live', label: 'Open rate', val: `${(oe.openRate * 100).toFixed(0)}%`, ctx: 'opens ÷ emails delivered · lifetime snapshot', key: 'outreachOpenRate', num: oe.openRate }
+      : { t: 'na', label: 'Open rate', ctx: 'Outreach per-step engagement snapshot', key: 'outreachOpenRate' },
+    has(oe.replyRate)
+      ? { t: 'live', label: 'Reply rate', val: `${(oe.replyRate * 100).toFixed(1)}%`, ctx: 'replies ÷ emails delivered · lifetime snapshot', key: 'outreachReplyRate', num: oe.replyRate }
+      : { t: 'na', label: 'Reply rate', ctx: 'Outreach per-step engagement snapshot', key: 'outreachReplyRate' },
+    // Post-QA review: the rest of her Outreach metric list, live where a source exists.
+    has(oe.clickRate)
+      ? { t: 'live', label: 'Click-through rate', val: `${(oe.clickRate * 100).toFixed(1)}%`, ctx: 'clicks ÷ emails delivered · lifetime snapshot', key: 'outreachCtr', num: oe.clickRate }
+      : { t: 'na', label: 'Click-through rate', ctx: 'Outreach per-step engagement snapshot', key: 'outreachCtr' },
+    has(oe.unsubRate)
+      ? { t: 'live', label: 'Unsubscribe rate', val: `${(oe.unsubRate * 100).toFixed(2)}%`, ctx: 'opt-outs ÷ emails delivered · lifetime snapshot', key: 'outreachUnsubRate', num: oe.unsubRate }
+      : { t: 'na', label: 'Unsubscribe rate', ctx: 'Outreach per-step engagement snapshot', key: 'outreachUnsubRate' },
+    outMeetings != null
+      ? { t: 'live', label: 'MQLs (meetings booked)', val: num(outMeetings), ctx: 'your definition counts meetings booked + content downloads; downloads aren’t recorded for outreach yet, so this is meetings only', key: 'outreachMqls', num: outMeetings }
+      : { t: 'na', label: 'MQLs (meetings booked)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMqls' },
+    { t: 'na', label: 'Reader → MQL', ctx: 'no data source yet — needs per-prospect content-download tracking for outreach sends', key: 'outreachReaderToMql' },
+    { t: 'na', label: 'MQL → SQL conversion', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; outcomes are contact-attributed instead', key: 'outreachMqlToSql' },
+    { t: 'na', label: 'SQL → Closed/Won', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; closed-won below is contact-attributed', key: 'outreachSqlToWon' },
+    { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — outreach spend is not recorded in the tracker', key: 'outreachCostPerConversion' },
+    { t: 'na', label: 'Influenced margin (gross profit)', ctx: 'no data source yet — contact-attributed deals don’t carry per-deal gross profit; the campaign-attributed margin is in the summary above', key: 'outreachInfluencedMargin' },
     outMeetings != null
       ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings attributed to outbound sequences · current view', key: 'outreachMeetings', num: outMeetings }
       : { t: 'na', label: 'Meetings booked (outbound)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMeetings' },

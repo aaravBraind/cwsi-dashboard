@@ -87,6 +87,12 @@ function LinkedInSnapshot() {
   const ov = useCampaignOverrides().data || {} // hook before any early return (Rules of Hooks)
   if (s.isLoading) return <Loading label="Loading LinkedIn snapshot…" />
   if (s.isError) return <ErrorState error={s.error} />
+  // W11 — a quarter with no LinkedIn campaigns says so explicitly (all 2026 campaigns ran
+  // in Q2, so Q1 and Q3 must read empty, not repeat the same lifetime figures).
+  if (s.data?.outOfQuarter)
+    return (
+      <EmptyState message="No LinkedIn campaigns ran in this quarter — all 2026 LinkedIn campaigns ran in Q2. Switch to Q2 or YTD to see them. (Salesforce-attributed outcomes below stay date-filtered as normal.)" />
+    )
   if (!s.data || !s.data.hasData)
     return <EmptyState message="No LinkedIn delivery snapshot for this region yet." />
 
@@ -304,7 +310,7 @@ function Body({ data, isLinkedIn, isEmail }) {
         // (campaign-member inflation), so LinkedIn shows commercial OUTCOMES only.
         <div className="kpis cols-3">
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline (gross profit) · current view" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
           <Kpi label="Closed-Won € · current view" val={eur(totals.closedWon)} explainId="closedWon" />
         </div>
       ) : (
@@ -312,7 +318,7 @@ function Body({ data, isLinkedIn, isEmail }) {
           <Kpi label="MQLs · current view" val={num(totals.mql)} explainId="mql" />
           <Kpi label="SQLs · current view" val={num(totals.sql)} explainId="sql" />
           <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline (revenue) · current view" val={eur(totals.pipeline)} explainId="pipeline" />
+          <Kpi label="Influenced Pipeline (gross profit) · current view" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
         </div>
       )}
 
