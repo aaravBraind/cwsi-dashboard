@@ -6,6 +6,7 @@ import { eur, num, isNA, NA } from '../../data/format'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
+import RegionSelect from '../RegionSelect'
 import CurrentVsOngoing from '../CurrentVsOngoing'
 import { EMAIL_FAMILY_FACT_KEYS } from '../../data/pinnedCampaigns'
 
@@ -26,7 +27,7 @@ export default function Email() {
     <>
       <div className="page-head">
         <div>
-          <div className="page-title">Email — Campaigns &amp; Engagement</div>
+          <div className="page-title">Email</div>
           <div className="page-sub">Whitepaper &amp; workflow campaigns · commercial funnel + per-email engagement · FY2026</div>
         </div>
         <QuarterPills />
@@ -90,16 +91,23 @@ function EngagementBody({ d }) {
           <div className="left">
             <div className="panel-title">Email Engagement <Explain id="emailEngagement" /></div>
             <div className="panel-sub">
-              The named campaigns' emails sent in the selected period · all regions (a send covers several regions' lists) ·
-              engagement counted to {d.asOf}
+              The selected quarter's campaigns · engagement counted to {d.asOf}
             </div>
           </div>
           <span className="chip blue">{num(t.emails)} emails</span>
         </div>
         <div className="panel-body">
+          {d.regionScoped && d.unsegmented?.emails > 0 && (
+            <p className="panel-note" style={{ margin: '0 0 10px', fontSize: 12, opacity: 0.8 }}>
+              Regional figures cover the sends addressed to this region's list. A further{' '}
+              <strong>{num(d.unsegmented.emails)}</strong> send{d.unsegmented.emails === 1 ? '' : 's'}{' '}
+              (<strong>{num(d.unsegmented.delivered)}</strong> delivered) went to a single combined list with no
+              region, so they are counted under All Regions only — never split across the regional tabs.
+            </p>
+          )}
           {!d.hasData ? (
             <p className="panel-note" style={{ margin: 0 }}>
-              No marketing emails were sent in this period.
+              No campaign emails were addressed to this region's list in this quarter.
             </p>
           ) : (
             <div className="h-funnel">
@@ -113,7 +121,7 @@ function EngagementBody({ d }) {
         </div>
       </div>
 
-      {d.hasData && (
+      {(
         <>
           {/* Aggregated per-campaign engagement — the campaign-level read Margot asked for
               ("I'm not interested in individual email performance. Please aggregate results
@@ -226,7 +234,7 @@ const Stage = ({ name, val, extra }) => (
   <div className="h-funnel-stage">
     <div className="stage-name">{name}</div>
     <div className="stage-val">{val}</div>
-    <div className="stage-extra">{extra}</div>
+    {extra ? <div className="stage-extra">{extra}</div> : null}
   </div>
 )
 
@@ -247,8 +255,8 @@ const sumTotals = (rows) => ({
   sql: rows.reduce((a, c) => a + (Number(c.sql) || 0), 0),
   createdOpps: rows.reduce((a, c) => a + (Number(c.createdOpps) || 0), 0),
   oppCount: rows.reduce((a, c) => a + (Number(c.oppCount) || 0), 0),
-  pipeline: rows.reduce((a, c) => a + (Number(c.oppValue) || 0), 0),
-  closedWon: rows.reduce((a, c) => a + (Number(c.closedWon) || 0), 0),
+  pipeline: rows.reduce((a, c) => a + (Number(c.oppValueMargin) || 0), 0),
+  closedWon: rows.reduce((a, c) => a + (Number(c.margin) || 0), 0),
 })
 
 function Body({ data, ov }) {
@@ -265,17 +273,19 @@ function Body({ data, ov }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Commercial Funnel</div>
-            <div className="panel-sub">MQLs → SQLs → Created Opps → Opportunity Value → Closed-Won · across the {matchedCount} named campaigns · each campaign's full-2026 contribution</div>
+            <div className="panel-sub">MQLs → SQLs → Created Opportunities → Opportunity Value → Closed-Won · across the {matchedCount} named campaigns · each campaign's full-2026 contribution</div>
           </div>
           <span className="chip blue">{matchedCount} campaigns</span>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="MQLs" val={num(t.mql)} extra="campaign members" />
-            <Stage name="SQLs" val={num(t.sql)} extra="sales-qualified" />
-            <Stage name="Created Opps" val={opps(t.createdOpps)} extra="opps created" />
-            <Stage name="Opportunity Value" val={eur(t.pipeline)} extra="open qualified pipeline" />
-            <Stage name="Closed-Won" val={eur(t.closedWon)} extra="won revenue" />
+            <Stage name="MQLs" val={num(t.mql)} />
+            <Stage name="SQLs" val={num(t.sql)} />
+            <Stage name="Created Opportunities" val={opps(t.createdOpps)} />
+            <Stage name="Qualified Opportunities" val={opps(t.oppCount)} />
+            <Stage name="Opportunity Value" val={eur(t.pipeline)} />
+            <Stage name="Closed-Won" val={eur(t.closedWon)} />
+
           </div>
         </div>
       </div>
@@ -299,7 +309,7 @@ function Body({ data, ov }) {
           <p className="panel-note" style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
             Each row is the campaign's <strong>full 2026 contribution</strong>, so it ties to the campaign in
             Salesforce — an opportunity created in an earlier quarter still counts towards the campaign that generated
-            it. The quarter pill chooses <em>which</em> campaigns are listed. <strong>Created Opps</strong> = every
+            it. The quarter pill chooses <em>which</em> campaigns are listed. <strong>Created Opportunities</strong> = every
             opportunity created off the campaign; <strong>Qualified</strong> = those at a genuine stage and still open
             or won — what Opp Value is summed from. <Explain id="campaignWindow" />
           </p>
@@ -314,25 +324,23 @@ function Body({ data, ov }) {
                 <SortTh {...sortProps('audience')} className="r">Audience <Explain id="emailAudience" /></SortTh>
                 <SortTh {...sortProps('mql')} className="r">MQLs <Explain id="mql" /></SortTh>
                 <SortTh {...sortProps('sql')} className="r">SQLs <Explain id="sql" /></SortTh>
-                <SortTh {...sortProps('createdOpps')} className="r">Created Opps <Explain id="createdOpps" /></SortTh>
-                <SortTh {...sortProps('oppCount')} className="r">Qualified <Explain id="opportunities" /></SortTh>
-                <SortTh {...sortProps('oppValue')} className="r">Opp Value <Explain id="pipeline" /></SortTh>
-                <SortTh {...sortProps('closedWon')} className="r">Closed-Won <Explain id="closedWon" /></SortTh>
+                <SortTh {...sortProps('oppCount')} className="r">Qualified Opportunities <Explain id="opportunities" /></SortTh>
+                <SortTh {...sortProps('oppValueMargin')} className="r">Opp Value <Explain id="pipeline" /></SortTh>
+                <SortTh {...sortProps('margin')} className="r">Closed-Won <Explain id="margin" /></SortTh>
               </tr>
             </thead>
             <tbody>
               {sortedCampaigns.map((c) => (
                 <tr key={c.campaignKey}>
                   <td><EditableName campaignKey={c.campaignKey} value={ov[c.campaignKey]?.display_name} original={c.campaignName} /></td>
-                  <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
+                  <td><RegionSelect campaignKey={c.campaignKey} regions={ov[c.campaignKey]?.regions} original={c.regionCode} /></td>
                   <td><span className={`chip ${c.kind === 'Whitepaper' ? 'blue' : 'neu'}`}>{c.kind}</span></td>
                   <td className="r mono">{isNA(c.audience) ? '—' : num(c.audience)}</td>
                   <td className="r mono">{num(c.mql)}</td>
                   <td className="r mono">{num(c.sql)}</td>
-                  <td className="r mono">{c.createdOpps ? num(c.createdOpps) : '—'}</td>
-                  <td className="r mono">{c.oppCount ? num(c.oppCount) : '—'}</td>
-                  <td className="r mono">{c.oppValue ? eur(c.oppValue) : '—'}</td>
-                  <td className="r mono">{c.closedWon ? eur(c.closedWon) : '—'}</td>
+                  <td className="r mono">{num(c.oppCount || 0)}</td>
+                  <td className="r mono">{eur(c.oppValueMargin || 0)}</td>
+                  <td className="r mono">{eur(c.margin || 0)}</td>
                 </tr>
               ))}
               <tr className="total">
@@ -342,7 +350,6 @@ function Body({ data, ov }) {
                 <td className="r mono">{isNA(t.audience) ? '—' : num(t.audience)}</td>
                 <td className="r mono">{num(t.mql)}</td>
                 <td className="r mono">{num(t.sql)}</td>
-                <td className="r mono">{opps(t.createdOpps)}</td>
                 <td className="r mono">{opps(t.oppCount)}</td>
                 <td className="r mono">{eur(t.pipeline)}</td>
                 <td className="r mono">{eur(t.closedWon)}</td>

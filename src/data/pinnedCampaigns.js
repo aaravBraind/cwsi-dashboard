@@ -61,9 +61,19 @@ const APPLE_WP_KEYS = ['701Tm00000cHsHgIAK', '701Tm00000ZKcd1IAD', '701Tm00000ZK
 // The 4 Email-page campaign families. `factKeys` scope the COMMERCIAL funnel
 // (Salesforce members/opps per campaign key); `matchesEmail` picks the family's emails
 // from the email-platform feed (row shape: { campaign_key, email_name }).
+// QUARTER (Margot, 20 Aug): "These need to be split by quarter. The Data That Moves Your
+// Business Forward whitepaper falls under Q1, while the remaining items fall under Q2. For
+// Q3, we have the E3/E5 workflow and The Governance Gap whitepaper."
+//
+// The quarter is a property of the CAMPAIGN, not of each send. That distinction matters:
+// the Data That Moves whitepaper is a Q1 campaign whose emails all went out from 2 Apr
+// (Q2), so filtering engagement by send date left the Q1 view empty — the "Email Engagement
+// section appears to be empty for Q1" she reported. Filtering by the family's quarter fixes
+// both asks at once.
 export const EMAIL_FAMILIES = [
   {
     id: 'data-that-moves-wp',
+    quarter: 'Q1',
     label: 'Data That Moves Your Business Forward Whitepaper',
     kind: 'Whitepaper',
     factKeys: ['701Si00000V3LvjIAF'],
@@ -76,6 +86,7 @@ export const EMAIL_FAMILIES = [
   },
   {
     id: 'becoming-frontier-wp',
+    quarter: 'Q2',
     label: 'Whitepaper: Becoming Frontier: Leading the Next Phase of AI',
     kind: 'Whitepaper',
     factKeys: ['701Tm00000c9ygeIAA'],
@@ -83,6 +94,7 @@ export const EMAIL_FAMILIES = [
   },
   {
     id: 'apple-wp',
+    quarter: 'Q2',
     label: 'Apple for Enterprise Tech Deep Dive Whitepaper',
     kind: 'Whitepaper',
     factKeys: APPLE_WP_KEYS, // 2026 edition + its two empty SF variants; the "Expert Commentary Blog" campaign is deliberately NOT part of the whitepaper family
@@ -90,12 +102,37 @@ export const EMAIL_FAMILIES = [
   },
   {
     id: 'ms-e7-offering',
+    quarter: 'Q2',
     label: 'Microsoft E7 Offering Workflow',
     kind: 'Workflow',
     factKeys: ['701Tm00000az9RSIAY'],
     matchesEmail: (r) => r.campaign_key === '701Tm00000az9RSIAY',
   },
+  // ── Q3 (added 20 Aug on Margot's instruction) ──
+  {
+    id: 'e3-e5-workflow',
+    quarter: 'Q3',
+    label: 'Microsoft 365 E3/E5 Capabilities Workflow',
+    kind: 'Workflow',
+    factKeys: ['701Tm00000dllI0IAI'],
+    matchesEmail: (r) => r.campaign_key === '701Tm00000dllI0IAI',
+  },
+  {
+    id: 'governance-gap-wp',
+    quarter: 'Q3',
+    label: 'Whitepaper: The Governance Gap — Why AI Fails Without Identity Discipline',
+    kind: 'Whitepaper',
+    factKeys: ['701Tm00000dP1otIAC'],
+    matchesEmail: (r) => r.campaign_key === '701Tm00000dP1otIAC',
+  },
 ]
+
+// The families in scope for the selected quarter pill ('ytd' = all of them).
+export function emailFamiliesFor(quarter) {
+  if (!quarter || quarter === 'ytd') return EMAIL_FAMILIES
+  const q = String(quarter).toUpperCase()
+  return EMAIL_FAMILIES.filter((f) => f.quarter === q)
+}
 
 export const EMAIL_FAMILY_FACT_KEYS = [...new Set(EMAIL_FAMILIES.flatMap((f) => f.factKeys))]
 

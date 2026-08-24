@@ -6,7 +6,9 @@ import { num, eur } from '../../data/format'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
+import RegionSelect from '../RegionSelect'
 import CurrentVsOngoing from '../CurrentVsOngoing'
+import DealDrilldown from '../DealDrilldown'
 
 // Campaigns — the campaign-level / quarterly-theme view Margot asked for (X4/G3).
 // Every campaign rolls up into its overarching THEME (themes.js), shown "as a whole"
@@ -19,6 +21,17 @@ import CurrentVsOngoing from '../CurrentVsOngoing'
 export default function Campaigns() {
   const q = useCampaignThemes()
   const ov = useCampaignOverrides().data || {}
+  // Margot (20 Aug): "Can you please show a campaign drop down here? It's not clear what
+  // campaigns these results are coming from now." The picker lists every campaign in the
+  // current view (grouped by its theme) and narrows the page to the one selected.
+  const [picked, setPicked] = useState('all')
+  const allCampaigns = (q.data?.themes || []).flatMap((t) =>
+    t.campaigns.map((c) => ({ key: c.campaignKey, label: ov[c.campaignKey]?.display_name || c.campaignName, theme: t.label })),
+  )
+  const themes = (q.data?.themes || [])
+    .map((t) => (picked === 'all' ? t : { ...t, campaigns: t.campaigns.filter((c) => c.campaignKey === picked) }))
+    .filter((t) => t.campaigns.length > 0)
+    .map((t) => (picked === 'all' ? t : { ...t, totals: sumTotals(t.campaigns), activityCount: t.campaigns.length }))
 
   return (
     <>
@@ -37,8 +50,10 @@ export default function Campaigns() {
         <div className="callout-body">
           Each quarter has <strong>one overarching quarterly campaign</strong>: <strong>Q1</strong> is{' '}
           <strong>“Data Is an Asset, Not a Liability”</strong>, <strong>Q2</strong> is{' '}
-          <strong>“Innovation Without Risk”</strong>, and <strong>Q3</strong> is the Q3 campaign (theme name to be
-          confirmed — see the note below). <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
+          <strong>“Innovation Without Risk”</strong>, <strong>Q3</strong> is{' '}
+          <strong>“Build Trust in a Distrustful World”</strong> and <strong>Q4</strong> is{' '}
+          <strong>“Cybersecurity. Safeguarding Business Growth.”</strong>{' '}
+          <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
           7 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
           activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
           plus its on-demand version, is one row). Everything else sits under{' '}
@@ -47,17 +62,6 @@ export default function Campaigns() {
         </div>
       </div>
 
-      <div className="callout" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          <strong>Q3 theme name pending.</strong> Q3 2026 reporting is now open, but the Q3 overarching campaign
-          theme <strong>hasn’t been named yet</strong>. Until it is, all Q3 activities are grouped under a
-          provisional <strong>“Q3 2026 Campaign (theme to be confirmed)”</strong> heading — the figures are real and
-          final; only the heading will change once the Q3 theme is agreed.
-        </div>
-      </div>
 
       {/* The "Theme" dropdown column was removed (Margot, 11 Aug: "I'm not sure what value
           the Theme column adds. I'd remove it.") — Q1/Q2 placement is now fixed by her
@@ -82,15 +86,36 @@ export default function Campaigns() {
         </div>
       </div>
 
+      <div className="filters" style={{ marginBottom: 14 }}>
+        <div className="filter">
+          <span className="label">Campaign</span>
+          <select value={picked} onChange={(e) => setPicked(e.target.value)}>
+            <option value="all">All campaigns in this view ({allCampaigns.length})</option>
+            {allCampaigns.map((c) => (
+              <option key={c.key} value={c.key}>{c.theme} — {c.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* W6 — run-this-period vs ongoing impact across all campaigns */}
-      <CurrentVsOngoing />
+      {picked === 'all' && <CurrentVsOngoing />}
 
       {q.isLoading && <Loading label="Loading campaign themes…" />}
       {q.isError && <ErrorState error={q.error} />}
       {q.data && !q.data.hasData && <EmptyState message="No campaigns for this region / quarter yet." />}
-      {q.data && q.data.hasData && q.data.themes.map((t) => <ThemeCard key={t.key} theme={t} ov={ov} />)}
+      {q.data && q.data.hasData && themes.map((t) => <ThemeCard key={t.key} theme={t} ov={ov} />)}
     </>
   )
+}
+
+// Re-total a theme from whatever rows are visible (used when the campaign picker narrows
+// the page to one campaign, so the headline figures describe exactly what's listed).
+const SUM_KEYS = ['mql', 'sql', 'createdOpps', 'oppCount', 'pipelineCreated', 'pipelineCreatedMargin', 'pipeline', 'marginPipeline', 'closedWon', 'margin', 'wonCount']
+function sumTotals(cs) {
+  const t = Object.fromEntries(SUM_KEYS.map((k) => [k, 0]))
+  for (const c of cs) for (const k of SUM_KEYS) t[k] += Number(c[k]) || 0
+  return t
 }
 
 // One overarching theme: the rolled-up "as a whole" figures, expandable to the
@@ -100,7 +125,7 @@ function ThemeCard({ theme, ov }) {
   const t = theme.totals
   // Robin: order by contribution, not recency — every column is sortable, defaulting to
   // biggest open pipeline first (the order the rows already arrived in).
-  const { rows: activities, sortProps } = useSortable(theme.campaigns, 'pipeline')
+  const { rows: activities, sortProps } = useSortable(theme.campaigns, 'marginPipeline')
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
@@ -121,8 +146,13 @@ function ThemeCard({ theme, ov }) {
         <div className="kpis cols-4">
           <Kpi label="MQLs" val={num(t.mql)} explainId="mql" />
           <Kpi label="SQLs" val={num(t.sql)} explainId="sql" />
-          <Kpi label="Opportunities" val={num(t.createdOpps)} sub={`${num(t.oppCount)} qualified (open or won)`} explainId="createdOpps" />
-          <Kpi label="Open Pipeline €" val={eur(t.pipeline)} sub={`${eur(t.closedWon)} closed-won`} explainId="pipeline" />
+          <Kpi label="Created Opportunities" val={num(t.createdOpps)} explainId="createdOpps" />
+          <Kpi label="Qualified Opportunities" val={num(t.oppCount)} explainId="opportunities" />
+        </div>
+        <div className="kpis cols-3" style={{ marginTop: 12 }}>
+          <Kpi label="Pipeline Created (gross profit)" val={eur(t.pipelineCreatedMargin)} explainId="createdOppsValue" />
+          <Kpi label="Open Pipeline (gross profit)" val={eur(t.marginPipeline)} explainId="pipeline" />
+          <Kpi label="Closed (gross profit)" val={eur(t.margin)} explainId="margin" />
         </div>
       </div>
 
@@ -137,10 +167,10 @@ function ThemeCard({ theme, ov }) {
                 <SortTh {...sortProps('campaignType', 'text')}>Type</SortTh>
                 <SortTh {...sortProps('mql')} className="r">MQL<Explain id="mql" /></SortTh>
                 <SortTh {...sortProps('sql')} className="r">SQL<Explain id="sql" /></SortTh>
-                <SortTh {...sortProps('createdOpps')} className="r">Opps<Explain id="createdOpps" /></SortTh>
+                <SortTh {...sortProps('createdOpps')} className="r">Opportunities<Explain id="createdOpps" /></SortTh>
                 <SortTh {...sortProps('oppCount')} className="r">Qualified Opportunities<Explain id="opportunities" /></SortTh>
-                <SortTh {...sortProps('pipeline')} className="r">Open Pipeline €<Explain id="pipeline" /></SortTh>
-                <SortTh {...sortProps('closedWon')} className="r">Closed-Won €<Explain id="closedWon" /></SortTh>
+                <SortTh {...sortProps('marginPipeline')} className="r">Open Pipeline €<Explain id="pipeline" /></SortTh>
+                <SortTh {...sortProps('margin')} className="r">Closed-Won €<Explain id="margin" /></SortTh>
               </tr>
             </thead>
             <tbody>
@@ -154,26 +184,34 @@ function ThemeCard({ theme, ov }) {
                     />
                   </td>
                   <td>
+                    <RegionSelect campaignKey={c.campaignKey} regions={ov[c.campaignKey]?.regions} original={c.regionCode} />
+                  </td>
+                  <td>
                     <EditableName
                       campaignKey={c.campaignKey}
-                      field="display_region"
-                      value={ov[c.campaignKey]?.display_region}
-                      original={c.regionCode}
+                      field="campaign_type"
+                      value={ov[c.campaignKey]?.campaign_type}
+                      original={c.campaignType}
+                      placeholder="Set type"
                     />
                   </td>
-                  <td><span style={{ opacity: 0.6 }}>{c.campaignType || '—'}</span></td>
                   <td className="r">{num(c.mql)}</td>
                   <td className="r">{num(c.sql)}</td>
                   <td className="r">{num(c.createdOpps)}</td>
                   <td className="r">{num(c.oppCount)}</td>
-                  <td className="r">{eur(c.pipeline)}</td>
-                  <td className="r">{eur(c.closedWon)}</td>
+                  <td className="r">{eur(c.marginPipeline)}</td>
+                  <td className="r">{eur(c.margin)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <DealDrilldown
+            campaignKeys={activities.flatMap((c) => c.memberKeys || [c.campaignKey])}
+            label="Salesforce opportunities"
+          />
           <p className="panel-note" style={{ padding: '6px 4px 0', fontSize: 12, opacity: 0.7 }}>
-            “Pipeline €” is opportunities still <strong>open</strong>; “Closed-Won €” is deals already won. A deal
+            <strong>Every money column here is gross profit</strong>, on the same basis as the tiles above.
+            “Open Pipeline €” is opportunities still <strong>open</strong>; “Closed-Won €” is deals already won. A deal
             is only ever in one of the two — so an activity showing <strong>€0 pipeline next to a Closed-Won value</strong> just
             means its opportunities have already closed and been won (nothing left in progress).
             <br />

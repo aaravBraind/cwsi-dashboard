@@ -16,7 +16,7 @@ export default function SalesCycle() {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Sales Cycle — how long deals take <Explain id="salesCycle" /></div>
-          <div className="panel-sub">Opportunity creation → close, by outcome &amp; source · current view</div>
+          <div className="panel-sub">Opportunity creation → close, by outcome &amp; source</div>
         </div>
         <span className="chip blue">created → close</span>
       </div>
@@ -75,7 +75,7 @@ export default function SalesCycle() {
             Closed deals are scoped by close date (so long-running deals that closed this period are included);
             open deals are those created this period. Comparing <strong>won vs lost</strong> per source shows where
             deals convert faster. <strong>MQL → opportunity</strong> is the time from a contact's first campaign
-            response to the opportunity being created (then MQL → won is the full journey) — timed only for opps whose
+            response to the opportunity being created (then MQL → won is the full journey) — timed only for opportunities whose
             contacts we can match to a campaign response, so it covers a subset of deals.
           </div>
         </div>

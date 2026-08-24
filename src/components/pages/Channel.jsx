@@ -213,7 +213,7 @@ function LinkedInSnapshot() {
                   <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
                   <td className="r mono">{isNA(c.budget) ? 'n/a' : eur(c.budget)}</td>
                   <td className="r mono">{eur(c.spend)}</td>
-                  <td className="r mono mono-d">{isNA(c.budgetUsedPct) ? 'n/a' : `${(c.budgetUsedPct * 100).toFixed(0)}%`}</td>
+                  <td className="r mono mono-d">{isNA(c.budget) ? '—' : `${((Number(c.budgetUsedPct) || 0) * 100).toFixed(0)}%`}</td>
                   <td className="r mono">{num(c.impressions)}</td>
                   <td className="r mono">{num(c.clicks)}</td>
                   <td className="r mono">{isNA(c.ctr) ? 'n/a' : `${(c.ctr * 100).toFixed(2)}%`}</td>
@@ -309,16 +309,16 @@ function Body({ data, isLinkedIn, isEmail }) {
         // LI7 — the Salesforce-attributed Leads/MQL/SQL funnel isn't reliable for LinkedIn
         // (campaign-member inflation), so LinkedIn shows commercial OUTCOMES only.
         <div className="kpis cols-3">
-          <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline (gross profit) · current view" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
-          <Kpi label="Closed-Won € · current view" val={eur(totals.closedWon)} explainId="closedWon" />
+          <Kpi label="Created Opportunities" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
+          <Kpi label="Influenced Pipeline (gross profit)" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
+          <Kpi label="Closed-Won € (gross profit)" val={eur(totals.margin)} explainId="margin" />
         </div>
       ) : (
         <div className="kpis cols-4">
-          <Kpi label="MQLs · current view" val={num(totals.mql)} explainId="mql" />
-          <Kpi label="SQLs · current view" val={num(totals.sql)} explainId="sql" />
-          <Kpi label="Created Opps · current view" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
-          <Kpi label="Influenced Pipeline (gross profit) · current view" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
+          <Kpi label="MQLs" val={num(totals.mql)} explainId="mql" />
+          <Kpi label="SQLs" val={num(totals.sql)} explainId="sql" />
+          <Kpi label="Created Opportunities" val={isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)} explainId="createdOpps" />
+          <Kpi label="Influenced Pipeline (gross profit)" val={isNA(totals.marginPipeline) ? '—' : eur(totals.marginPipeline)} explainId="pipeline" />
         </div>
       )}
 
@@ -344,7 +344,7 @@ function Body({ data, isLinkedIn, isEmail }) {
             <div className="panel-title">{isLinkedIn ? 'Commercial Outcomes by Campaign (Salesforce)' : 'Campaign Performance'}</div>
             <div className="panel-sub">
               {isLinkedIn
-                ? 'Created Opps / pipeline / closed-won per campaign · the Leads/MQL/SQL funnel is omitted (not reliable for LinkedIn) · spend lives in the snapshot above'
+                ? 'Created Opportunities / pipeline / closed-won per campaign · the Leads/MQL/SQL funnel is omitted (not reliable for LinkedIn) · spend lives in the snapshot above'
                 : 'Per-campaign drill-down · campaign names from Salesforce'}
             </div>
           </div>
@@ -360,9 +360,9 @@ function Body({ data, isLinkedIn, isEmail }) {
                 {!isLinkedIn && !isEmail && <th className="r">Impr.</th>}
                 {!isLinkedIn && <th className="r">MQLs <Explain id="mql" /></th>}
                 {!isLinkedIn && <th className="r">SQLs <Explain id="sql" /></th>}
-                <th className="r">Created Opps <Explain id="createdOpps" /></th>
+                <th className="r">Created Opportunities <Explain id="createdOpps" /></th>
                 <th className="r">Open Pipeline € <Explain id="pipeline" /></th>
-                <th className="r">Closed-Won € <Explain id="closedWon" /></th>
+                <th className="r">Closed-Won € <Explain id="margin" /></th>
               </tr>
             </thead>
             <tbody>
@@ -375,8 +375,8 @@ function Body({ data, isLinkedIn, isEmail }) {
                   {!isLinkedIn && <td className="r mono">{num(c.mql)}</td>}
                   {!isLinkedIn && <td className="r mono">{num(c.sql)}</td>}
                   <td className="r mono">{num(c.createdOpps)}</td>
-                  <td className="r mono">{eur(c.pipeline)}</td>
-                  <td className="r mono">{eur(c.closedWon)}</td>
+                  <td className="r mono">{eur(c.marginPipeline)}</td>
+                  <td className="r mono">{eur(c.margin)}</td>
                 </tr>
               ))}
               <tr className="total">
@@ -387,8 +387,8 @@ function Body({ data, isLinkedIn, isEmail }) {
                 {!isLinkedIn && <td className="r mono">{num(totals.mql)}</td>}
                 {!isLinkedIn && <td className="r mono">{num(totals.sql)}</td>}
                 <td className="r mono">{isNA(totals.createdOpps) ? '—' : num(totals.createdOpps)}</td>
-                <td className="r mono">{eur(campaigns.reduce((a, c) => a + (Number(c.pipeline) || 0), 0))}</td>
-                <td className="r mono">{eur(totals.closedWon)}</td>
+                <td className="r mono">{eur(campaigns.reduce((a, c) => a + (Number(c.marginPipeline) || 0), 0))}</td>
+                <td className="r mono">{eur(campaigns.reduce((a, c) => a + (Number(c.margin) || 0), 0))}</td>
               </tr>
             </tbody>
           </table>

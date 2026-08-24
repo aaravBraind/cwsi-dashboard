@@ -1,8 +1,9 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useWebTraffic, useSeo, useChannel, useWebsiteLeads } from '../../hooks/useDashboardData'
+import { useWebTraffic, useSeo, useChannel } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
 import Explain from '../Explain'
+import { useFilters } from '../../filters/FilterContext'
 import CurrentVsOngoing from '../CurrentVsOngoing'
 
 const ratePct = (r, d = 1) => (isNA(r) || r == null ? 'n/a' : `${(r * 100).toFixed(d)}%`)
@@ -54,25 +55,27 @@ export default function Seo() {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>One lead funnel, one traffic view.</strong> The <strong>funnel below</strong> is the
-          authoritative organic lead-to-revenue funnel, sourced from the Salesforce <strong>Website Leads</strong>{' '}
-          campaigns (MQLs → SQLs → opportunities → pipeline → won). <strong>GA4 traffic</strong> (sessions, page
-          views, users) and <strong>Search Console</strong> (clicks, search impressions, position) are shown below it
-          as website <em>traffic &amp; search</em> signals. Region &amp; quarter scope every figure.
+          <strong>One lead funnel, one traffic view.</strong> The <strong>funnel below</strong> covers every
+          Salesforce opportunity attributed to organic search — including older campaigns whose deals are only
+          converting now — and is the same figure the Overview and Board report for this channel.{' '}
+          <strong>GA4 traffic</strong> (sessions, page views, users) and <strong>Search Console</strong> (clicks,
+          search impressions, position) are shown below it as website <em>traffic &amp; search</em> signals.
+          Region &amp; quarter scope every figure.
           <br /><strong>Which domains are covered:</strong> GA4 traffic covers <strong>both sites</strong> —
           cwsisecurity.com (the main site) and insights.cwsisecurity.com (the campaign site) — for{' '}
-          <strong>all quarters</strong>, split per property in the table below. <strong>Search Console</strong> data
-          currently exists only for the main cwsisecurity.com property — that's why its figures look bigger than the
-          campaign site alone. A separate Search Console property for insights.cwsisecurity.com{' '}
-          <strong>doesn't exist yet and has to be created on the Google/DNS side</strong>; once it's verified, its
-          search data starts collecting from that day (Google doesn't backfill).
+          <strong>all quarters</strong>, split per property in the table below. <strong>Search Console</strong> figures come from the
+          <strong> cwsisecurity.com domain property</strong>. A separate property for{' '}
+          <strong>insights.cwsisecurity.com</strong> was added on 24 Aug so the campaign site can be reported on its
+          own; it collects from that day forward (Google doesn't backfill). The two are reported separately, never
+          added together, because a domain property is expected to already include its subdomains — we'll confirm
+          that against the data once both have overlapping days.
         </div>
       </div>
 
-      {/* G2/G4 — the single authoritative SF-sourced Organic Search funnel, moved to the TOP.
-          "Website Leads" Salesforce campaigns (SEO9), not the whole Organic SEO channel. */}
-      <div className="sec-divider"><span className="label">Organic Search funnel · Salesforce (Website Leads)</span><div className="line" /></div>
-      <WebsiteLeadsBody />
+      {/* ONE Salesforce funnel on this page (20 Aug) — the whole organic channel, which is
+          the same figure the Overview and Board report for Organic SEO. */}
+      <div className="sec-divider"><span className="label">Organic search results · Salesforce</span><div className="line" /></div>
+      <FunnelBody />
 
       {/* GA4 website traffic */}
       <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Website traffic · GA4</span><div className="line" /></div>
@@ -88,67 +91,27 @@ export default function Seo() {
       {seo.data && !seo.data.hasData && <EmptyState message="No Search Console data for this region / quarter yet." />}
       {seo.data && seo.data.hasData && <SeoBody data={seo.data} />}
 
-      {/* Whole Organic SEO channel — renamed per Margot ("if this represents older
-          opportunities that are only converting now, please make this clearer"). */}
-      <div className="sec-divider" style={{ marginTop: 22 }}><span className="label">Whole organic channel — incl. older campaigns still converting</span><div className="line" /></div>
-      <FunnelBody />
-    </>
-  )
-}
-
-// SEO9 — website MQL/SQL from the "Website Leads" Salesforce campaigns specifically.
-function WebsiteLeadsBody() {
-  const q = useWebsiteLeads()
-  if (q.isLoading) return <Loading label="Loading website leads…" />
-  if (q.isError) return <ErrorState error={q.error} />
-  if (!q.data || !q.data.hasData)
-    return <EmptyState message="No Website Leads campaign data for this region / quarter yet." />
-  const f = q.data.funnel
-  return (
-    <>
-      {/* G3 — full funnel incl. Qualified Opportunities; New vs Influenced pipeline labelled per S3. */}
-      {/* W8: measured zeros render as 0 / €0 on this page (Margot's ask), never a dash. */}
-      <div className="kpis cols-4">
-        <Kpi label="MQLs · current view" val={zn(f.mql)} explainId="mql" />
-        <Kpi label="SQLs · current view" val={zn(f.sql)} explainId="sql" />
-        <Kpi label="Qualified Opportunities · current view" val={zn(f.opp)} explainId="opportunities" />
-        <Kpi label="Created Opps · current view" val={zn(f.createdOpps)} explainId="createdOpps" />
-      </div>
-      <div className="kpis cols-3" style={{ marginTop: 12 }}>
-        <Kpi label="New Pipeline Created · current view" val={ze(f.createdOppsValue)} explainId="createdOppsValue" />
-        <Kpi label="Influenced Pipeline (gross profit) · current view" val={ze(f.marginPipeline)} explainId="pipeline" />
-        <Kpi label="Closed-Won · current view" val={eur(f.closedWon)} explainId="closedWon" />
-      </div>
-      <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
-        From the <strong>Website Leads</strong> Salesforce campaigns{q.data.campaigns.length ? ` (${q.data.campaigns.length}: ${q.data.campaigns.join(', ')})` : ''} — the accurate website source, not the whole Organic SEO channel.
-        <strong> New Pipeline Created</strong> = revenue value of opportunities created this period; <strong>Influenced Pipeline</strong> = gross profit on open + won opportunities ({isNA(f.marginPipeline) ? 'open-deal gross profit arrives at the next data refresh' : `${eur(f.pipeline)} on the revenue basis`}).
-      </p>
     </>
   )
 }
 
 function WebBody({ data }) {
-  const { totals, byHostname, byRegion, dateRange } = data
+  const { totals, byHostname } = data
   return (
     <>
       {/* SEO2 + W8 (Margot): the preferred website metrics — Page Views join Sessions,
           Users, Avg Session Duration and Bounce Rate ("I'd prefer to see page views here"). */}
       <div className="kpis cols-5">
-        <Kpi label="Page views · current view" val={isNA(totals.pageViews) ? '—' : num(totals.pageViews)} sub={isNA(totals.pageViews) ? 'after next GA4 refresh' : 'the traffic figure, not search impressions'} explainId="organicTraffic" />
-        <Kpi label="Sessions · current view" val={num(totals.sessions)} sub={dateRange.min ? `${dateRange.min} → ${dateRange.max}` : ''} explainId="organicTraffic" />
+        <Kpi label="Page views" val={isNA(totals.pageViews) ? '—' : num(totals.pageViews)} sub={isNA(totals.pageViews) ? 'after next GA4 refresh' : ''} explainId="organicTraffic" />
+        <Kpi label="Sessions" val={num(totals.sessions)} explainId="organicTraffic" />
         <Kpi label="Users" val={isNA(totals.users) ? '—' : num(totals.users)} sub={isNA(totals.users) ? 'after next GA4 refresh' : ''} explainId="organicTraffic" />
         <Kpi label="Avg session duration" val={dur(totals.avgSessionDuration)} sub={isNA(totals.avgSessionDuration) ? 'after next GA4 refresh' : ''} explainId="organicTraffic" />
         <Kpi label="Bounce rate" val={ratePct(totals.bounceRate)} explainId="organicTraffic" />
       </div>
+      {/* The GA4 key-events / on-site conversion tile was removed on 20 Aug: conversion
+          tracking is not configured on the sites, so the figure could not be trusted. */}
       <div className="kpis cols-2" style={{ marginTop: 12 }}>
         <Kpi label="Engaged sessions" val={num(totals.engaged)} />
-        {/* G4 — GA4 key events are on-site conversions (traffic signal), NOT Salesforce leads.
-            Relabelled from "Visitor → MQL" so it never competes with the SF lead funnel above. */}
-        <Kpi
-          label="Key events (GA4 on-site conversions)"
-          val={isNA(totals.keyEvents) ? '—' : num(totals.keyEvents)}
-          sub={isNA(totals.keyEvents) || !totals.sessions ? 'a traffic signal, not a Salesforce lead' : `${((totals.keyEvents / totals.sessions) * 100).toFixed(2)}% of sessions · traffic signal, not a Salesforce lead`}
-        />
       </div>
 
       <div className="panel">
@@ -188,13 +151,19 @@ function WebBody({ data }) {
         </div>
       </div>
 
-      {byRegion.length > 1 && (
-        <div className="info-pill" style={{ marginBottom: 18 }}>
-          By region: {byRegion.map((r) => `${r.region === 'UNASSIGNED' ? 'Other' : r.region} ${num(r.sessions)}`).join(' · ')}
-          {' '}— main-domain traffic that GA4 can’t split by country is shown under “Other”.
-        </div>
-      )}
     </>
+  )
+}
+
+function RegionNote() {
+  const { filters } = useFilters()
+  if (!filters.region || filters.region === 'all') return null
+  return (
+    <p className="panel-note" style={{ padding: '0 4px 10px', fontSize: 12, opacity: 0.75 }}>
+      <strong>Not split by region.</strong> Search Console reports pages and keywords for the whole property, with
+      no country breakdown at that level, so these two tables show the same rows under every regional tab. The
+      traffic figures above <em>are</em> region-split.
+    </p>
   )
 }
 
@@ -209,27 +178,39 @@ function SeoBody({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Top Organic Pages</div>
-            <div className="panel-sub">By clicks · Search Console (cwsisecurity.com property) · current quarter (not split by region) · “search impressions” = times a result appeared in Google search, not page views</div>
+            <div className="panel-sub">Page views and visits from Google search · cwsisecurity.com property</div>
           </div>
           <span className="chip blue">top {topPages.length}</span>
         </div>
         <div className="panel-body no-pad">
+          <RegionNote />
           <table className="tbl">
             <thead>
-              <tr><th>Page</th><th className="r">Clicks</th><th className="r">Search impr.</th><th className="r">CTR</th><th className="r">Avg. pos.</th></tr>
+              <tr>
+                <th>Page</th>
+                <th className="r">Page views</th>
+                <th className="r">Visits from search</th>
+                <th className="r">Avg. pos.</th>
+              </tr>
             </thead>
             <tbody>
               {topPages.map((p) => (
                 <tr key={p.page}>
                   <td title={p.page}>{pagePath(p.page)}</td>
+                  <td className="r mono">{p.pageViews == null ? '—' : num(p.pageViews)}</td>
                   <td className="r mono">{num(p.clicks)}</td>
-                  <td className="r mono">{num(p.impressions)}</td>
-                  <td className="r mono">{ratePct(p.ctr, 2)}</td>
                   <td className="r mono">{pos(p.avgPosition)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="panel-note" style={{ padding: '8px 4px 0', fontSize: 12, opacity: 0.7 }}>
+            <strong>Page views</strong> are actual visits to the page from organic search;{' '}
+            <strong>visits from search</strong> is Google's own click count. They differ slightly
+            because the two systems count a visit at different moments. A dash means the page{' '}
+            <strong>ranked in search but was never clicked</strong>, so there is no visit to
+            measure — not a missing figure.
+          </p>
         </div>
       </div>
 
@@ -238,22 +219,20 @@ function SeoBody({ data }) {
           <div className="panel-head">
             <div className="left">
               <div className="panel-title">Top Keywords</div>
-              <div className="panel-sub">By clicks · Search Console search terms · current quarter (this data isn’t split by region)</div>
+              <div className="panel-sub">Visits from Google search · search terms</div>
             </div>
             <span className="chip blue">top {topQueries.length}</span>
           </div>
           <div className="panel-body no-pad">
             <table className="tbl">
               <thead>
-                <tr><th>Keyword</th><th className="r">Clicks</th><th className="r">Search impr.</th><th className="r">CTR</th><th className="r">Avg. pos.</th></tr>
+                <tr><th>Keyword</th><th className="r">Visits from search</th><th className="r">Avg. pos.</th></tr>
               </thead>
               <tbody>
                 {topQueries.map((q) => (
                   <tr key={q.query}>
                     <td>{q.query}</td>
                     <td className="r mono">{num(q.clicks)}</td>
-                    <td className="r mono">{num(q.impressions)}</td>
-                    <td className="r mono">{ratePct(q.ctr, 2)}</td>
                     <td className="r mono">{pos(q.avgPosition)}</td>
                   </tr>
                 ))}
@@ -279,24 +258,19 @@ function FunnelBody() {
   return (
     <>
       <div className="kpis cols-3">
-        <Kpi label="MQLs · current view" val={zn(t.mql)} explainId="mql" />
-        <Kpi label="SQLs · current view" val={zn(t.sql)} explainId="sql" />
-        <Kpi label="Created Opps · current view" val={zn(t.createdOpps)} explainId="createdOpps" />
+        <Kpi label="MQLs" val={zn(t.mql)} explainId="mql" />
+        <Kpi label="SQLs" val={zn(t.sql)} explainId="sql" />
+        <Kpi label="Created Opportunities" val={zn(t.createdOpps)} explainId="createdOpps" />
       </div>
       <div className="kpis cols-3">
-        <Kpi label="Qualified Opportunities · current view" val={zn(t.opp)} explainId="opportunities" />
-        <Kpi label="Influenced Pipeline (gross profit) · current view" val={ze(t.marginPipeline)} explainId="pipeline" />
+        <Kpi label="Qualified Opportunities" val={zn(t.opp)} explainId="opportunities" />
+        <Kpi label="Influenced Pipeline (gross profit)" val={ze(t.marginPipeline)} explainId="pipeline" />
         {/* W8 — the channel's closed-won now renders HERE too, so the Overview, the Board
             and this page can never disagree ("the overview shows some closed/won revenue,
             but nothing is showing here"). */}
-        <Kpi label="Closed-Won · current view" val={eur(t.closedWon)} explainId="closedWon" />
+        <Kpi label="Closed-Won (gross profit)" val={ze(t.margin)} explainId="margin" />
       </div>
       <p className="panel-note" style={{ padding: '2px 4px 0', fontSize: 12, opacity: 0.7 }}>
-        <strong>What this section is:</strong> the <strong>whole Organic SEO channel</strong> — every Salesforce
-        opportunity attributed to organic search, <strong>including older campaigns whose deals are only converting
-        now</strong> (that ongoing impact is exactly what the split below shows). It's a broader superset of the
-        authoritative <strong>Website Leads</strong> funnel at the top, so the two lead counts differ by design. This
-        section's Closed-Won is the figure the Overview and Board show for the Organic SEO channel.
         Whitepaper-download campaigns are reported on the <strong>Email</strong> page, so they're not counted here.
       </p>
 

@@ -45,7 +45,7 @@ export default function Overview() {
 }
 
 function Body({ data }) {
-  const { funnel: rawFunnel, byChannel } = data
+  const { funnel: rawFunnel, byChannel, unmapped } = data
   // Sales/partner-generated campaigns (Paul: "I'd see outreach as more sales-generated
   // leads … we should exclude that"). The split is always computed; this toggle decides
   // whether the two headline money figures show marketing-only or everything. Default is
@@ -115,7 +115,7 @@ function Body({ data }) {
               <span className="tl-dot" />{isNA(funnel.marginPipeline) ? 'n/a' : pctOf(funnel.marginPipeline, 'influencedPipeline')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Pipeline (gross profit) · current view <Explain id="pipeline" /></div>
+          <div className="kpi-label">Influenced Pipeline (gross profit) <Explain id="pipeline" /></div>
           <div className="kpi-val">{isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}</div>
           <div className="kpi-sub">
             {isNA(funnel.marginPipeline) ? (
@@ -143,7 +143,7 @@ function Body({ data }) {
               <span className="tl-dot" />{isNA(funnel.margin) ? 'n/a' : pctOf(funnel.margin, 'influencedMargin')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Margin (gross profit) · current view <Explain id="margin" /></div>
+          <div className="kpi-label">Influenced Margin (gross profit) <Explain id="margin" /></div>
           <div className="kpi-val">{isNA(funnel.margin) ? '—' : eur(funnel.margin)}</div>
           <div className="kpi-sub">
             {isNA(funnel.margin) ? (
@@ -155,7 +155,7 @@ function Body({ data }) {
               <>
                 <span className="kpi-target">{tgtSub('influencedMargin')}</span>
                 <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  of {eur(funnel.closedWon)} closed-won
+                  of {isNA(funnel.margin) ? eur(0) : eur(funnel.margin)} closed-won (gross profit)
                   {funnel.marginPendingDeals > 0 &&
                     ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals have gross profit · rest pending in Salesforce`}
                 </span>
@@ -200,63 +200,25 @@ function Body({ data }) {
         </div>
       )}
 
-      {/* Basis of the two headline money figures — GROSS PROFIT on both since the 11 Aug
-          decision (supersedes the earlier revenue basis for Influenced Pipeline). The revenue
-          figure stays visible as the secondary line under the pipeline KPI.
-          See docs/METRIC_DEFINITIONS.md. */}
-      <div className="callout" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          <strong>Which basis these two are on.</strong> Both headline figures are <strong>gross profit</strong>,
-          matching how CWSI tracks company pipeline. <strong>Influenced Pipeline</strong> is the gross profit on the
-          qualified opportunities marketing touched — open deals plus the ones already won.{' '}
-          <strong>Influenced Margin</strong> is the gross profit on the won ones only. The full deal value (revenue)
-          is shown as the smaller line under Influenced Pipeline for reference. Gross profit depends on deal type:
-          for CWSI's own services revenue and margin are set equal in Salesforce, so figures can sit close to deal
-          value today — the gap widens as more resold product enters the mix.{' '}
-          <Explain id="pipeline" /> <Explain id="margin" />
-        </div>
-      </div>
-
-      {/* Why is Influenced Margin showing "—"? Explain the vendor-cost gap. */}
-      {isNA(funnel.margin) && (
-        <div className="callout amber" style={{ marginBottom: 18 }}>
-          <div className="callout-icn">
-            <svg className="icon icon-lg" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
-          </div>
-          <div className="callout-body">
-            <strong>Influenced margin shows "—" because Gross Profit isn't filled in Salesforce.</strong>{' '}
-            Margin = gross profit (Gross Profit Value, or Amount × Gross Profit Margin %).{' '}
-            {funnel.marginPendingDeals
-              ? `The ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'} in this scope have no Gross Profit entered`
-              : 'None of the won deals in this scope have Gross Profit entered'}
-            {' '}yet, so margin can't be calculated. Fill Gross Profit on those Salesforce opportunities and the figure will populate automatically.
-          </div>
-        </div>
-      )}
+      <p className="panel-note" style={{ padding: '0 4px 14px', fontSize: 12, opacity: 0.75 }}>
+        <strong>Influenced Pipeline and Influenced Margin are both gross profit</strong>, matching how CWSI tracks
+        pipeline. <Explain id="margin" />
+      </p>
 
       {/* 2. Lead Conversion Funnel */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Lead Conversion Funnel</div>
-            <div className="panel-sub">Stage progression with conversion rates between each step</div>
-          </div>
-          <span className="chip blue">current view</span>
+            </div>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="MQLs" val={num(funnel.mql)} extra="campaign responders" explainId="mql" />
-            <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
-            <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
-            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
-            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} explainId="closedWon" />
+            <Stage name="MQLs" val={num(funnel.mql)} explainId="mql" />
+            <Stage name="SQLs" val={num(funnel.sql)} explainId="sql" />
+            <Stage name="Created Opportunities" val={isNA(funnel.createdOpps) ? 0 : num(funnel.createdOpps)} explainId="createdOpps" />
+            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? 0 : num(funnel.opp)} explainId="opportunities" />
+            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? 0 : num(funnel.closedWonCount)} explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
@@ -270,14 +232,47 @@ function Body({ data }) {
           as well": the split already on Pipeline/Events/Board, now on the Overview too) */}
       <CurrentVsOngoing />
 
+      {/* The campaigns deliberately left OUT of every figure above, named (20 Aug). */}
+      {unmapped?.count > 0 && (
+        <div className="callout" style={{ marginBottom: 18 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>Excluded from this page: {unmapped.count} campaign{unmapped.count === 1 ? '' : 's'} with no marketing channel.</strong>{' '}
+            Salesforce holds no channel for these, so they are no longer counted in any figure above. Between them they
+            carry <strong>{eur(unmapped.pipeline)}</strong> open pipeline and{' '}
+            <strong>{eur(unmapped.closedWon)}</strong> closed-won. Tell us which of these are marketing-driven and
+            we'll map them to a channel so they count again:
+            <div className="tbl-scroll" style={{ marginTop: 8 }}>
+              <table className="tbl">
+                <thead>
+                  <tr><th>Campaign</th><th>Salesforce type</th><th className="r">MQLs</th><th className="r">Pipeline</th><th className="r">Closed-Won</th></tr>
+                </thead>
+                <tbody>
+                  {unmapped.campaigns.map((c) => (
+                    <tr key={c.campaignKey}>
+                      <td>{c.campaignName}</td>
+                      <td>{c.campaignType || '—'}</td>
+                      <td className="r mono">{num(c.mql)}</td>
+                      <td className="r mono">{eur(c.pipeline)}</td>
+                      <td className="r mono">{eur(c.margin)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. Pipeline vs Closed-Won by Channel */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Pipeline vs Closed-Won by Channel <Explain id="otherChannel" /></div>
-            <div className="panel-sub">Influenced pipeline against the revenue it converted into · per channel (revenue basis) · current view · the eye explains the "Other / Unmapped" bucket</div>
+            <div className="panel-sub">Influenced pipeline against the revenue it converted into, per channel</div>
           </div>
-          <span className="chip blue">current view</span>
         </div>
         <div className="panel-body">
           <div className="tribar">
@@ -285,11 +280,6 @@ function Body({ data }) {
               <div className="group" key={c.channel}>
                 <div className="group-head">
                   <div className="group-name">{c.channel}</div>
-                  <div className="group-roi">
-                    {c.pipeline > 0
-                      ? <>{pct(c.closedWon, c.pipeline, 0)} converted to won</>
-                      : <>No pipeline yet</>}
-                  </div>
                 </div>
                 <div className="stack">
                   <div className="bar-row">
@@ -300,7 +290,7 @@ function Body({ data }) {
                   <div className="bar-row">
                     <div className="bar-label">Closed-won</div>
                     <div className="bar-track"><div className="bar-fill bf-green" style={{ width: `${ratio(c.closedWon, maxPipe) * 100}%` }} /></div>
-                    <div className="bar-val">{eur(c.closedWon)}</div>
+                    <div className="bar-val">{eur(c.margin)}</div>
                   </div>
                 </div>
               </div>
@@ -355,6 +345,6 @@ const Stage = ({ name, val, extra, explainId }) => (
   <div className="h-funnel-stage">
     <div className="stage-name">{name}{explainId && <Explain id={explainId} align="left" />}</div>
     <div className="stage-val">{val}</div>
-    <div className="stage-extra">{extra}</div>
+    {extra ? <div className="stage-extra">{extra}</div> : null}
   </div>
 )

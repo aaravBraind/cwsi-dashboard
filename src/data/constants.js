@@ -77,3 +77,12 @@ export const REGION_ORDER = ['UKI', 'BeLux', 'NL', 'UNASSIGNED']
 // "not available yet" state instead of a fabricated 0.
 export const NA = Symbol('not-available-yet')
 export const isNA = (v) => v === NA
+
+// ---- Search Console properties -------------------------------------------
+// insights.cwsisecurity.com got its own property on 24 Aug 2026. IMPORTANT: the primary
+// property is a DOMAIN property (sc-domain:), which already covers every subdomain — so it
+// ALREADY includes insights. The second property does not add traffic; it lets the campaign
+// site be reported separately. Summing the two would double-count insights, so every read
+// scopes to ONE property: the domain one for totals, the other for the split.
+export const GSC_PRIMARY_SITE = 'sc-domain:cwsisecurity.com'
+export const GSC_INSIGHTS_SITE = 'https://insights.cwsisecurity.com/'

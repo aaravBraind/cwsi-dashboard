@@ -1,7 +1,8 @@
 import { useMarketingSpend, useDataFreshness } from '../hooks/useDashboardData'
+import { useFilters } from '../filters/FilterContext'
 import { Loading, ErrorState, EmptyState } from './States'
 import { eur } from '../data/format'
-import { MARKETING_BUDGET_EUR, MDF_BUDGET_EUR, light } from '../data/thresholds'
+import { MARKETING_BUDGET_EUR, MDF_BUDGET_EUR } from '../data/thresholds'
 import Explain from './Explain'
 
 // Budget-vs-actual + spend-by-category/region from v_marketing_spend (EUR native).
@@ -15,6 +16,8 @@ import Explain from './Explain'
 export default function MarketingBudget({ compact = false }) {
   const q = useMarketingSpend()
   const fresh = useDataFreshness()
+  const { filters } = useFilters()
+  const regionScoped = !!filters.region && filters.region !== 'all'
 
   if (q.isLoading) return <Loading label="Loading marketing budget…" />
   if (q.isError) return <ErrorState error={q.error} />
@@ -70,17 +73,21 @@ export default function MarketingBudget({ compact = false }) {
             <div className="kpi-icn"><svg className="icon icon-lg" viewBox="0 0 24 24"><path d="M18 6a7 7 0 1 0 0 12" /><line x1="3" y1="10" x2="13" y2="10" /><line x1="3" y1="14" x2="13" y2="14" /></svg></div>
             <span className="tl neu"><span className="tl-dot" />EUR</span>
           </div>
-          <div className="kpi-label">Marketing Spend · actual <Explain id="marketingSpend" /></div>
+          <div className="kpi-label">Marketing Spend <Explain id="marketingSpend" /></div>
           <div className="kpi-val">{m(d.netActual)}</div>
           <div className="kpi-sub">
-            <span className="kpi-target">current view{lastSynced ? ` · tracker synced ${lastSynced}` : ''}</span>
+            <span className="kpi-target">
+              {regionScoped
+                ? `${m(d.group?.net || 0)} more spent across the whole group (not attributed to a region)`
+                : lastSynced ? `tracker synced ${lastSynced}` : ''}
+            </span>
           </div>
         </div>
 
         <div className="kpi">
           <div className="kpi-head">
             <div className="kpi-icn amber"><svg className="icon icon-lg" viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 12l3-3 4 4 5-6" /></svg></div>
-            <span className={`tl ${light(fySpent, MARKETING_BUDGET_EUR)}`}>
+            <span className="tl neu">
               <span className="tl-dot" />{`${(util * 100).toFixed(0)}% used`}
             </span>
           </div>
@@ -88,7 +95,7 @@ export default function MarketingBudget({ compact = false }) {
           <div className="kpi-val">{m(MARKETING_BUDGET_EUR)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">
-              {m(fySpent)} spent · {m(MARKETING_BUDGET_EUR - fySpent)} remaining · full year, all regions
+              {m(MARKETING_BUDGET_EUR - fySpent)} remaining
             </span>
           </div>
         </div>
@@ -102,11 +109,27 @@ export default function MarketingBudget({ compact = false }) {
           <div className="kpi-val">{m(MDF_BUDGET_EUR)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">
-              part of the total budget · {m(fyMdfSpent)} spent · {m(MDF_BUDGET_EUR - fyMdfSpent)} remaining
+              {m(MDF_BUDGET_EUR - fyMdfSpent)} remaining
             </span>
           </div>
         </div>
       </div>
+
+      {!compact && regionScoped && (
+        <div className="callout" style={{ marginBottom: 14 }}>
+          <div className="callout-icn">
+            <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+          </div>
+          <div className="callout-body">
+            <strong>Regional spend is only part of the picture.</strong> This region has{' '}
+            <strong>{m(d.netActual)}</strong> booked directly against it, and a further{' '}
+            <strong>{m(d.group?.net || 0)}</strong> was spent <strong>across the whole group</strong> —
+            agency, PR, tools and translation lines the tracker records for all markets at once. Total spend on
+            this region's behalf is therefore higher than the regional figure alone suggests.
+            {d.regionMdf ? <> Of the regional figure, <strong>{m(d.regionMdf)}</strong> is MDF.</> : null}
+          </div>
+        </div>
+      )}
 
       {!compact && (
         <>
@@ -115,7 +138,7 @@ export default function MarketingBudget({ compact = false }) {
             <div className="panel-head">
               <div className="left">
                 <div className="panel-title">Budget Utilisation</div>
-                <div className="panel-sub">Spent vs remaining · full year, all regions · MDF is part of the total</div>
+                <div className="panel-sub">MDF is part of the total budget</div>
               </div>
               <span className="chip blue">EUR</span>
             </div>
@@ -127,14 +150,17 @@ export default function MarketingBudget({ compact = false }) {
             </div>
           </div>
 
-          <div className="cols-2">
-            <Breakdown title="Spend by Budget Line" rows={d.byBudgetLine} m={m} />
-            {/* MB3 (Margot, Jul 2026): "Unassigned" = shared spend across all regions, not a separate region. */}
-            <Breakdown
-              title="Spend by Region"
-              rows={d.byRegion.map((r) => (r.bucket === 'UNASSIGNED' ? { ...r, bucket: 'All regions (shared)' } : r))}
-              m={m}
-            />
+          <div className={regionScoped ? '' : 'cols-2'}>
+            <Breakdown title="Spend by Budget Line" rows={d.byBudgetLine} m={m} allBuckets={d.allBudgetLines} />
+            {/* Spend by Region is redundant once a single region is selected — the same
+                figure is already at the top of the page. All-regions view keeps it. */}
+            {!regionScoped && (
+              <Breakdown
+                title="Spend by Region"
+                rows={d.byRegion.map((r) => (r.bucket === 'UNASSIGNED' ? { ...r, bucket: 'All regions (shared)' } : r))}
+                m={m}
+              />
+            )}
           </div>
         </>
       )}
@@ -144,21 +170,31 @@ export default function MarketingBudget({ compact = false }) {
 
 function UtilBar({ label, spent, budget }) {
   const pct = Math.min(Math.max(spent / budget, 0), 1)
+  // The figures sit UNDER the bar, full width, rather than squeezed into a end column.
   return (
-    <div className="bar-row">
-      <div className="bar-label">{label}</div>
-      <div className="bar-track">
-        <div className="bar-fill bf-blue" style={{ width: `${pct * 100}%` }} />
+    <div style={{ marginBottom: 14 }}>
+      <div className="bar-row" style={{ marginBottom: 4 }}>
+        <div className="bar-label">{label}</div>
+        <div className="bar-track">
+          <div className="bar-fill bf-blue" style={{ width: `${pct * 100}%` }} />
+        </div>
       </div>
-      <div className="bar-val">
-        {eur(spent)} spent · {eur(budget - spent)} remaining
+      <div style={{ display: 'flex', gap: 24, paddingLeft: 2, fontSize: 13, opacity: 0.8 }}>
+        <span><strong>{eur(spent)}</strong> spent</span>
+        <span><strong>{eur(budget - spent)}</strong> remaining</span>
+        <span><strong>{eur(budget)}</strong> budget</span>
       </div>
     </div>
   )
 }
 
-function Breakdown({ title, rows, m }) {
-  const max = Math.max(1, ...rows.map((r) => Math.abs(r.net)))
+function Breakdown({ title, rows, m, allBuckets = null }) {
+  // A budget line with no spend in this view stays listed with an EMPTY value rather than
+  // disappearing (Margot, 20 Aug) — otherwise a region looks like it has fewer budget lines.
+  const shown = allBuckets
+    ? [...rows, ...allBuckets.filter((b) => !rows.some((r) => r.bucket === b)).map((b) => ({ bucket: b, net: null }))]
+    : rows
+  const max = Math.max(1, ...shown.map((r) => Math.abs(Number(r.net) || 0)))
   return (
     <div className="panel" style={{ marginBottom: 0 }}>
       <div className="panel-head">
@@ -172,13 +208,15 @@ function Breakdown({ title, rows, m }) {
       </div>
       <div className="panel-body">
         <div className="bar-list">
-          {rows.map((r) => (
-            <div className="bar-row" key={r.bucket}>
+          {shown.map((r) => (
+            <div className="bar-row" key={r.bucket} style={r.net == null ? { opacity: 0.55 } : undefined}>
               <div className="bar-label">{r.bucket}</div>
               <div className="bar-track">
-                <div className={`bar-fill ${r.net < 0 ? 'bf-red' : 'bf-blue'}`} style={{ width: `${(Math.abs(r.net) / max) * 100}%` }} />
+                {r.net != null && (
+                  <div className={`bar-fill ${r.net < 0 ? 'bf-red' : 'bf-blue'}`} style={{ width: `${(Math.abs(r.net) / max) * 100}%` }} />
+                )}
               </div>
-              <div className="bar-val">{m(r.net)}</div>
+              <div className="bar-val">{r.net == null ? '' : m(r.net)}</div>
             </div>
           ))}
         </div>

@@ -184,7 +184,7 @@ function pipelineHealth(ph) {
     <section class="page-block">
       <div class="sec-head"><span class="rule"></span><h2>Pipeline Health</h2></div>
       <table class="tbl">
-        <thead><tr><th>Open-pipeline stage</th><th class="r">Probability</th><th class="r">Open opps</th><th class="r">Value</th></tr></thead>
+        <thead><tr><th>Open-pipeline stage</th><th class="r">Probability</th><th class="r">Open opportunities</th><th class="r">Value</th></tr></thead>
         <tbody>
           ${tableRows(stageRows)}
           <tr class="total"><td>Total open</td><td class="r">—</td><td class="r">${esc(ph.openCountDisplay)}</td><td class="r">${esc(ph.openValueDisplay)}</td></tr>

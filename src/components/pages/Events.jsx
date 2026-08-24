@@ -8,6 +8,8 @@ import { REPORTING_YEAR } from '../../data/constants'
 import Explain from '../Explain'
 import { useSortable, SortTh } from '../SortableTable'
 import EditableName from '../EditableName'
+import DealDrilldown from '../DealDrilldown'
+import RegionSelect from '../RegionSelect'
 import CurrentVsOngoing from '../CurrentVsOngoing'
 import { I } from '../icons'
 
@@ -28,12 +30,25 @@ const typeLabel = (t) => TYPE_LABEL[t] || t || 'Untyped'
 const EARNED_RE = /cybersec\s*europe|henley\s*regatta/i
 const eventClass = (name) => (EARNED_RE.test(String(name || '')) ? 'Earned' : 'Owned')
 
-// W7 (Margot, 11 Aug): these four events are EXCLUDED from the main overview — they are
-// prior-year / partner events, not part of the 2026 programme. Any revenue or pipeline
-// they still generate stays counted in the "ongoing impact" bucket of the run-vs-ongoing
-// panel at the bottom (which reads the warehouse directly, not this page's lists).
+// Events EXCLUDED from this page. Two rounds of client instruction:
+//   11 Aug — four prior-year / partner events that aren't part of the 2026 programme.
+//   20 Aug — five more Margot named explicitly ("Please remove the following"), pinned by
+//            Salesforce key because several have near-identical names (there are TWO
+//            Cybersec Europe campaigns and TWO Cybersec dinners; only the ones she named go).
+// Anything they still generate remains counted in the run-vs-ongoing panel at the bottom,
+// which reads the warehouse directly rather than this page's lists.
 const EXCLUDED_EVENTS_RE = /zorgeloos aan de slag|sentinelone f1|mission impossible|blaud - eoy event/i
-const isExcludedEvent = (c) => EXCLUDED_EVENTS_RE.test(String(c.campaignName || ''))
+const EXCLUDED_EVENT_KEYS = new Set([
+  '701Si00000UX8C2IAL', // 08.04.2026 - Microsoft AI Tour Utrecht
+  '701Si00000UXKmfIAH', // 26.03.2026 - Microsoft AI Tour Brussels
+  '701Si00000VoBuTIAV', // 20.05.2026 - 21.05.2026 CyberSec Europe — the duplicate with no activity
+  '701Tm00000dgRdFIAU', // 2026 - Frontier Readiness Snapshot
+  '701Tm00000bMaItIAK', // 10.06.2026 - Microsoft E7 Event - Free Frontier Readiness Snapshot
+  '701Tm00000Z6i5SIAR', // 10.06.2026 - IE - Protect Data, Power AI Event (empty in Salesforce)
+  '701Si00000VoC5lIAF', // 19.06.2026 - Exclusive CyberSec Dinner
+])
+const isExcludedEvent = (c) =>
+  EXCLUDED_EVENT_KEYS.has(c.campaignKey) || EXCLUDED_EVENTS_RE.test(String(c.campaignName || ''))
 
 // First day of the selected window — used to split events into "run this period"
 // (started inside the window) vs "ongoing impact" (started earlier).
@@ -54,7 +69,7 @@ const sumFunnel = (cs) =>
   cs.reduce(
     (a, x) => {
       const c = x.period || x
-      return { mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), oppCount: a.oppCount + (c.oppCount || 0), pipeline: a.pipeline + c.pipeline, won: a.won + c.closedWon }
+      return { mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), oppCount: a.oppCount + (c.oppCount || 0), pipeline: a.pipeline + (Number(c.marginPipeline) || 0), won: a.won + (Number(c.margin) || 0) }
     },
     { mql: 0, sql: 0, createdOpps: 0, oppCount: 0, pipeline: 0, won: 0 },
   )
@@ -63,7 +78,7 @@ const sumFunnel = (cs) =>
 // row so the footer adds up the columns above it.
 const sumYear = (cs) =>
   cs.reduce(
-    (a, c) => ({ mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), oppCount: a.oppCount + (c.oppCount || 0), pipeline: a.pipeline + c.pipeline, won: a.won + c.closedWon }),
+    (a, c) => ({ mql: a.mql + c.mql, sql: a.sql + c.sql, createdOpps: a.createdOpps + (c.createdOpps || 0), oppCount: a.oppCount + (c.oppCount || 0), pipeline: a.pipeline + (Number(c.marginPipeline) || 0), won: a.won + (Number(c.margin) || 0) }),
     { mql: 0, sql: 0, createdOpps: 0, oppCount: 0, pipeline: 0, won: 0 },
   )
 
@@ -90,7 +105,7 @@ export default function Events() {
         </div>
         <div className="callout-body">
           <strong>Webinars</strong> and <strong>in-person events</strong> use the <strong>same metric set</strong> —
-          MQLs → SQLs → Created Opps → Qualified Opportunities → pipeline &amp; closed-won — all Salesforce
+          MQLs → SQLs → Created Opportunities → Qualified Opportunities → pipeline &amp; closed-won — all Salesforce
           campaign-attributed, so the two sections read consistently. Webinars add GoToWebinar attendance
           (registrants / attendees); in-person attendance comes from the attendee lists in your marketing email
           platform. Region &amp; quarter scope every figure.
@@ -142,8 +157,8 @@ function OwnedEarnedSummary({ det }) {
     return {
       hosted: hosted.length,
       earlier: earlier.length,
-      pipeline: rs.reduce((a, c) => a + (Number(c.pipeline) || 0), 0),
-      won: rs.reduce((a, c) => a + (Number(c.closedWon) || 0), 0),
+      pipeline: rs.reduce((a, c) => a + (Number(c.marginPipeline) || 0), 0),
+      won: rs.reduce((a, c) => a + (Number(c.margin) || 0), 0),
       names: hosted.map((c) => c.campaignName),
     }
   }
@@ -154,31 +169,17 @@ function OwnedEarnedSummary({ det }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Owned vs Earned Events</div>
-          <div className="panel-sub">CWSI-hosted vs participated · in-person events only (webinars are counted in their own section) · current view</div>
-        </div>
+          </div>
       </div>
       <div className="panel-body">
         <div className="kpis cols-2">
           <div className="kpi">
             <div className="kpi-label">Owned events held this period <span className="chip neu">CWSI-hosted</span></div>
             <div className="kpi-val">{num(owned.hosted)}</div>
-            <div className="kpi-sub"><span className="kpi-target">{owned.earlier > 0 ? `+ ${num(owned.earlier)} earlier event${owned.earlier === 1 ? '' : 's'} still contributing · ` : ''}{eur(owned.pipeline)} pipeline · {eur(owned.won)} closed-won across all</span></div>
           </div>
           <div className="kpi">
             <div className="kpi-label">Earned events <span className="chip amber">Participated</span></div>
             <div className="kpi-val">{num(earned.hosted)}</div>
-            <div className="kpi-sub"><span className="kpi-target">{earned.names.length ? earned.names.join(', ') : earned.earlier > 0 ? `${num(earned.earlier)} earlier still contributing` : '—'} · {eur(earned.pipeline)} pipeline · {eur(earned.won)} won</span></div>
-          </div>
-        </div>
-        <div className="callout" style={{ marginTop: 4 }}>
-          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
-          <div className="callout-body">
-            <strong>How the count works.</strong> “Held this period” counts in-person events whose own date falls in the
-            selected window — webinars are not in this count (they have their own section), and neither are the four
-            excluded prior-year events. Earlier events whose deals are still progressing are stated separately, so the
-            hosted count matches the events actually run. <strong>Owned</strong> events come from the Salesforce Campaign
-            Type “OwnedEvent”; the <strong>Earned</strong> events (conferences CWSI takes part in rather than hosts —
-            Cybersec Europe, the Henley Regatta) are tagged by name.
           </div>
         </div>
       </div>
@@ -210,7 +211,7 @@ function EventsSummary({ ev, det }) {
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Event Programme — Webinars + In-person</div>
-          <div className="panel-sub">Both event types combined · Salesforce-attributed · current view</div>
+          <div className="panel-sub">Both event types combined · Salesforce-attributed</div>
         </div>
         <span className="chip blue">
           {webinarCs.length} webinar{webinarCs.length === 1 ? '' : 's'} · {inPersonCs.length} in-person
@@ -219,30 +220,29 @@ function EventsSummary({ ev, det }) {
       <div className="panel-body">
         <div className="kpis cols-5" style={{ marginBottom: 4 }}>
           <Kpi
-            label="Registrations · current view"
+            label="Registrations"
             val={num(webReg + inPersonReg)}
             sub={`${num(webReg)} webinar · ${num(inPersonReg)} in-person`}
             explainId="mql"
           />
           <Kpi
-            label="Attendees · current view"
+            label="Attendees"
             val={num(hasInPersonAtt ? webAtt + inPersonAtt : webAtt)}
             sub={hasInPersonAtt ? `${num(webAtt)} webinar · ${num(inPersonAtt)} in-person` : 'webinars only · in-person pending attendee lists'}
             explainId="webinarAttendance"
           />
-          <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
+          <Kpi label="Created Opportunities" val={num(t.createdOpps)} explainId="createdOpps" />
           <Kpi
-            label="Influenced Pipeline (revenue) · current view"
+            label="Influenced Pipeline (gross profit)"
             val={eur(influenced)}
-            sub={`${eur(t.pipeline)} open · ${eur(t.won)} won`}
             explainId="pipeline"
           />
-          <Kpi label="Closed-Won · current view" val={eur(t.won)} explainId="closedWon" />
+          <Kpi label="Closed-Won (gross profit)" val={eur(t.won)} explainId="margin" />
         </div>
         <div className="callout">
           <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
           <div className="callout-body">
-            <strong>How to read this.</strong> Created Opps, Influenced Pipeline and Closed-Won are true combined
+            <strong>How to read this.</strong> Created Opportunities, Influenced Pipeline and Closed-Won are true combined
             totals — both event types are Salesforce campaign-attributed on the same basis.{' '}
             <strong>Registrations</strong> combine two systems: GoToWebinar sign-ups for webinars and Salesforce
             campaign members for in-person events, so the split is shown beneath.{' '}
@@ -258,93 +258,82 @@ function EventsSummary({ ev, det }) {
   )
 }
 
-// ---- Webinars: full metric set ABOVE the per-webinar table (Margot: "move the MQL
-// section above Webinar Performance" + "same metrics for webinars as for other events") ----
+// ---- Webinars — the SAME structure as in-person events (Margot, 20 Aug: "The view is
+// different. Please opt for the same view.") : the attendance frame, then the shared
+// Salesforce metric set, then one per-event table that now also carries each webinar's
+// opportunity and pipeline performance ("for each individual webinar it would be good to
+// see how it performed from an opportunity and pipeline perspective too ... mirror across").
 function Webinars({ ev, det }) {
+  const ov = useCampaignOverrides().data || {}
   const webinarCampaigns = ((det.data?.campaigns || []).filter((c) => c.campaignType === 'Webinar' && !isExcludedEvent(c)))
   const t = sumFunnel(webinarCampaigns)
+  // GoToWebinar attendance, keyed by the campaign it belongs to, so it can sit on the row.
+  const att = new Map(
+    (ev.data?.webinars || [])
+      .filter((w) => w.campaignKey)
+      .map((w) => [w.campaignKey, { registrants: w.registrants, attendees: w.attendees, attendanceRate: w.attendanceRate }]),
+  )
   return (
     <>
       {ev.isLoading && <Loading label="Loading webinar attendance…" />}
       {ev.isError && <ErrorState error={ev.error} />}
-      {ev.data && !ev.data.hasData && <EmptyState message="No webinar attendance for this region / quarter yet." />}
 
-      {/* Attendance headline tiles (GoToWebinar) */}
-      {ev.data && ev.data.hasData && (
-        <div className="kpis cols-4">
-          <Kpi label="Registrations · current view" val={num(ev.data.totals.registrants)} />
-          <Kpi label="Attendees · current view" val={num(ev.data.totals.attendees)} />
-          <Kpi label="Attendance rate" val={ratePct(ev.data.totals.attendanceRate)} sub="attendees ÷ registrants" explainId="webinarAttendance" />
-          <Kpi label="Webinars · current view" val={num(ev.data.totals.webinars)} />
-        </div>
-      )}
+      <EventFrame
+        organised={webinarCampaigns.length}
+        organisedLabel="Webinars held"
+        registrants={ev.data?.hasData ? ev.data.totals.registrants : null}
+        attendees={ev.data?.hasData ? ev.data.totals.attendees : null}
+        attendanceRate={ev.data?.hasData ? ev.data.totals.attendanceRate : null}
+      />
+      <FunnelTiles t={t} mqlLabel="MQLs (registrants)" />
 
-      {/* Salesforce-attributed funnel — the full shared metric set, above the table */}
-      {det.data?.hasData && (
-        <>
-          <div className="kpis cols-3" style={{ marginTop: 4 }}>
-            <Kpi label="MQLs (registrants) · current view" val={num(t.mql)} explainId="mql" />
-            <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
-            <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
-          </div>
-          <div className="kpis cols-3">
-            <Kpi label="Qualified Opportunities · current view" val={num(t.oppCount)} explainId="opportunities" />
-            <Kpi label="Open Pipeline € · current view" val={eur(t.pipeline)} explainId="pipeline" />
-            <Kpi label="Closed-Won € · current view" val={eur(t.won)} explainId="closedWon" />
-          </div>
-        </>
-      )}
-
-      {/* Per-webinar table (GoToWebinar) — after the metric tiles */}
-      {ev.data && ev.data.hasData && <WebinarTable data={ev.data} />}
+      <EventTable
+        title="Webinar Performance"
+        campaigns={webinarCampaigns}
+        ov={ov}
+        att={att}
+        hideClass
+        emptyMsg="No webinars ran in this window."
+      />
     </>
   )
 }
 
-function WebinarTable({ data }) {
-  const { totals, webinars } = data
+// The shared "overarching frame" both sections now render identically (Margot: the frame
+// "isn't showing for in person events ... should be in the same format as it is for webinars").
+function EventFrame({ organised, organisedLabel, registrants, attendees, attendanceRate, attNote }) {
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <div className="left">
-          <div className="panel-title">Webinar Performance</div>
-          <div className="panel-sub">Per webinar · registrants, attendees &amp; attendance rate</div>
-        </div>
-        <span className="chip blue">{webinars.length} webinars</span>
-      </div>
-      <div className="panel-body no-pad">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Webinar</th><th>Date</th><th>Region</th>
-              <th className="r">Registrants</th><th className="r">Attendees</th><th className="r">Att. rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {webinars.map((w) => (
-              <tr key={w.eventKey}>
-                <td>{w.eventName}</td>
-                <td className="mono mono-d">{w.activityDate}</td>
-                <td>{w.regionCode === 'UNASSIGNED' ? 'Other' : w.regionCode}</td>
-                <td className="r mono">{num(w.registrants)}</td>
-                <td className="r mono">{num(w.attendees)}</td>
-                <td className="r mono">{ratePct(w.attendanceRate)}</td>
-              </tr>
-            ))}
-            <tr className="total">
-              <td colSpan={3}>Total · {webinars.length} webinars</td>
-              <td className="r mono">{num(totals.registrants)}</td>
-              <td className="r mono">{num(totals.attendees)}</td>
-              <td className="r mono">{ratePct(totals.attendanceRate)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div className="kpis cols-4">
+      <Kpi label={organisedLabel} val={num(organised)} />
+      <Kpi label="Registrations" val={registrants == null ? '—' : num(registrants)} />
+      <Kpi label="Attendees" val={attendees == null ? '—' : num(attendees)} sub={attendees == null ? attNote : undefined} />
+      <Kpi
+        label="Attendance rate"
+        val={attendanceRate == null || isNA(attendanceRate) ? '—' : ratePct(attendanceRate)}
+        explainId="webinarAttendance"
+      />
     </div>
   )
 }
 
-// ---- In-person events: full metric set + run-this-period vs ongoing sub-tables ----
+// The shared Salesforce metric set — identical on both sections by construction.
+function FunnelTiles({ t, mqlLabel = 'MQLs' }) {
+  return (
+    <>
+      <div className="kpis cols-3" style={{ marginTop: 4 }}>
+        <Kpi label={mqlLabel} val={num(t.mql)} explainId="mql" />
+        <Kpi label="SQLs" val={num(t.sql)} explainId="sql" />
+        <Kpi label="Created Opportunities" val={num(t.createdOpps)} explainId="createdOpps" />
+      </div>
+      <div className="kpis cols-3">
+        <Kpi label="Qualified Opportunities" val={num(t.oppCount)} explainId="opportunities" />
+        <Kpi label="Open Pipeline € (gross profit)" val={eur(t.pipeline)} explainId="pipeline" />
+        <Kpi label="Closed-Won € (gross profit)" val={eur(t.won)} explainId="margin" />
+      </div>
+    </>
+  )
+}
+
 function InPerson({ det }) {
   const ov = useCampaignOverrides().data || {} // hook before any early return
   const att = useEventAttendance()
@@ -361,7 +350,6 @@ function InPerson({ det }) {
   )
   // W7: split by the event's own date — run this period vs earlier events still contributing.
   const runNow = useMemo(() => campaigns.filter((c) => c.startDate && c.startDate >= periodStart), [campaigns, periodStart])
-  const ongoing = useMemo(() => campaigns.filter((c) => !c.startDate || c.startDate < periodStart), [campaigns, periodStart])
 
   if (det.isLoading) return <Loading label="Loading event funnel…" />
   if (det.isError) return <ErrorState error={det.error} />
@@ -378,23 +366,16 @@ function InPerson({ det }) {
 
   return (
     <>
-      {/* The same shared metric set as webinars (Margot: metric parity) */}
-      <div className="kpis cols-4">
-        <Kpi label="MQLs (registrants) · current view" val={num(t.mql)} explainId="mql" />
-        <Kpi label="SQLs · current view" val={num(t.sql)} explainId="sql" />
-        <Kpi label="Created Opps · current view" val={num(t.createdOpps)} explainId="createdOpps" />
-        <Kpi
-          label="Attendance rate"
-          val={hasAtt && !isNA(attRate) ? ratePct(attRate) : '—'}
-          sub={hasAtt ? 'from the attendee lists (events with lists only)' : 'pending attendee lists for the remaining events'}
-          explainId="webinarAttendance"
-        />
-      </div>
-      <div className="kpis cols-3">
-        <Kpi label="Qualified Opportunities · current view" val={num(t.oppCount)} explainId="opportunities" />
-        <Kpi label="Open Pipeline € · current view" val={eur(t.pipeline)} explainId="pipeline" />
-        <Kpi label="Closed-Won € · current view" val={eur(t.won)} explainId="closedWon" />
-      </div>
+      {/* Identical frame + metric set to the webinar section above (Margot: same view). */}
+      <EventFrame
+        organised={runNow.length}
+        organisedLabel="Events held"
+        registrants={t.mql}
+        attendees={hasAtt ? att.data.totals.attendees : null}
+        attendanceRate={hasAtt ? attRate : null}
+        attNote="pending attendee lists"
+      />
+      <FunnelTiles t={t} mqlLabel="MQLs (registrants)" />
 
       {excludedCs.length > 0 && (
         <div className="callout" style={{ marginBottom: 14 }}>
@@ -409,22 +390,14 @@ function InPerson({ det }) {
         </div>
       )}
 
-      {/* Run this period — events whose own date falls in the selected window */}
+      {/* One table only. The ongoing-impact breakdown per event was removed on 20 Aug
+          ("I don't need a breakdown per event, just the view at the bottom of the page") —
+          that summary is the run-vs-ongoing panel at the foot of this page. */}
       <EventTable
-        title="Events Run This Period"
-        sub="Events whose own date falls in the selected window · each row is the campaign's full-2026 contribution"
+        title="In-Person Events"
         campaigns={runNow}
         ov={ov}
         emptyMsg="No in-person events were held in this window."
-      />
-
-      {/* Ongoing impact — earlier events still contributing */}
-      <EventTable
-        title="Ongoing Impact — Earlier Events Still Contributing"
-        sub="Events held before the selected window whose registrants and deals are still progressing · same metrics"
-        campaigns={ongoing}
-        ov={ov}
-        emptyMsg="No earlier events are contributing in this window."
       />
 
       {/* In-person registrations + attendance by region (EV1/EV2/EV3) */}
@@ -435,7 +408,7 @@ function InPerson({ det }) {
 
 // One in-person events table — shared by the run-this-period and ongoing-impact splits
 // so both measure the identical metric set (Margot: "measure the same metrics").
-function EventTable({ title, sub, campaigns, ov, emptyMsg }) {
+function EventTable({ title, sub, campaigns, ov, emptyMsg, att = null, hideClass = false }) {
   const { rows: sortedCampaigns, sortProps } = useSortable(campaigns, 'pipeline')
   const ty = sumYear(campaigns)
   return (
@@ -455,10 +428,11 @@ function EventTable({ title, sub, campaigns, ov, emptyMsg }) {
             <p className="panel-note" style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
               Each row is the campaign's <strong>full 2026 contribution</strong> — the same basis as the Campaigns page,
               so the two pages tie per event. An opportunity created in an earlier quarter still counts towards the
-              event that generated it. <strong>Opps</strong> = every opportunity created off this campaign;{' '}
+              event that generated it. <strong>Opportunities</strong> = every opportunity created off this campaign;{' '}
               <strong>Qualified</strong> = those at a genuine stage and still open or won. <Explain id="campaignWindow" />
             </p>
           </div>
+          <DealDrilldown campaignKeys={campaigns.map((c) => c.campaignKey)} label="Salesforce opportunities" />
           <div className="panel-body no-pad">
             <table className="tbl">
               <thead>
@@ -466,13 +440,16 @@ function EventTable({ title, sub, campaigns, ov, emptyMsg }) {
                   <SortTh {...sortProps('campaignName', 'text')}>Event</SortTh>
                   <SortTh {...sortProps('startDate', 'text')}>Date</SortTh>
                   <SortTh {...sortProps('regionCode', 'text')}>Region</SortTh>
-                  <th>Owned / Earned</th>
+                  {!hideClass && <th>Owned / Earned</th>}
+                  {att && <th className="r">Registrants</th>}
+                  {att && <th className="r">Attendees</th>}
+                  {att && <th className="r">Att. rate</th>}
                   <SortTh {...sortProps('mql')} className="r">MQLs <Explain id="mql" /></SortTh>
                   <SortTh {...sortProps('sql')} className="r">SQLs <Explain id="sql" /></SortTh>
-                  <SortTh {...sortProps('createdOpps')} className="r">Opps <Explain id="createdOpps" /></SortTh>
+                  <SortTh {...sortProps('createdOpps')} className="r">Opportunities <Explain id="createdOpps" /></SortTh>
                   <SortTh {...sortProps('oppCount')} className="r">Qualified <Explain id="opportunities" /></SortTh>
-                  <SortTh {...sortProps('pipeline')} className="r">Open Pipeline € <Explain id="pipeline" /></SortTh>
-                  <SortTh {...sortProps('closedWon')} className="r">Closed-Won € <Explain id="closedWon" /></SortTh>
+                  <SortTh {...sortProps('marginPipeline')} className="r">Open Pipeline € <Explain id="pipeline" /></SortTh>
+                  <SortTh {...sortProps('margin')} className="r">Closed-Won € <Explain id="margin" /></SortTh>
                 </tr>
               </thead>
               <tbody>
@@ -483,18 +460,21 @@ function EventTable({ title, sub, campaigns, ov, emptyMsg }) {
                       {c.noActivity && <span className="chip neu" style={{ marginLeft: 6 }}>no activity recorded yet</span>}
                     </td>
                     <td className="mono mono-d">{c.startDate || '—'}</td>
-                    <td><EditableName campaignKey={c.campaignKey} field="display_region" value={ov[c.campaignKey]?.display_region} original={c.regionCode} /></td>
-                    <td><span className={`chip ${eventClass(c.campaignName) === 'Earned' ? 'amber' : 'neu'}`}>{eventClass(c.campaignName)}</span></td>
+                    <td><RegionSelect campaignKey={c.campaignKey} regions={ov[c.campaignKey]?.regions} original={c.regionCode} /></td>
+                    {!hideClass && <td><span className={`chip ${eventClass(c.campaignName) === 'Earned' ? 'amber' : 'neu'}`}>{eventClass(c.campaignName)}</span></td>}
+                    {att && <td className="r mono">{att.get(c.campaignKey) ? num(att.get(c.campaignKey).registrants) : '—'}</td>}
+                    {att && <td className="r mono">{att.get(c.campaignKey) ? num(att.get(c.campaignKey).attendees) : '—'}</td>}
+                    {att && <td className="r mono">{att.get(c.campaignKey) ? ratePct(att.get(c.campaignKey).attendanceRate) : '—'}</td>}
                     <td className="r mono">{num(c.mql)}</td>
                     <td className="r mono">{num(c.sql)}</td>
                     <td className="r mono">{num(c.createdOpps)}</td>
                     <td className="r mono">{num(c.oppCount)}</td>
-                    <td className="r mono">{eur(c.pipeline)}</td>
-                    <td className="r mono mono-d">{eur(c.closedWon)}</td>
+                    <td className="r mono">{eur(c.marginPipeline)}</td>
+                    <td className="r mono mono-d">{eur(c.margin)}</td>
                   </tr>
                 ))}
                 <tr className="total">
-                  <td colSpan={4}>Total · {campaigns.length} event{campaigns.length === 1 ? '' : 's'}</td>
+                  <td colSpan={3 + (hideClass ? 0 : 1) + (att ? 3 : 0)}>Total · {campaigns.length} event{campaigns.length === 1 ? '' : 's'}</td>
                   <td className="r mono">{num(ty.mql)}</td>
                   <td className="r mono">{num(ty.sql)}</td>
                   <td className="r mono">{num(ty.createdOpps)}</td>

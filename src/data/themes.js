@@ -23,8 +23,8 @@
 //   4. Salesforce StartDate (2026);
 //   else → Other (prior-year, always-on, list imports — no 2026 quarter).
 //
-// Q3 2026 opened on 11 Aug 2026 — its umbrella (Q3_THEME) is a PROVISIONAL
-// placeholder until the client names the Q3 overarching campaign.
+// Q3 and Q4 theme names supplied by the client on 20 Aug 2026 — the provisional Q3
+// placeholder (and the on-page "name to be confirmed" notice) are retired.
 //
 // A per-campaign manual override (the "Theme" dropdown → campaign_overrides.theme,
 // value 'q1' | 'q2' | 'q3' | 'other') still wins over this rule; NULL means "Auto".
@@ -43,15 +43,19 @@ export const Q2_THEME = {
   label: 'Innovation Without Risk',
   blurb: 'Q2 2026 quarterly campaign — the safe-AI-innovation narrative: the Protect Data, Power AI events, the Becoming Frontier / Agent 365 webinars & whitepaper, and the Microsoft E7 workflow.',
 }
-// PROVISIONAL umbrella for the newly opened Q3 window (11 Aug 2026). The client
-// hasn't named the Q3 overarching campaign yet, so Q3-dated activities roll up
-// under this placeholder heading; rename label/blurb once the theme is agreed
-// (the Campaigns page carries a visible notice until then).
 export const Q3_THEME = {
   key: 'q3',
   quarter: 'Q3',
-  label: 'Q3 2026 Campaign (theme to be confirmed)',
-  blurb: 'Q3 2026 quarterly campaign — the overarching theme name is still to be confirmed; every Q3 activity is grouped here in the meantime.',
+  label: 'Build Trust in a Distrustful World',
+  blurb: 'Q3 2026 quarterly campaign — the trust narrative: the Governance Gap whitepaper and the Microsoft 365 E3/E5 capabilities workflow.',
+}
+// Q4 opens on 1 Oct 2026. The name is already agreed, so the umbrella exists now; the
+// Q4 quarter pill stays absent until the window opens (see QUARTER_PILLS).
+export const Q4_THEME = {
+  key: 'q4',
+  quarter: 'Q4',
+  label: 'Cybersecurity. Safeguarding Business Growth.',
+  blurb: 'Q4 2026 quarterly campaign — positioning cybersecurity as the enabler of business growth.',
 }
 // Catch-all — everything not tied to a 2026 quarterly theme (list imports, partner/MDF,
 // outreach lists, prior-year activity still generating pipeline).
@@ -62,7 +66,7 @@ export const OTHER = {
   blurb: 'Campaigns not part of a 2026 quarterly theme — list imports, partner / MDF, outreach lists, and prior-year activity still generating pipeline.',
 }
 
-const THEMES = [Q1_THEME, Q2_THEME, Q3_THEME]
+const THEMES = [Q1_THEME, Q2_THEME, Q3_THEME, Q4_THEME]
 
 // Curated quarter hints for the named campaigns whose Salesforce name carries no
 // dd.mm.yyyy prefix. `keys` = exact Salesforce campaign_key; `kw` = name keywords.
@@ -93,8 +97,9 @@ function quarterFromDatePrefix(name) {
   let year = Number(m[3])
   if (year < 100) year += 2000
   if (year !== REPORTING_YEAR || month < 1 || month > 12) return null
-  // Q1–Q3 2026 (the open reporting window); Q4 stays unmapped until it opens.
-  return month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : null
+  // Q4's theme name arrived with the 20 Aug feedback, so Q4-dated campaigns now roll up
+  // under it. The Q4 quarter PILL is still absent, so nothing Q4-dated is in scope yet.
+  return month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4'
 }
 
 // The single quarter a campaign belongs to: 'Q1' | 'Q2' | null (Other). See header.
@@ -105,6 +110,7 @@ export function quarterOfCampaign(name, key = null, startDate = null) {
   if (/\bq1\b/.test(n)) return 'Q1'
   if (/\bq2\b/.test(n)) return 'Q2'
   if (/\bq3\b/.test(n)) return 'Q3'
+  if (/\bq4\b/.test(n)) return 'Q4'
   if (key && Q1_KEYS.has(key)) return 'Q1'
   if (key && Q2_KEYS.has(key)) return 'Q2'
   if (Q1_KW.some((kw) => n.includes(kw))) return 'Q1'
@@ -116,6 +122,7 @@ export function quarterOfCampaign(name, key = null, startDate = null) {
       if (mo <= 3) return 'Q1'
       if (mo <= 6) return 'Q2'
       if (mo <= 9) return 'Q3'
+      return 'Q4'
     }
   }
   return null
@@ -128,11 +135,12 @@ export function themeForCampaign(name, key = null, startDate = null) {
   if (q === 'Q1') return Q1_THEME
   if (q === 'Q2') return Q2_THEME
   if (q === 'Q3') return Q3_THEME
+  if (q === 'Q4') return Q4_THEME
   return OTHER
 }
 
 // Display order: Q1, Q2, Q3, then Other last.
-export const THEME_ORDER = [Q1_THEME.key, Q2_THEME.key, Q3_THEME.key, OTHER.key]
+export const THEME_ORDER = [Q1_THEME.key, Q2_THEME.key, Q3_THEME.key, Q4_THEME.key, OTHER.key]
 
 export function themeMeta(key) {
   return [...THEMES, OTHER].find((t) => t.key === key) || OTHER

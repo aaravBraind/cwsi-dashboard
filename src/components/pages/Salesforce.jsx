@@ -5,7 +5,7 @@ export default function Salesforce() {
     ['MQL tracking — lead qualification flags syncing to SF', 'green', 'Live'],
     ['SQL handoff — MQL→SQL status transitions tracked', 'green', 'Live'],
     ['Campaign-to-opportunity attribution', 'green', 'Live'],
-    ['Closed-won revenue tracking — won opps mapped to source', 'green', 'Live'],
+    ['Closed-won revenue tracking — won opportunities mapped to source', 'green', 'Live'],
     ['Multi-touch attribution model — first/last/linear weighting', 'amber', 'In progress · Q3'],
     ['CLV & influenced margin reporting', 'amber', 'In progress · Q3'],
     ['Native Salesforce dashboard — single source of truth', 'neu', 'Planned · Q4'],

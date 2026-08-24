@@ -137,7 +137,7 @@ export async function getBoardPack(filters = {}) {
       key: 'createdOpps', order: 4, label: 'Created Opportunities', unit: 'count',
       value: createdOpps, valueDisplay: real(createdOpps) ? num(createdOpps) : 'n/a',
       target: null, targetDisplay: 'no target set',
-      trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opps created in period, marketing-attributed, any stage)',
+      trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opportunities created in period, marketing-attributed, any stage)',
       note: real(createdOpps) ? null : 'pending Salesforce data refresh',
     },
     {
@@ -255,11 +255,11 @@ export async function getBoardPack(filters = {}) {
         region: r.region,
         mql: r.mql, mqlDisplay: num(r.mql),
         sql: r.sql, sqlDisplay: num(r.sql),
-        createdOpps: r.createdOpps, createdOppsDisplay: real(r.createdOpps) ? num(r.createdOpps) : 'n/a',
+        createdOpps: r.createdOpps, createdOppsDisplay: real(r.createdOpps) ? num(r.createdOpps) : '0',
         pipeline: r.pipeline, pipelineDisplay: eur(r.pipeline),
         closedWon: r.closedWon, closedWonDisplay: eur(r.closedWon),
         pipelineShare: totalRegionPipe > 0 ? r.pipeline / totalRegionPipe : null,
-        pipelineShareDisplay: totalRegionPipe > 0 ? `${((r.pipeline / totalRegionPipe) * 100).toFixed(0)}%` : 'n/a',
+        pipelineShareDisplay: totalRegionPipe > 0 ? `${((r.pipeline / totalRegionPipe) * 100).toFixed(0)}%` : '0%',
       }))
     : []
   // BP11: is any region the "Unassigned" bucket? (drives the explanatory note)

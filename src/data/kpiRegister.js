@@ -15,7 +15,7 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel } = {}) {
   const f = funnel || {}
   const w = web || {}
   const o = outreach?.kpis || {}
@@ -32,6 +32,8 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
   const li = linkedin?.totals || {}
   const lie = linkedin?.efficiency || {}
   const ae = aeEmail?.totals || {}
+  // LinkedIn company-PAGE analytics (organic social), distinct from `linkedin` which is Ads.
+  const lp = linkedinPage || {}
   const ea = eventAttendance?.totals || null
   // Post-QA review (17 Aug): Margot re-listed the funnel metrics PER SECTION and the
   // register only showed each once — these channel-scoped funnels fill her lists.
@@ -86,16 +88,16 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     // ── Overall marketing summary (KR1/KR2: merged Pipeline Volumes + Commercial
     //    Outcomes into ONE lead section; funnel order MQL→SQL→Created Opps→Closed→outcomes) ──
     { t: 'cat', label: 'Overall Marketing Summary' },
-    { t: 'live', label: 'Total MQLs', val: num(f.mql), ctx: 'current view', key: 'totalMqls', num: f.mql },
-    { t: 'live', label: 'Total SQLs', val: num(f.sql), ctx: 'current view', key: 'totalSqls', num: f.sql },
+    { t: 'live', label: 'Total MQLs', val: num(f.mql), ctx: '', key: 'totalMqls', num: f.mql },
+    { t: 'live', label: 'Total SQLs', val: num(f.sql), ctx: '', key: 'totalSqls', num: f.sql },
     has(f.createdOpps)
-      ? { t: 'live', label: 'Created opportunities', val: num(f.createdOpps), ctx: 'all opps created in period (marketing-attributed, by created date)', key: 'createdOpportunities', num: f.createdOpps }
+      ? { t: 'live', label: 'Created opportunities', val: num(f.createdOpps), ctx: 'all opportunities created in period (marketing-attributed, by created date)', key: 'createdOpportunities', num: f.createdOpps }
       : { t: 'na', label: 'Created opportunities', ctx: 'created-opp count arrives at the next data refresh', key: 'createdOpportunities' },
     has(f.closedWonCount)
       ? { t: 'live', label: 'Closed-won opportunities', val: num(f.closedWonCount), ctx: 'won deals', key: 'closedWonCount', num: f.closedWonCount }
       : { t: 'na', label: 'Closed-won opportunities', ctx: 'closed-won count arrives at the next data refresh', key: 'closedWonCount' },
     has(f.marginPipeline)
-      ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(f.marginPipeline), ctx: `gross profit on generated (open + closed-won) opps · ${eur(f.pipeline)} on the revenue basis`, key: 'influencedPipeline', num: f.marginPipeline }
+      ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(f.marginPipeline), ctx: `gross profit on generated (open + closed-won) opportunities · ${eur(f.pipeline)} on the revenue basis`, key: 'influencedPipeline', num: f.marginPipeline }
       : { t: 'na', label: 'Influenced pipeline (gross profit)', ctx: 'open-deal gross profit arrives at the next data refresh', key: 'influencedPipeline' },
     { t: 'live', label: 'Closed-won value (revenue)', val: eur(f.closedWon), ctx: 'won deal value — revenue basis, by close date', key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
@@ -142,11 +144,19 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
 
     // ── Organic Social (KR3 — distinct group) ──
     { t: 'cat', label: 'Organic Social' },
-    { t: 'na', label: 'Engagement rate', ctx: 'awaiting LinkedIn company-page analytics access — no feed exists yet for page reactions/comments/shares', key: 'engagementRate' },
+    has(lp.engagementRate)
+      ? { t: 'live', label: 'Engagement rate', val: `${(lp.engagementRate * 100).toFixed(2)}%`,
+          ctx: `reactions + comments + reposts + clicks ÷ impressions · LinkedIn company page${lp.regions?.length > 1 ? `s (${lp.regions.join(', ')})` : lp.regions?.length ? ` (${lp.regions[0]})` : ''}`,
+          key: 'engagementRate', num: lp.engagementRate }
+      : { t: 'na', label: 'Engagement rate', ctx: 'no LinkedIn page activity in this period', key: 'engagementRate' },
     has(w.socialSessions)
       ? { t: 'live', label: 'Traffic from organic social (sessions)', val: num(w.socialSessions), ctx: 'GA4 channel = Organic Social', key: 'socialSessions', num: w.socialSessions }
       : { t: 'na', label: 'Traffic from organic social', ctx: 'GA4 Organic Social channel', key: 'socialSessions' },
-    { t: 'na', label: 'Follower growth', ctx: 'awaiting LinkedIn company-page analytics access — no follower feed exists yet', key: 'followerGrowth' },
+    lp.hasData
+      ? { t: 'live', label: 'Follower growth', val: num(lp.followersNew),
+          ctx: `net new followers in the period · LinkedIn company page${lp.regions?.length > 1 ? 's' : ''}`,
+          key: 'followerGrowth', num: lp.followersNew }
+      : { t: 'na', label: 'Follower growth', ctx: 'no LinkedIn page data for this period', key: 'followerGrowth' },
 
     // ── Email Performance — live from the email platform (W9), scoped to the four
     //    named campaigns, matching the Email page ──
@@ -233,11 +243,11 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — outreach spend is not recorded in the tracker', key: 'outreachCostPerConversion' },
     { t: 'na', label: 'Influenced margin (gross profit)', ctx: 'no data source yet — contact-attributed deals don’t carry per-deal gross profit; the campaign-attributed margin is in the summary above', key: 'outreachInfluencedMargin' },
     outMeetings != null
-      ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings attributed to outbound sequences · current view', key: 'outreachMeetings', num: outMeetings }
+      ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings attributed to outbound sequences', key: 'outreachMeetings', num: outMeetings }
       : { t: 'na', label: 'Meetings booked (outbound)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMeetings' },
     ot
-      ? { t: 'live', label: 'Opportunities created (outbound)', val: num(ot.createdOpps), ctx: 'contact-attributed to outbound sequences · current view', key: 'outreachCreatedOpps', num: ot.createdOpps }
-      : { t: 'na', label: 'Opportunities created (outbound)', ctx: 'outbound-attributed opps', key: 'outreachCreatedOpps' },
+      ? { t: 'live', label: 'Opportunities created (outbound)', val: num(ot.createdOpps), ctx: 'contact-attributed to outbound sequences', key: 'outreachCreatedOpps', num: ot.createdOpps }
+      : { t: 'na', label: 'Opportunities created (outbound)', ctx: 'outbound-attributed opportunities', key: 'outreachCreatedOpps' },
     ot
       ? { t: 'live', label: 'Closed-won (outbound)', val: eur(ot.won), ctx: 'won value · contact-attributed to outbound sequences', key: 'outreachClosedWon', num: ot.won }
       : { t: 'na', label: 'Closed-won (outbound)', ctx: 'outbound-attributed closed-won', key: 'outreachClosedWon' },

@@ -242,7 +242,7 @@ function ConversionSection({ conversion }) {
     <Expandable
       icon={I.trend}
       title="Funnel Conversion"
-      sub="MQL → SQL → Created Opps → Closed-Won · stage-to-stage"
+      sub="MQL → SQL → Created Opportunities → Closed-Won · stage-to-stage"
       chip={<span className="chip neu">{conversion.filter((c) => c.rate != null).length} steps</span>}
     >
       <div className="bar-list">
@@ -284,7 +284,7 @@ function PipelineHealthSection({ ph }) {
       <div className="tbl-scroll">
         <table className="tbl">
           <thead>
-            <tr><th>Stage</th><th className="r">Probability</th><th className="r">Open opps</th><th className="r">Value</th></tr>
+            <tr><th>Stage</th><th className="r">Probability</th><th className="r">Open opportunities</th><th className="r">Value</th></tr>
           </thead>
           <tbody>
             {ph.stages.map((s) => (
@@ -331,7 +331,7 @@ function RegionSection({ regions }) {
               <th>Region</th>
               <th className="r">MQLs <Explain id="mql" /></th>
               <th className="r">SQLs <Explain id="sql" /></th>
-              <th className="r">Created Opps <Explain id="createdOpps" /></th>
+              <th className="r">Created Opportunities <Explain id="createdOpps" /></th>
               <th className="r">Pipeline <Explain id="pipeline" /></th>
               <th className="r">Closed-Won <Explain id="closedWon" /></th>
             </tr>
@@ -357,6 +357,13 @@ function RegionSection({ regions }) {
 
 // W10 — the deal-level answer to "review the regional roll-up": exactly WHICH
 // opportunities couldn't be placed in a region, so each can be fixed at source.
+// Margot (20 Aug): "I can't find the opportunities in Salesforce using the references
+// provided." Each row can link straight to the record once the org's Lightning domain is
+// known — set VITE_SF_INSTANCE_URL (e.g. https://cwsi.lightning.force.com). Unset, the id
+// renders as plain text exactly as before rather than as a dead link.
+// The opportunity NAME and account still need the Salesforce ingestion change.
+const SF_BASE = (import.meta.env.VITE_SF_INSTANCE_URL || '').replace(/\/+$/, '')
+
 function UnassignedFootnote() {
   const q = useUnassignedOpps()
   const opps = q.data?.opps || []
@@ -376,13 +383,18 @@ function UnassignedFootnote() {
             <div className="tbl-scroll" style={{ marginTop: 8 }}>
               <table className="tbl">
                 <thead>
-                  <tr><th>Salesforce opportunity ID</th><th>Channel</th><th>Created</th><th className="r">Value €</th><th>Status</th></tr>
+                  <tr><th>Opportunity</th><th>Account</th><th>Campaign</th><th>Created</th><th className="r">Value €</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {opps.map((o) => (
                     <tr key={o.oppId}>
-                      <td className="mono">{o.oppId}</td>
-                      <td>{o.channel}</td>
+                      <td>
+                        {SF_BASE
+                          ? <a href={`${SF_BASE}/lightning/r/Opportunity/${o.oppId}/view`} target="_blank" rel="noreferrer">{o.oppName || o.oppId}</a>
+                          : <span className={o.oppName ? undefined : 'mono'}>{o.oppName || o.oppId}</span>}
+                      </td>
+                      <td>{o.accountName || '—'}</td>
+                      <td>{o.campaignName || o.channel}</td>
                       <td className="mono mono-d">{o.created}</td>
                       <td className="r mono">{eur(o.amount)}</td>
                       <td>{o.status}</td>

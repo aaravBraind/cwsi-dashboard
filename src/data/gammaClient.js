@@ -143,7 +143,7 @@ export function buildBoardPackPrompt(pack, generated) {
     rows.push(['Total open', '—', ph.openCountDisplay, ph.openValueDisplay])
     rows.push(['Weighted forecast (prob-adjusted)', '—', '—', ph.weightedDisplay])
     cards.push(
-      `## Pipeline Health\n\n${mdTable(['Open-pipeline stage', 'Probability', 'Open opps', 'Value'], rows)}\n\n_Current-state open-pipeline snapshot${
+      `## Pipeline Health\n\n${mdTable(['Open-pipeline stage', 'Probability', 'Open opportunities', 'Value'], rows)}\n\n_Current-state open-pipeline snapshot${
         ph.snapshotDate ? ` (${ph.snapshotDate})` : ''
       }, for the selected region — not limited to one quarter._`,
     )

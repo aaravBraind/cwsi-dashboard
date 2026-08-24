@@ -15,6 +15,7 @@ import {
   useAeEmailEngagement,
   useEmailReport,
   useChannel,
+  useLinkedInPage,
 } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num } from '../../data/format'
@@ -80,6 +81,8 @@ export default function KpiTracker() {
   const outreach = useOutreach() // K1: prospects/open/reply (lifetime snapshot)
   const outreachMtg = useOutreachAttributedMeetings() // K1: meetings/opps (current view)
   const linkedin = useLinkedInSnapshot() // W9: paid-media rows (impressions/CPC/CPM/CPL/return on spend)
+  // LinkedIn company-PAGE analytics (organic social) — separate feed from LinkedIn Ads above.
+  const linkedinPage = useLinkedInPage().data
   const aeEmail = useAeEmailEngagement() // W9: email open/CTR/unsub — the four named campaigns
   const eventAtt = useEventAttendance() // W9: in-person attendee lists, combined with GoToWebinar
   // Post-QA review (17 Aug): channel-scoped funnels for Margot's per-section metric lists —
@@ -187,7 +190,7 @@ function TargetCell({ kpiKey, row, period, scope }) {
 }
 
 function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets }) {
-  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel })
+  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
   const kpiCount = rows.filter((r) => r.t !== 'cat').length

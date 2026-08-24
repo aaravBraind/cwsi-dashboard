@@ -43,42 +43,30 @@ function Body({ data }) {
           below; keeping euros here and counts there removes the old top-strip/funnel
           duplication (P1) and adopts the agreed metric set (P2). */}
       <div className="gaps-strip" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-        <Cell label="New Pipeline Created" val={isNA(funnel.createdOppsValue) ? '—' : eur(funnel.createdOppsValue)} meta={isNA(funnel.createdOppsValue) ? 'after next refresh' : 'opps created in period · revenue'} explainId="createdOppsValue" />
+        <Cell label="New Pipeline Created (gross profit)" val={isNA(funnel.createdOppsMargin) ? '—' : eur(funnel.createdOppsMargin)} explainId="createdOppsValue" />
         <Cell
           label="Influenced Pipeline (gross profit)"
           val={isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}
-          meta={isNA(funnel.marginPipeline) ? 'open-deal gross profit at next refresh' : `open + won · ${eur(funnel.pipeline)} on the revenue basis`}
           explainId="pipeline"
         />
-        <Cell label="Closed-Won" val={eur(funnel.closedWon)} meta="revenue · won · by close date" explainId="closedWon" />
+        <Cell label="Closed-Won (gross profit)" val={isNA(funnel.margin) ? eur(0) : eur(funnel.margin)} explainId="margin" />
       </div>
 
-      {/* Basis (see docs/METRIC_DEFINITIONS.md): Influenced Pipeline is GROSS PROFIT since the
-          11 Aug decision; New Pipeline Created and Closed-Won stay revenue (deal value). Every
-          figure is dated by the DEAL: open by created date, won by close date. */}
-      <p className="panel-note" style={{ padding: '6px 4px 12px', fontSize: 12, opacity: 0.7 }}>
-        <strong>Influenced Pipeline is gross profit</strong> (the profit on those deals, matching how CWSI tracks
-        pipeline) — its full deal value is shown alongside for reference. New Pipeline Created and Closed-Won are{' '}
-        <strong>revenue</strong> (deal value). Each figure is dated by the <strong>deal</strong>: an open opportunity
-        counts in the quarter it was created, a won one in the quarter it closed. <Explain id="campaignDating" />
-      </p>
 
       {/* Lead Journey — count funnel, stage progression only (mirrors Overview exactly). */}
       <div className="panel">
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Lead Journey</div>
-            <div className="panel-sub">MQLs → SQLs → Created Opps → Qualified Opportunities → Closed-Won · with stage conversion · current view</div>
-          </div>
-          <span className="chip blue">current view</span>
+            </div>
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="MQLs" val={num(funnel.mql)} extra="campaign responders" explainId="mql" />
-            <Stage name="SQLs" val={num(funnel.sql)} extra={`${pct(funnel.sql, funnel.mql)} of MQL`} explainId="sql" />
-            <Stage name="Created Opps" val={isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)} extra={isNA(funnel.createdOpps) ? 'after next refresh' : 'all created'} explainId="createdOpps" />
-            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? '—' : num(funnel.opp)} extra={isNA(funnel.opp) ? 'not available yet' : 'qualified · open or won'} explainId="opportunities" />
-            <Stage name="Closed-Won" val={isNA(funnel.closedWonCount) ? '—' : num(funnel.closedWonCount)} extra={isNA(funnel.closedWonCount) ? 'not available yet' : 'won deals'} explainId="closedWon" />
+            <Stage name="MQLs" val={num(funnel.mql)} explainId="mql" />
+            <Stage name="SQLs" val={num(funnel.sql)} explainId="sql" />
+            <Stage name="Created Opportunities" val={isNA(funnel.createdOpps) ? 0 : num(funnel.createdOpps)} explainId="createdOpps" />
+            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? 0 : num(funnel.opp)} explainId="opportunities" />
+            <Stage name="Closed-Won" val={isNA(funnel.closedWonCount) ? 0 : num(funnel.closedWonCount)} explainId="closedWon" />
           </div>
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
@@ -116,7 +104,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Pipeline by Source</div>
-            <div className="panel-sub">MQLs, SQLs, pipeline &amp; closed-won by channel · current view</div>
+            <div className="panel-sub">MQLs, SQLs, pipeline &amp; closed-won by channel</div>
           </div>
           <span className="chip blue">Salesforce</span>
         </div>
@@ -127,9 +115,9 @@ function Body({ data }) {
                 <th>Source / Channel <Explain id="otherChannel" /></th>
                 <th className="r">MQLs <Explain id="mql" /></th>
                 <th className="r">SQLs <Explain id="sql" /></th>
-                <th className="r">Created Opps <Explain id="createdOpps" /></th>
+                <th className="r">Created Opportunities <Explain id="createdOpps" /></th>
                 <th className="r">Influenced Pipeline € (gross profit) <Explain id="pipeline" /></th>
-                <th className="r">Closed-Won € <Explain id="closedWon" /></th>
+                <th className="r">Closed-Won € (gross profit) <Explain id="margin" /></th>
               </tr>
             </thead>
             <tbody>
@@ -140,7 +128,7 @@ function Body({ data }) {
                   <td className="r mono">{num(s.sql)}</td>
                   <td className="r mono">{num(s.createdOpps)}</td>
                   <td className="r mono">{isNA(s.marginPipeline) ? '—' : eur(s.marginPipeline)}</td>
-                  <td className="r mono">{eur(s.closedWon)}</td>
+                  <td className="r mono">{eur(s.margin)}</td>
                 </tr>
               ))}
               {outbound && (outbound.createdOpps > 0 || outbound.won > 0) && (
@@ -160,7 +148,7 @@ function Body({ data }) {
                 <td className="r mono">{num(funnel.sql)}</td>
                 <td className="r mono">{isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)}</td>
                 <td className="r mono">{isNA(funnel.marginPipeline) ? '—' : eur(funnel.marginPipeline)}</td>
-                <td className="r mono">{eur(funnel.closedWon)}</td>
+                <td className="r mono">{isNA(funnel.margin) ? eur(0) : eur(funnel.margin)}</td>
               </tr>
             </tbody>
           </table>
@@ -255,7 +243,7 @@ const Stage = ({ name, val, extra, explainId }) => (
   <div className="h-funnel-stage">
     <div className="stage-name">{name}{explainId && <Explain id={explainId} align="left" />}</div>
     <div className="stage-val">{val}</div>
-    <div className="stage-extra">{extra}</div>
+    {extra ? <div className="stage-extra">{extra}</div> : null}
   </div>
 )
 const Cell = ({ label, val, meta, explainId }) => (

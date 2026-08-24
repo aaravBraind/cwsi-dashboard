@@ -13,6 +13,7 @@ import {
   getPipeline,
   getCurrentVsOngoing,
   getSalesCycle,
+  getCampaignOpportunities,
   getUnassignedOpps,
   getOpportunityStage,
   getChannel,
@@ -25,6 +26,8 @@ import {
   getMarketingSpend,
   getOutreach,
   getOutreachAttributedMeetings,
+  getOutreachRunVsOngoing,
+  getLinkedInPage,
   getOutreachSteps,
   getDataFreshness,
   getEvents,
@@ -84,6 +87,15 @@ export function useCurrentVsOngoing(channel = null, keys = null) {
   const { filters } = useFilters()
   const scoped = { ...filters, ...(channel ? { channel } : {}), ...(keys ? { keys } : {}) }
   return useQuery({ queryKey: ['current-vs-ongoing', scoped], queryFn: () => getCurrentVsOngoing(scoped) })
+}
+
+// Deal-level evidence for a campaign (or a curated campaign's several Salesforce keys).
+export function useCampaignOpportunities(campaignKeys, enabled = true) {
+  return useQuery({
+    queryKey: ['campaign-opps', campaignKeys],
+    queryFn: () => getCampaignOpportunities(campaignKeys),
+    enabled: !!enabled && !!(campaignKeys && campaignKeys.length),
+  })
 }
 
 // W10 — the UNASSIGNED-region opportunity list for the Board's regional footnote.
@@ -227,6 +239,27 @@ export function useOutreachAttributedMeetings(marketingOnly = true) {
   return useQuery({
     queryKey: ['outreach-attributed-meetings', filters.region, filters.quarter, marketingOnly],
     queryFn: () => getOutreachAttributedMeetings({ region: filters.region, quarter: filters.quarter, marketingOnly }),
+  })
+}
+
+// Outreach run-this-period vs ongoing impact, on the first-touch date of each prospect.
+// Engagement only — the commercial side rests on 2 campaign-linked opportunities, too few
+// to split honestly (stated on the panel rather than divided into buckets).
+export function useOutreachRunVsOngoing() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['outreach-run-vs-ongoing', filters.region, filters.quarter],
+    queryFn: () => getOutreachRunVsOngoing({ region: filters.region, quarter: filters.quarter }),
+  })
+}
+
+// LinkedIn company-page analytics (engagement rate + follower growth). Region-aware: CWSI has
+// three regional pages, so this responds to the region filter like any other feed.
+export function useLinkedInPage() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['linkedin-page', filters.region, filters.quarter],
+    queryFn: () => getLinkedInPage({ region: filters.region, quarter: filters.quarter }),
   })
 }
 
