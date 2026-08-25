@@ -2258,7 +2258,14 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     fetchAll(() => scope(supabase
       .from('v_outreach_attributed_opps')
       .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_id']),
-    supabase.from('v_outreach_meetings_v2_summary').select('*').maybeSingle().then((r) => r.data || null),
+    // Quarter- and region-scoped, so the callout explaining the figure can never disagree with
+    // the figure itself. Read from an all-time view, the card said 2 under Q2 while the sentence
+    // beneath it still said 3.
+    supabase.rpc('get_outreach_meetings_rule', {
+      p_quarter: filters.quarter && filters.quarter !== 'ytd' ? Number(String(filters.quarter).replace('q', '')) : null,
+      p_year: REPORTING_YEAR,
+      p_region: filters.region && filters.region !== 'all' ? filters.region : null,
+    }).then((r) => (Array.isArray(r.data) ? r.data[0] : r.data) || null),
   ])
 
   // Margot (20 Jul): the Outreach view is ONLY the 3 marketing workstreams (Historic Data

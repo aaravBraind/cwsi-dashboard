@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react'
 import { Loading, ErrorState, EmptyState } from '../States'
+import QuarterPills from '../QuarterPills'
 import { useOutreach, useOutreachAttributedMeetings, useOutreachRunVsOngoing } from '../../hooks/useDashboardData'
 import { num, eur, isNA } from '../../data/format'
 import { outreachProduct } from '../../data/queries'
@@ -29,10 +30,10 @@ export default function Outreach() {
         <div>
           <div className="page-title">Outreach<span className="accent">.io</span> — Sales Engagement</div>
           <div className="page-sub">
-            SDR cadences · prospect-to-MQL handoff · cumulative snapshot
-            {q.data?.snapshotDate ? ` as of ${q.data.snapshotDate}` : ''} · FY2026
+            Sales engagement · prospects, emails, replies and the meetings that followed · FY2026
           </div>
         </div>
+        <QuarterPills />
       </div>
 
       <div className="callout" style={{ marginBottom: 18 }}>
@@ -103,9 +104,12 @@ function Body({ data, meetings }) {
           <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
         </div>
         <div className="callout-body">
-          <strong>Reading these four figures.</strong> They are <strong>all-time</strong> running counters from
-          Outreach.io{snapshotDate ? <> as at <strong>{snapshotDate}</strong></> : null} — <strong>the quarter pill
-          does not change them</strong>, because Outreach.io gives us per-sequence totals rather than dated activity.
+          <strong>Which figures move with the quarter.</strong> <strong>Meetings</strong> and the
+          run-this-period panel are <strong>dated</strong>, so they follow the quarter and region you
+          select. <strong>Prospects, emails, opens and replies are lifetime totals</strong> and do not
+          — the sales engagement platform reports these as running per-sequence counters rather than
+          dated activity{snapshotDate ? <>, as at <strong>{snapshotDate}</strong></> : null}, so they
+          cannot honestly be cut by quarter. Where a figure is lifetime it says so beside it.
           They cover the <strong>three marketing workstreams only</strong>
           {seqCounts ? <> ({num(seqCounts.marketing)} of {num(seqCounts.total)} sequences in the account)</> : null}, so
           they are deliberately far smaller than the whole Outreach.io account — the sales and one-off account
@@ -147,7 +151,7 @@ function Body({ data, meetings }) {
           <div className="kpi-val">{num(su ? su.activeProspects : kpis.prospects)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">
-              currently working through a sequence{su ? <> · {num(kpis.prospects)} ever added</> : null}
+              currently working through a sequence{su ? <> · {num(kpis.prospects)} ever added</> : null} · lifetime
             </span>
           </div>
         </div>
@@ -206,7 +210,7 @@ function Body({ data, meetings }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Outreach Engagement Funnel</div>
-            <div className="panel-sub">Prospects → Emails delivered → Opens → Replies → Meetings · rates per email delivered</div>
+            <div className="panel-sub">Prospects → Emails delivered → Opens → Replies → Meetings · rates per email delivered · engagement is lifetime, meetings follow the selected quarter</div>
           </div>
           <span className="chip blue">snapshot</span>
         </div>
@@ -421,7 +425,7 @@ function SellerTable({ sellers, attrFor }) {
         <div className="left">
           <div className="panel-title">Seller Performance</div>
           <div className="panel-sub">
-            Per seller · the person whose mailbox the emails are sent from · outcomes Salesforce-attributed
+            Per seller · the person whose mailbox the emails are sent from · engagement lifetime · meetings and opportunities follow the selected quarter
           </div>
         </div>
         <span className="chip blue">{num(sellers.length)} sellers</span>
