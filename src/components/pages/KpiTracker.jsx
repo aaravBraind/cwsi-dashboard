@@ -116,6 +116,7 @@ export default function KpiTracker() {
           outreach={outreach.data}
           outreachMeetings={outreachMtg.data}
           linkedin={linkedin.data}
+          linkedinPage={linkedinPage}
           aeEmail={aeEmail.data}
           eventAttendance={eventAtt.data?.hasData ? eventAtt.data : null}
           emailFunnel={emailFunnel.data?.totals}
@@ -189,7 +190,7 @@ function TargetCell({ kpiKey, row, period, scope }) {
   )
 }
 
-function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets }) {
+function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets }) {
   const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
