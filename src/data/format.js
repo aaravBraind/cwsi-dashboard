@@ -21,6 +21,13 @@ export const gbp = (n) => money(n, '£')
 // money (pipeline, closed-won, margin, retention), which is EUR-native post-ingest.
 export const eur = (n) => money(n, '€')
 
+// Exact euros to the cent, for the reconciliation drill-downs. Deliberately NOT the
+// compact eur() the tiles use, and NOT rounded to whole euros either: at 0dp a column
+// of rows can visibly fail to add to its own total, which is exactly what a client
+// checking our figures against Salesforce is trying to do.
+export const eurExact = (n) =>
+  isNA(n) || n == null ? '—' : `€${Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 // Exact (non-compact) money with currency code suffix, for tooltips/tables.
 export function moneyExact(n, code = 'GBP') {
   if (isNA(n) || n == null) return 'n/a'

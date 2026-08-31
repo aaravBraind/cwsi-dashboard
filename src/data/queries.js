@@ -796,13 +796,15 @@ export async function getCurrentVsOngoing(filters = {}) {
   // bucket: every opportunity has a creation date, so nothing can fall outside the split.
   let oppQ = supabase
     .from('fact_opportunity')
-    .select('opp_id,campaign_key,channel_name,campaign_type,region_code,created_date,close_date,is_won,is_closed,amount_eur,margin_eur')
+    .select('opp_id,opp_name,account_name,campaign_name,stage_name,campaign_key,channel_name,campaign_type,region_code,created_date,close_date,is_won,is_closed,amount_eur,margin_eur')
     .gte('created_date', `${HISTORY_START_YEAR}-01-01`)
   if (filters.region && filters.region !== 'all') oppQ = oppQ.eq('region_code', filters.region)
-  const [opps, factRows] = await Promise.all([
+  const [opps, factRows, overrides] = await Promise.all([
     fetchAll(() => oppQ, ['opp_id']),
     // Leads/MQLs have no opportunity to date them by, so they keep the activity-date basis.
     fetchFacts(filters),
+    // Renamed campaigns must read the same here as on the Campaigns page.
+    getCampaignOverrides(),
   ])
 
   // Page-level scoping: a channel page or a pinned campaign list narrows the opportunity set
@@ -820,7 +822,7 @@ export async function getCurrentVsOngoing(filters = {}) {
   // revenue is kept as the labelled secondary line. margin_eur is NULL where Salesforce holds no
   // Gross Profit, and such a deal is excluded from the margin sum rather than counted at full
   // value — the same rule used for Influenced Pipeline.
-  const blank = () => ({ pipeline: 0, closedWon: 0, pipelineGp: 0, closedWonGp: 0, wonCount: 0, oppCount: 0, campaigns: new Set() })
+  const blank = () => ({ pipeline: 0, closedWon: 0, pipelineGp: 0, closedWonGp: 0, wonCount: 0, oppCount: 0, campaigns: new Set(), deals: [] })
   const cur = blank()
   const prior = blank()
 
@@ -838,7 +840,52 @@ export async function getCurrentVsOngoing(filters = {}) {
     if (o.campaign_key) b.campaigns.add(o.campaign_key)
     if (won) { b.closedWon += amount; if (gp != null) b.closedWonGp += gp; b.wonCount += 1 }
     if (open) { b.pipeline += amount; if (gp != null) b.pipelineGp += gp }
+    // Margot, 31 Aug: “the very detailed breakdown is indeed what I'm looking for — the
+    // campaigns, including value, to get to the number.” Each deal records the exact amount
+    // it contributed to each headline figure, accumulated in THIS loop rather than recomputed
+    // elsewhere, so the drill-down can never disagree with the number above it. A deal counts
+    // toward at most one of won/open (a deal is either closed or still open), and a deal with
+    // no Gross Profit in Salesforce contributes its revenue but not its gross profit — the
+    // single most likely reason a hand-tallied total differs, so it is flagged per row.
+    b.deals.push({
+      oppId: o.opp_id,
+      name: o.opp_name || o.opp_id,
+      account: o.account_name || '—',
+      campaignKey: o.campaign_key || null,
+      campaign: overrides[o.campaign_key]?.display_name || o.campaign_name || o.campaign_key || 'No campaign in Salesforce',
+      channel: displayChannel(o),
+      stage: o.stage_name || '—',
+      status: o.is_won ? 'Won' : o.is_closed ? 'Lost' : 'Open',
+      created: o.created_date,
+      closed: o.close_date,
+      countsWon: won,
+      countsOpen: open,
+      wonGp: won && gp != null ? gp : 0,
+      openGp: open && gp != null ? gp : 0,
+      wonRevenue: won ? amount : 0,
+      openRevenue: open ? amount : 0,
+      noGrossProfit: gp == null,
+    })
   }
+
+  // Per-campaign roll-up of one bucket's deals, ordered by what each campaign contributed.
+  // The campaign subtotals add to the bucket's headline figure by construction: every deal
+  // sits in exactly one campaign group and its recorded contribution is the one summed above.
+  const byCampaign = (b) =>
+    [...groupBy(b.deals, 'campaignKey')]
+      .map(([campaignKey, ds]) => ({
+        campaignKey,
+        campaign: ds[0].campaign,
+        channel: ds[0].channel,
+        dealCount: ds.length,
+        closedWon: ds.reduce((a, d) => a + d.wonGp, 0),
+        pipeline: ds.reduce((a, d) => a + d.openGp, 0),
+        closedWonRevenue: ds.reduce((a, d) => a + d.wonRevenue, 0),
+        pipelineRevenue: ds.reduce((a, d) => a + d.openRevenue, 0),
+        wonCount: ds.filter((d) => d.countsWon).length,
+        deals: ds.slice().sort((x, y) => y.wonGp + y.openGp - (x.wonGp + x.openGp)),
+      }))
+      .sort((x, y) => y.closedWon + y.pipeline - (x.closedWon + x.pipeline))
 
   // Leads stay on the activity-date basis and are reported for the window as a whole,
   // scoped the same way as the opportunities above.
@@ -862,12 +909,21 @@ export async function getCurrentVsOngoing(filters = {}) {
   })
   return {
     periodStart,
+    periodEnd,
     leads,
     current: shape(cur),
     prior: shape(prior),
     incrementalRevenue: prior.closedWon, // revenue earlier-created deals generated IN this period
     incrementalPipeline: prior.pipeline,
     hasData: scopedOpps.length > 0,
+    // The auditable detail behind each headline figure: campaign → deal → the amount that
+    // deal contributed. Built from the same accumulator loop, so it reconciles exactly.
+    detail: { current: byCampaign(cur), prior: byCampaign(prior) },
+    // Under the YTD pill the period starts at the first day the store holds data, so no
+    // opportunity can have been created BEFORE it — the ongoing-impact bucket is then empty
+    // by construction rather than because nothing is landing. The panel says so explicitly
+    // instead of showing a bare zero.
+    priorEmptyByScope: periodStart <= `${HISTORY_START_YEAR}-01-01`,
   }
 }
 
@@ -903,11 +959,44 @@ export async function getCampaignOpportunities(campaignKeys = []) {
       closed: r.close_date,
     }))
     .sort((a, b) => (a.status === b.status ? b.amount - a.amount : a.status === 'Won' ? -1 : b.status === 'Won' ? 1 : 0))
+  // Totals on the SAME BASIS as the tables this drill-down sits under (Campaigns, Events):
+  // GROSS PROFIT, counting won and still-open deals only.
+  //
+  // 31 Aug: they previously summed `amount` (revenue) for the won/open summary and every row —
+  // closed-LOST included — for the column totals. So a client opening the drill-down to check a
+  // €416,460 closed-won figure was shown €438,519 (revenue), €2,311,184 (all deals at revenue)
+  // and €2,154,728 (all deals at gross profit): four numbers, none of them the one above it,
+  // with €307,864 of lost-deal gross profit silently folded in. Exactly the "I keep getting
+  // different numbers than you guys" this drill-down exists to prevent.
+  //
+  // Lost deals stay VISIBLE in the rows — they are part of the campaign's story — but are
+  // totalled on their own line and excluded from the reconciling figures. A deal with no Gross
+  // Profit in Salesforce is left out of the gross-profit sums rather than counted at full
+  // value, matching Influenced Pipeline and the rest of the dashboard.
+  const gpOf = (o) => (o.margin == null ? 0 : o.margin)
+  const wonOpps = opps.filter((o) => o.status === 'Won')
+  const openOpps = opps.filter((o) => o.status === 'Open')
+  const lostOpps = opps.filter((o) => o.status === 'Lost')
+  const sum = (rows, f) => rows.reduce((a, o) => a + f(o), 0)
   return {
     opps,
     hasData: opps.length > 0,
-    won: opps.filter((o) => o.status === 'Won').reduce((a, o) => a + o.amount, 0),
-    open: opps.filter((o) => o.status === 'Open').reduce((a, o) => a + o.amount, 0),
+    // The two figures that must tie to the tables above.
+    won: sum(wonOpps, gpOf),
+    open: sum(openOpps, gpOf),
+    // Column totals, over the counted (won + open) deals only.
+    countedCount: wonOpps.length + openOpps.length,
+    countedRevenue: sum(wonOpps, (o) => o.amount) + sum(openOpps, (o) => o.amount),
+    countedGp: sum(wonOpps, gpOf) + sum(openOpps, gpOf),
+    // Revenue equivalents, kept as the labelled secondary basis.
+    wonRevenue: sum(wonOpps, (o) => o.amount),
+    openRevenue: sum(openOpps, (o) => o.amount),
+    // Listed but deliberately not counted anywhere on the page.
+    lostCount: lostOpps.length,
+    lostGp: sum(lostOpps, gpOf),
+    lostRevenue: sum(lostOpps, (o) => o.amount),
+    // Deals Salesforce holds no Gross Profit for, hence absent from the gross-profit sums.
+    noGpCount: opps.filter((o) => o.status !== 'Lost' && o.margin == null).length,
   }
 }
 
