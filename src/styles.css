@@ -190,17 +190,31 @@ body::before{
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);}
 
 /* MAIN */
-.main{margin-left:240px;padding-top:60px;min-height:100vh;flex:1;}
-.content{padding:28px 32px 60px;max-width:1500px;}
+.main{margin-left:240px;padding-top:60px;min-height:100vh;flex:1;min-width:0;}
+.content{padding:28px 32px 60px;max-width:1500px;min-width:0;}
+@media(max-width:900px){.content{padding:28px 18px 60px;}}
 
 .page{display:none;}
 .page.active{display:block;animation:fadeIn .25s ease;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 
 /* PAGE HEADER */
+/* Sticky under the topbar. The REGION tabs live in the fixed topbar, so before this the
+   quarter pills were the only scope control that scrolled away — on a long page (Campaigns,
+   KPI Tracker) you lost the quarter filter entirely and it read as missing. Both scope
+   controls now stay put. */
 .page-head{
   display:flex;align-items:flex-end;justify-content:space-between;
-  gap:24px;margin-bottom:24px;flex-wrap:wrap;
+  gap:24px;flex-wrap:wrap;
+  position:sticky;top:60px;z-index:40;
+  margin:-28px -32px 22px;padding:18px 32px 14px;
+  background:rgba(10,19,34,0.88);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+}
+@media(max-width:900px){
+  .page-head{margin:-28px -18px 18px;padding:14px 18px 12px;}
 }
 .page-title{
   font-size:26px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;
@@ -293,17 +307,26 @@ body::before{
   cursor:pointer;padding-right:18px;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b6c2d4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
   background-repeat:no-repeat;background-position:right center;background-size:12px;
+  max-width:min(420px,60vw);text-overflow:ellipsis;
 }
+.filter{max-width:100%;min-width:0;}
 .filter select option{background:var(--bg-2);color:var(--text);}
 
 /* KPI CARDS */
-.kpis{display:grid;gap:16px;margin-bottom:22px;}
-.kpis.cols-4{grid-template-columns:repeat(4,1fr);}
-.kpis.cols-5{grid-template-columns:repeat(5,1fr);}
-@media(max-width:1100px){.kpis.cols-5{grid-template-columns:repeat(2,1fr);}}
-.kpis.cols-3{grid-template-columns:repeat(3,1fr);}
-.kpis.cols-2{grid-template-columns:repeat(2,1fr);}
-@media(max-width:1100px){.kpis.cols-4{grid-template-columns:repeat(2,1fr);}}
+.kpis{display:grid;gap:16px;margin-bottom:22px;min-width:0;}
+.kpis.cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.kpis.cols-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+.kpis.cols-3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.kpis.cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
+@media(max-width:1400px){.kpis.cols-5{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media(max-width:1280px){.kpis.cols-4{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:1100px){
+  .kpis.cols-5{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .kpis.cols-3{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:760px){
+  .kpis.cols-2,.kpis.cols-3,.kpis.cols-4,.kpis.cols-5{grid-template-columns:minmax(0,1fr);}
+}
 
 .kpi{
   background:var(--surface);
@@ -355,12 +378,12 @@ body::before{
 .panel-title{font-size:14.5px;font-weight:700;letter-spacing:-0.005em;}
 .panel-sub{font-size:12px;color:var(--text-3);font-weight:500;}
 .panel-body{padding:18px 20px;}
-.panel-body.no-pad{padding:0;}
+.panel-body.no-pad{padding:0;overflow-x:auto;}
 
 .cols-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
 .cols-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:18px;}
 .cols-2-3{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-bottom:18px;}
-@media(max-width:1000px){.cols-2,.cols-3,.cols-2-3{grid-template-columns:1fr;}}
+@media(max-width:1000px){.cols-2,.cols-3,.cols-2-3{grid-template-columns:minmax(0,1fr);}}
 
 /* HORIZONTAL FUNNEL */
 .h-funnel{
@@ -482,6 +505,49 @@ body::before{
 
 /* ===== KPI REGISTER (KPI Tracker) — readable + editable targets ===== */
 .tbl-scroll{overflow-x:auto;}
+/* A wide table keeps its columns readable and scrolls inside its panel rather than
+   crushing every column to fit (or pushing the page sideways). */
+.tbl-wide{min-width:1040px;}
+.tbl th{white-space:nowrap;}
+
+/* Drill-down disclosure button. The deal breakdowns were plain text with a small ▸ and
+   no affordance at all — they read as a caption rather than a control, and were missed.
+   Now an obvious button: accent colour, border, hover, and a chevron that rotates open. */
+.drill-toggle{
+  display:inline-flex;align-items:center;gap:8px;
+  appearance:none;cursor:pointer;
+  font-family:var(--sans);font-size:12.5px;font-weight:600;
+  color:var(--cwsi-blue-soft);
+  background:rgba(20,113,230,0.08);
+  border:1px solid rgba(20,113,230,0.28);
+  border-radius:8px;padding:8px 13px;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.drill-toggle:hover{background:rgba(20,113,230,0.16);border-color:rgba(20,113,230,0.55);color:var(--text);}
+.drill-toggle:focus-visible{outline:2px solid var(--cwsi-blue);outline-offset:2px;}
+.drill-toggle.is-open{background:rgba(20,113,230,0.14);border-color:rgba(20,113,230,0.45);color:var(--text);}
+.drill-toggle .chev{width:14px;height:14px;transition:transform .18s ease;}
+.drill-toggle.is-open .chev{transform:rotate(90deg);}
+.drill-toggles{display:flex;flex-wrap:wrap;gap:10px;padding:4px 4px 2px;}
+
+/* Campaign row inside a breakdown — also a control, so it gets an affordance too. */
+.drill-row-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  appearance:none;background:none;border:0;padding:0;cursor:pointer;
+  font:inherit;color:inherit;text-align:left;
+}
+.drill-row-btn:hover{color:var(--cwsi-blue-soft);}
+.drill-row-btn .chev{width:13px;height:13px;opacity:.65;transition:transform .18s ease;flex-shrink:0;}
+.drill-row-btn.is-open .chev{transform:rotate(90deg);opacity:1;}
+
+/* Collapsible callout — long explanatory notes stay available without pushing the
+   actual figures below the fold. */
+.callout-toggle{
+  appearance:none;background:none;border:0;padding:0;margin-top:6px;cursor:pointer;
+  color:var(--cwsi-blue-soft);font-family:var(--sans);font-size:12.5px;font-weight:600;
+}
+.callout-toggle:hover{text-decoration:underline;}
+.callout-summary{color:var(--text-2);}
 .kpi-reg{width:100%;border-collapse:separate;border-spacing:0;min-width:680px;}
 .kpi-reg thead th{
   font-size:10.5px;color:var(--text-3);font-family:var(--mono);
@@ -655,7 +721,7 @@ tr:hover .edit-name-pen,.edit-name:hover .edit-name-pen,.edit-name-pen:focus-vis
 .callout-icn{flex-shrink:0;color:var(--cwsi-blue);margin-top:1px;}
 .callout.amber .callout-icn{color:var(--amber);}
 .callout.green .callout-icn{color:var(--green);}
-.callout-body{flex:1;font-size:12.5px;color:var(--text-2);}
+.callout-body{flex:1;min-width:0;font-size:12.5px;color:var(--text-2);overflow-wrap:anywhere;}
 .callout-body strong{color:var(--text);font-weight:700;}
 
 /* EXPLAIN — the "how did we get this number?" eye-button + popover */
@@ -941,9 +1007,11 @@ tr:hover .edit-name-pen,.edit-name:hover .edit-name-pen,.edit-name-pen:focus-vis
 .user-dropdown-item.danger:hover{background:var(--red-bg);}
 
 /* ===== SETTINGS PAGE ===== */
-.page-head{margin-bottom:20px;}
-.page-title{font-size:20px;font-weight:700;color:var(--text);letter-spacing:-0.01em;}
-.page-sub{font-size:13px;color:var(--text-3);margin-top:4px;}
+/* Scoped to .settings — these were unscoped and silently overrode the header on every
+   page in the app from inside a settings-only block. */
+.settings .page-head{margin-bottom:20px;position:static;padding:0;margin-left:0;margin-right:0;background:none;backdrop-filter:none;border-bottom:0;}
+.settings .page-title{font-size:20px;font-weight:700;color:var(--text);letter-spacing:-0.01em;}
+.settings .page-sub{font-size:13px;color:var(--text-3);margin-top:4px;}
 .settings{max-width:560px;}
 .settings-panel{margin-bottom:18px;}
 .settings-panel .field input{max-width:340px;}

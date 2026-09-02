@@ -83,7 +83,9 @@ export function buildBoardPackPrompt(pack, generated) {
     m.status,
   ])
   cards.push(
-    `## Top-line KPIs\n> Provisional targets — placeholder values pending CWSI sign-off; actuals are live and trace-to-data verified.\n\n${mdTable(
+    `## Top-line KPIs\n> ${pack.meta?.provisionalTargets
+      ? 'Targets are the CWSI FY26 quarterly reforecast where one was supplied; any metric without one shows a BrainD placeholder. Actuals are live and trace-to-data verified.'
+      : 'Targets are the CWSI FY26 quarterly reforecast. Actuals are live and trace-to-data verified.'}\n\n${mdTable(
       ['#', 'Metric', 'Actual', 'Target', '% of FY', 'QoQ', 'Status'],
       kpiRows,
     )}`,
@@ -187,11 +189,19 @@ export function buildKpiRegisterPrompt({ rows, targets, period, scope }, filters
   ]
 
   const head = ['Metric', 'Actual', `Target · ${scope_}`, 'vs Target']
+  // Whether any exported target is still a BrainD placeholder, so the caption states
+  // the truth rather than blanket-disclaiming the client's own reforecast.
+  const anyProvisional = rows.some(
+    (r) => r.t !== 'cat' && targets?.[r.key]?.[period_] != null && targets[r.key].source !== 'client',
+  )
+  const caption = anyProvisional
+    ? 'Targets are the CWSI FY26 quarterly reforecast where one was supplied; the rest are BrainD placeholders. Actuals are live and trace-to-data verified.'
+    : 'Targets are the CWSI FY26 quarterly reforecast. Actuals are live and trace-to-data verified.'
   let cat = null
   let acc = []
   const flush = () => {
     if (cat && acc.length)
-      cards.push(`## ${cat}\n> Provisional targets — placeholder values pending CWSI sign-off; actuals are live and trace-to-data verified.\n\n${mdTable(head, acc)}`)
+      cards.push(`## ${cat}\n> ${caption}\n\n${mdTable(head, acc)}`)
     acc = []
   }
   for (const r of rows) {

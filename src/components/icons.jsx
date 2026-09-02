@@ -133,6 +133,9 @@ export const I = {
       <polyline points="12 6 12 12 16 14" />
     </>
   ),
+  // Disclosure chevron for the deal drill-downs — points right when closed, rotated to
+  // point down by CSS when open.
+  chevronRight: <polyline points="9 18 15 12 9 6" />,
   pencil: (
     <>
       <path d="M12 20h9" />

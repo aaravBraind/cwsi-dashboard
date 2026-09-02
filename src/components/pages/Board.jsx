@@ -64,14 +64,27 @@ function Body({ pack, gen, saved }) {
   const { metrics, meta, conversion, channels, regions, pipelineHealth } = pack
   return (
     <>
-      {/* Targets are client-gated → flagged provisional everywhere they surface. */}
-      <div className="callout amber" style={{ marginTop: 4 }}>
-        <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
-        <div className="callout-body">
-          <strong>Targets are provisional.</strong> Actuals are live from the source data; the FY targets
-          shown are placeholders until the formal target register is delivered. The AI narrative cites these targets flagged as provisional and never invents a number.
+      {/* Since the CWSI FY26 reforecast (Aug 2026) most targets are the client's own, so this
+          warning is now conditional — captioning a signed-off target as our placeholder is
+          its own kind of inaccuracy. */}
+      {meta.provisionalTargets ? (
+        <div className="callout amber" style={{ marginTop: 4 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>Some targets are still provisional.</strong> Actuals are live from the source data. Targets
+            come from the CWSI FY26 quarterly reforecast where one was supplied; any metric without one still
+            shows a BrainD placeholder, marked as such. The narrative never invents a number.
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="callout" style={{ marginTop: 4 }}>
+          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
+          <div className="callout-body">
+            <strong>Targets are the CWSI FY26 quarterly reforecast.</strong> Actuals are live from the source
+            data and every figure is traced back to it. The narrative never invents a number.
+          </div>
+        </div>
+      )}
 
       {/* 1. Top-line — agreed order (QoQ trend vs {meta.prevQuarterLabel} where available) */}
       <div className="kpis cols-4">

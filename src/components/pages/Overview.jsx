@@ -85,9 +85,13 @@ function Body({ data }) {
     const f = achievement(targets[key], period, v)
     return f == null ? 'n/a' : `${(f * 100).toFixed(0)}% of ${scope}`
   }
+  // Say whose target this is. Most are the client's since the CWSI FY26 reforecast
+  // (Aug 2026); the rest are still ours and keep saying so.
   const tgtSub = (key) => {
     const t = targetAt(targets[key], period)
-    return t == null ? 'target pending (provisional)' : `${scope} tgt: ${fmtTarget(targets[key]?.unit, t)} · provisional`
+    if (t == null) return 'no target set yet'
+    const agreed = targets[key]?.source === 'client'
+    return `${scope} tgt: ${fmtTarget(targets[key]?.unit, t)}${agreed ? '' : ' · provisional'}`
   }
 
   return (

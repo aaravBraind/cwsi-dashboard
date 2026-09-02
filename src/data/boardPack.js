@@ -21,8 +21,10 @@
 //                     truth. As the figure set grows, the trace table grows with
 //                     it — anything not here is flagged as untraceable on publish.
 //
-// Actuals are always real. Only TARGETS are placeholder (client-gated) — they are
-// flagged provisional everywhere they surface. See docs/KPI_REGISTER.md.
+// Actuals are always real. TARGETS come from the kpi_targets register: since the CWSI
+// FY26 quarterly reforecast (Aug 2026) most are the client's own and are presented as
+// agreed; any metric still on a BrainD placeholder is flagged provisional per-metric,
+// never blanket. See docs/kpi/KPI_REFORECAST_AUG2026.md and docs/KPI_REGISTER.md.
 
 import { getBoardPackData, getKpiTargets } from './queries'
 import { FY_TARGETS, CONVERSION_TARGETS } from './thresholds'
@@ -77,13 +79,29 @@ export async function getBoardPack(filters = {}) {
     const v = targetsByKey[key] ? targetsByKey[key].fy : null
     return v == null ? fallback : Number(v)
   }
+  // Is this board target the CLIENT's or ours? Since the CWSI FY26 reforecast (Aug 2026)
+  // most are the client's, and the board pack must stop captioning them as placeholders —
+  // telling the board their own CMO's signed-off targets are BrainD guesses is worse than
+  // saying nothing. A fallback to thresholds.js is provisional by definition.
+  const isProvisional = (key) => {
+    const row = targetsByKey[key]
+    if (!row || row.fy == null) return true
+    return row.source !== 'client'
+  }
   const TGT = {
     mqls: fyTgt('totalMqls', FY_TARGETS.mqls),
     sqls: fyTgt('totalSqls', FY_TARGETS.sqls),
     mqlToSql: fyTgt('mqlToSql', CONVERSION_TARGETS.mqlToSqlRate),
+    createdOpps: fyTgt('createdOpportunities', null),
     closedWonCount: fyTgt('closedWonCount', FY_TARGETS.closedWonCount),
     pipeline: fyTgt('influencedPipeline', FY_TARGETS.influencedPipeline),
     margin: fyTgt('influencedMargin', FY_TARGETS.influencedMargin),
+  }
+  // Which kpi_targets row backs each board metric, for the provenance flag below.
+  const TGT_KEY = {
+    mqls: 'totalMqls', sqls: 'totalSqls', mqlToSql: 'mqlToSql',
+    createdOpps: 'createdOpportunities', closedOpps: 'closedWonCount',
+    pipeline: 'influencedPipeline', margin: 'influencedMargin',
   }
 
   const mql = funnel.mql
@@ -136,7 +154,10 @@ export async function getBoardPack(filters = {}) {
     {
       key: 'createdOpps', order: 4, label: 'Created Opportunities', unit: 'count',
       value: createdOpps, valueDisplay: real(createdOpps) ? num(createdOpps) : 'n/a',
-      target: null, targetDisplay: 'no target set',
+      // A target for this metric arrived with the CWSI FY26 reforecast (Aug 2026); before
+      // that there was none, hence the null fallback rather than a thresholds.js guess.
+      target: TGT.createdOpps,
+      targetDisplay: TGT.createdOpps == null ? 'no target set' : `FY ${num(TGT.createdOpps)}`,
       trace: 'Σ v_fact_enriched.created_opp_count (scoped; all opportunities created in period, marketing-attributed, any stage)',
       note: real(createdOpps) ? null : 'pending Salesforce data refresh',
     },
@@ -173,7 +194,8 @@ export async function getBoardPack(filters = {}) {
     },
   ].map((m) => ({
     ...m,
-    targetProvisional: true, // every target is client-gated until the kpi_targets register lands
+    // Per-metric, not blanket: a client-supplied target is stated as agreed, ours is flagged.
+    targetProvisional: isProvisional(TGT_KEY[m.key] || m.key),
     pctOfTarget: real(m.value) && m.target ? m.value / m.target : null,
     pctOfTargetDisplay: pctStr(m.value, m.target, 0),
     status: statusOf(m.value, m.target),
@@ -335,7 +357,8 @@ export async function getBoardPack(filters = {}) {
       quarterLabel: quarterLabel(filters.quarter),
       prevQuarterLabel: prevQuarter ? quarterLabel(prevQuarter) : null,
       metricOrder: metrics.map((m) => m.label),
-      provisionalTargets: true,
+      // True only if at least one board target is still a BrainD placeholder.
+      provisionalTargets: metrics.some((m) => m.targetProvisional && m.target != null),
       scopeIsAllRegions,
       hasData,
     },

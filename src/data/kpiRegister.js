@@ -125,6 +125,11 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     li.clicks > 0
       ? { t: 'live', label: 'Clicks', val: num(li.clicks), ctx: 'LinkedIn Ads', key: 'clicks', num: li.clicks }
       : { t: 'na', label: 'Clicks', ctx: 'no paid campaigns delivering in scope', key: 'clicks' },
+    // Paid click-through rate — new in the CWSI FY26 reforecast (Aug 2026). Already
+    // derivable from the LinkedIn Ads feed, so it is reported rather than deferred.
+    lie.ctr != null && !isNA(lie.ctr)
+      ? { t: 'live', label: 'Click-through rate', val: `${(Number(lie.ctr) * 100).toFixed(2)}%`, ctx: 'LinkedIn Ads — clicks ÷ impressions', key: 'paidCtr', num: Number(lie.ctr) }
+      : { t: 'na', label: 'Click-through rate', ctx: 'LinkedIn clicks/impressions pending', key: 'paidCtr' },
     lie.cpc != null && !isNA(lie.cpc)
       ? { t: 'live', label: 'Cost per click (CPC)', val: money2(lie.cpc), ctx: 'LinkedIn Ads (EUR)', key: 'cpc', num: Number(lie.cpc) }
       : { t: 'na', label: 'Cost per click (CPC)', ctx: 'LinkedIn spend/clicks pending', key: 'cpc' },

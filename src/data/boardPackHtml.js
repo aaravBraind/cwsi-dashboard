@@ -66,7 +66,7 @@ function metricCard(m) {
       <div class="order mono">${String(m.order).padStart(2, '0')}</div>
       <div class="klabel">${esc(m.label)}</div>
       <div class="kval mono${m.status === 'pending' ? ' na' : ''}">${esc(m.valueDisplay)}</div>
-      <div class="ktarget">Target · ${esc(m.targetDisplay)} · provisional${m.note ? ` · ${esc(m.note)}` : ''}</div>
+      <div class="ktarget">Target · ${esc(m.targetDisplay)}${m.target != null && m.targetProvisional ? ' · provisional' : ''}${m.note ? ` · ${esc(m.note)}` : ''}</div>
       <div class="kfoot">
         <span class="kpct mono">${esc(pct)}${pct !== '—' ? ' of FY' : ''} ${trend}</span>
         <span class="chip ${cls}"><span class="pip"></span>${label}</span>
@@ -402,7 +402,9 @@ export function buildBoardPackHtml(pack, generated, { region, quarter } = {}) {
 
   const kpiSection = `
     <section class="page-block">
-      <div class="banner"><span>⚠</span><div><b>Provisional targets.</b> Target values are placeholders pending CWSI sign-off; actuals are live and trace-to-data verified. Status lights use the default 95% / 80% bands.</div></div>
+      ${meta.provisionalTargets
+        ? `<div class="banner"><span>⚠</span><div><b>Some targets are still provisional.</b> Targets are the CWSI FY26 quarterly reforecast where one was supplied; any metric without one shows a BrainD placeholder, marked <i>provisional</i>. Actuals are live and trace-to-data verified. Status lights use the default 95% / 80% bands.</div></div>`
+        : `<div class="banner"><span>✓</span><div><b>Targets are the CWSI FY26 quarterly reforecast.</b> Actuals are live and trace-to-data verified. Status lights use the default 95% / 80% bands.</div></div>`}
       <div class="sec-head"><span class="rule"></span><h2>Top-line KPIs</h2></div>
       <div class="kpi-grid">${cards}</div>
     </section>`

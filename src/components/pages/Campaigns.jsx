@@ -43,24 +43,19 @@ export default function Campaigns() {
         <QuarterPills />
       </div>
 
-      <div className="callout" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          Each quarter has <strong>one overarching quarterly campaign</strong>: <strong>Q1</strong> is{' '}
-          <strong>“Data Is an Asset, Not a Liability”</strong>, <strong>Q2</strong> is{' '}
-          <strong>“Innovation Without Risk”</strong>, <strong>Q3</strong> is{' '}
-          <strong>“Build Trust in a Distrustful World”</strong> and <strong>Q4</strong> is{' '}
-          <strong>“Cybersecurity. Safeguarding Business Growth.”</strong>{' '}
-          <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
-          7 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
-          activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
-          plus its on-demand version, is one row). Everything else sits under{' '}
-          <strong>“Other activities”</strong>, kept so the page still adds up to the Overview totals. Campaign names
-          are editable (click the pencil). <Explain id="campaignTheme" />
-        </div>
-      </div>
+      <Callout summary="Each quarter has one overarching campaign; everything else sits under “Other activities”. Campaign names are editable.">
+        Each quarter has <strong>one overarching quarterly campaign</strong>: <strong>Q1</strong> is{' '}
+        <strong>“Data Is an Asset, Not a Liability”</strong>, <strong>Q2</strong> is{' '}
+        <strong>“Innovation Without Risk”</strong>, <strong>Q3</strong> is{' '}
+        <strong>“Build Trust in a Distrustful World”</strong> and <strong>Q4</strong> is{' '}
+        <strong>“Cybersecurity. Safeguarding Business Growth.”</strong>{' '}
+        <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
+        7 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
+        activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
+        plus its on-demand version, is one row). Everything else sits under{' '}
+        <strong>“Other activities”</strong>, kept so the page still adds up to the Overview totals. Campaign names
+        are editable (click the pencil). <Explain id="campaignTheme" />
+      </Callout>
 
 
       {/* The "Theme" dropdown column was removed (Margot, 11 Aug: "I'm not sure what value
@@ -71,20 +66,15 @@ export default function Campaigns() {
           (name date, else Salesforce Start Date) — its end/close date is never used — while
           the money against it is dated by the DEAL (open = created date, won = close date).
           See docs/METRIC_DEFINITIONS.md. */}
-      <div className="callout" style={{ marginBottom: 18 }}>
-        <div className="callout-icn">
-          <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-        </div>
-        <div className="callout-body">
-          <strong>Which date keys what.</strong> A campaign is placed in a quarter by when it{' '}
-          <strong>started</strong> — the date in its name, otherwise its Salesforce Start Date. A campaign's{' '}
-          <strong>end / close date is never used</strong>. The money against it is dated by the{' '}
-          <strong>deal</strong> instead: an open opportunity counts in the quarter it was created, a won one in the
-          quarter it closed. So a Q1 activity can still be showing revenue in Q2 — and in 2026 to date most of the
-          revenue landing in a quarter comes from campaigns that started earlier. Rows are ordered by contribution,
-          not by date. <Explain id="campaignDating" />
-        </div>
-      </div>
+      <Callout summary="A campaign sits in the quarter it STARTED; the money against it is dated by the deal — so a Q1 activity can still show revenue in Q2.">
+        <strong>Which date keys what.</strong> A campaign is placed in a quarter by when it{' '}
+        <strong>started</strong> — the date in its name, otherwise its Salesforce Start Date. A campaign's{' '}
+        <strong>end / close date is never used</strong>. The money against it is dated by the{' '}
+        <strong>deal</strong> instead: an open opportunity counts in the quarter it was created, a won one in the
+        quarter it closed. So a Q1 activity can still be showing revenue in Q2 — and in 2026 to date most of the
+        revenue landing in a quarter comes from campaigns that started earlier. Rows are ordered by contribution,
+        not by date. <Explain id="campaignDating" />
+      </Callout>
 
       <div className="filters" style={{ marginBottom: 14 }}>
         <div className="filter">
@@ -106,6 +96,28 @@ export default function Campaigns() {
       {q.data && !q.data.hasData && <EmptyState message="No campaigns for this region / quarter yet." />}
       {q.data && q.data.hasData && themes.map((t) => <ThemeCard key={t.key} theme={t} ov={ov} />)}
     </>
+  )
+}
+
+// A long explanatory note that does not push the figures below the fold. The summary is
+// always readable; the full text is one click away. Both notes on this page were several
+// paragraphs each and between them filled the first screen before any data appeared.
+function Callout({ summary, children }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="callout is-collapsible" style={{ marginBottom: 14 }}>
+      <div className="callout-icn">
+        <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+      </div>
+      <div className="callout-body">
+        {open ? children : <span className="callout-summary">{summary}</span>}
+        <div>
+          <button type="button" className="callout-toggle" onClick={() => setOpen((o) => !o)}>
+            {open ? 'Show less' : 'Read more'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -159,7 +171,7 @@ function ThemeCard({ theme, ov }) {
       {/* Individual activities within the theme */}
       {open && (
         <div className="panel-body no-pad">
-          <table className="tbl">
+          <table className="tbl tbl-wide">
             <thead>
               <tr>
                 <SortTh {...sortProps('campaignName', 'text')}>Activity</SortTh>

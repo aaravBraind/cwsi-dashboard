@@ -620,9 +620,12 @@ export async function getKpiTargets() {
 export async function updateKpiTarget(kpiKey, period, value) {
   if (!['q1', 'q2', 'q3', 'q4', 'fy'].includes(period)) throw new Error(`bad period: ${period}`)
   const v = value == null || value === '' || Number.isNaN(Number(value)) ? null : Number(value)
+  // Setting a target by hand IS a client decision, so the row stops being a BrainD
+  // placeholder the moment it is edited — otherwise an edited figure would keep
+  // carrying the "provisional" marker and the reforecast note that no longer applies.
   const { data, error } = await supabase
     .from('kpi_targets')
-    .update({ [period]: v })
+    .update({ [period]: v, source: 'client', note: null, updated_by: 'edited in the dashboard' })
     .eq('kpi_key', kpiKey)
     .select()
     .single()

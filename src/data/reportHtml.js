@@ -51,7 +51,14 @@ export function buildKpiRegisterHtml({ rows, targets, period, scope }, { region,
     )
   }
 
-  const banner = `<div class="banner"><span>⚠</span><div><b>Provisional targets.</b> Target values are placeholders pending CWSI sign-off; actuals are live and trace-to-data verified. Status dots use the default 95% / 80% bands.</div></div>`
+  // Blanket-disclaiming every target stopped being true with the CWSI FY26 reforecast
+  // (Aug 2026): most are the client's own. Only flag what is genuinely still ours.
+  const anyProvisional = rows.some(
+    (r) => r.t !== 'cat' && targets?.[r.key]?.[period_] != null && targets[r.key].source !== 'client',
+  )
+  const banner = anyProvisional
+    ? `<div class="banner"><span>⚠</span><div><b>Some targets are still provisional.</b> Targets are the CWSI FY26 quarterly reforecast where one was supplied; the rest are BrainD placeholders. Actuals are live and trace-to-data verified. Status dots use the default 95% / 80% bands.</div></div>`
+    : `<div class="banner"><span>✓</span><div><b>Targets are the CWSI FY26 quarterly reforecast.</b> Actuals are live and trace-to-data verified. Status dots use the default 95% / 80% bands.</div></div>`
   const table = `
     <table class="tbl">
       <thead><tr><th>Metric</th><th class="r">Actual</th><th class="r">Target · ${esc(scope_)}</th><th class="r">vs Target</th></tr></thead>

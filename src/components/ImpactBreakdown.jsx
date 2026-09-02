@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { num, eurExact } from '../data/format'
+import { I, Icon } from './icons'
 import { downloadCsv, csvMoney } from '../data/csv'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,10 +70,12 @@ export default function ImpactBreakdown({ campaigns, bucketLabel, closedWon, pip
     <div style={{ padding: '2px 4px 10px' }}>
       <button
         type="button"
+        className={`drill-toggle${open ? ' is-open' : ''}`}
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        style={{ font: 'inherit', fontSize: 12, background: 'none', border: 0, cursor: 'pointer', opacity: 0.85, padding: 0, color: 'inherit' }}
       >
-        {open ? '▾' : '▸'} {open ? 'Hide' : 'Show'} the {num(rows.length)} campaigns and {num(dealCount)} deals behind “{bucketLabel}”
+        <Icon className="icon chev">{I.chevronRight}</Icon>
+        {open ? 'Hide' : 'Show'} the {num(rows.length)} campaigns and {num(dealCount)} deals behind “{bucketLabel}”
       </button>
 
       {open && (
@@ -113,10 +116,13 @@ export default function ImpactBreakdown({ campaigns, bucketLabel, closedWon, pip
                       <td>
                         <button
                           type="button"
+                          className={`drill-row-btn${isOpen ? ' is-open' : ''}`}
+                          aria-expanded={isOpen}
+                          title={isOpen ? 'Hide this campaign’s deals' : 'Show this campaign’s deals'}
                           onClick={() => setExpanded((e) => ({ ...e, [key]: !e[key] }))}
-                          style={{ font: 'inherit', background: 'none', border: 0, cursor: 'pointer', padding: 0, color: 'inherit', textAlign: 'left' }}
                         >
-                          {isOpen ? '▾' : '▸'} {c.campaign}
+                          <Icon className="icon chev">{I.chevronRight}</Icon>
+                          {c.campaign}
                         </button>
                       </td>
                       <td style={{ opacity: 0.75 }}>{c.channel}</td>

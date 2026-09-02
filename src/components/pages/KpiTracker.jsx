@@ -42,7 +42,7 @@ const REGISTER_EXPLAIN = {
   overallConversion: 'conversion', totalConversions: 'organicTraffic',
   emailOpenRate: 'aeOpenRate', emailCtr: 'aeCtr', unsubscribeRate: 'aeUnsubRate',
   // Post-QA review (17 Aug) — the per-section funnel rows
-  clicks: 'linkedinSpend',
+  clicks: 'linkedinSpend', paidCtr: 'linkedinSpend',
   emailMqlToSql: 'conversion', emailSqlToWon: 'conversion', emailClosedOpps: 'closedWon',
   emailInfluencedPipeline: 'pipeline', emailInfluencedMargin: 'margin',
   webTotalLeads: 'mql', webMqlToSql: 'conversion', webSqlToWon: 'conversion',
@@ -59,8 +59,13 @@ const REGISTER_EXPLAIN = {
 // number).
 // 22 Jun: TARGETS moved to the editable `kpi_targets` DB table (seeded from the
 // thresholds.js placeholders). The Target column is inline-editable per active
-// quarter; on save the %-of-target + status light recompute. Actuals stay live;
-// only the target side is a (provisional) placeholder until the client edits it.
+// quarter; on save the %-of-target + status light recompute.
+//
+// 1 Sep 2026: CWSI's fractional CMO supplied the FY26 quarterly reforecast, so 29 KPIs
+// now carry CLIENT targets rather than our placeholders (docs/kpi/). Provenance is a
+// column on the row (`source`), not a guess: a client target reads plainly, a remaining
+// placeholder is marked as such, and the reforecast rationale is on the cell as a
+// tooltip so a changed benchmark can be explained without leaving the page.
 
 const rate = (x) => `${(Number(x) * 100).toFixed(1)}%`
 
@@ -98,7 +103,7 @@ export default function KpiTracker() {
       <div className="page-head">
         <div>
           <div className="page-title">KPI <span className="accent">Tracker</span></div>
-          <div className="page-sub">Quarterly KPIs · live actuals where available · targets editable &amp; provisional · FY2026</div>
+          <div className="page-sub">Quarterly KPIs · live actuals where available · targets from the CWSI FY26 reforecast, editable · FY2026</div>
         </div>
         <QuarterPills />
       </div>
@@ -177,14 +182,24 @@ function TargetCell({ kpiKey, row, period, scope }) {
     )
 
   const empty = t == null
+  // Where this number came from, and — for a reforecast target — why it was changed.
+  const provisional = row.source !== 'client'
+  const why = row.note
+    ? `${row.note}\n\nClick to edit — saves automatically.`
+    : provisional
+      ? 'BrainD provisional placeholder — no client figure supplied yet. Click to edit; saves automatically.'
+      : 'Client-supplied target. Click to edit — saves automatically.'
   return (
     <button
       type="button"
       onClick={begin}
       className={`tgt-btn${empty ? ' empty' : ''}${upd.isPending ? ' saving' : ''}`}
-      title="Edit target — provisional placeholder, saved automatically"
+      title={why}
     >
       <span>{empty ? 'Set target' : fmtByUnit(unit, t)}</span>
+      {!empty && provisional && (
+        <span style={{ marginLeft: 5, fontSize: 10, opacity: 0.6, fontWeight: 400 }} aria-label="provisional">prov.</span>
+      )}
       <svg className="icon tgt-pen" viewBox="0 0 24 24">{I.pencil}</svg>
     </button>
   )
@@ -197,6 +212,12 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
   const kpiCount = rows.filter((r) => r.t !== 'cat').length
   const scope = scopeLabel(quarter)
   const period = periodOf(quarter)
+  // How many of the visible KPIs carry a client target for the active period, so the
+  // page states its own provenance rather than claiming every target is provisional
+  // (they no longer are) or that all are agreed (they are not).
+  const withTarget = rows.filter((r) => r.t !== 'cat' && targets[r.key]?.[period] != null)
+  const clientCount = withTarget.filter((r) => targets[r.key].source === 'client').length
+  const provisionalCount = withTarget.length - clientCount
 
   // Status pill (dot + %-of-target) for a row.
   const statusCell = (r) => {
@@ -215,17 +236,23 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
       <div className="panel-head">
         <div className="left">
           <div className="panel-title">Full KPI Register · FY2026</div>
-          <div className="panel-sub">{liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = data not available yet · targets editable &amp; provisional</div>
+          <div className="panel-sub">
+            {liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = data not available yet ·{' '}
+            {clientCount} agreed target{clientCount === 1 ? '' : 's'} this {scope === 'FY' ? 'year' : 'quarter'}
+            {provisionalCount > 0 && `, ${provisionalCount} still provisional`}
+          </div>
         </div>
         <span className="chip blue">{scope} scope</span>
       </div>
       <div className="kpi-banner">
         <svg className="icon b-icn" viewBox="0 0 24 24">{I.pencil}</svg>
         <div>
-          <strong>Targets are provisional &amp; editable.</strong> Actuals are live from the source data; each
-          <strong> Target</strong> is a placeholder — click it to set the real number (it saves automatically,
-          and %-of-target + status recompute). Edits apply to the <strong>active quarter</strong> ({scope}); switch the
-          quarter pills to set the others.
+          <strong>Targets now come from the CWSI FY26 quarterly reforecast.</strong> Actuals are live from the
+          source data. Hover any <strong>Target</strong> to see where it came from and, where a benchmark was
+          changed, the reason given. Targets still marked <strong>prov.</strong> are ours, awaiting a client figure.
+          Every target stays editable — click it to change the number (it saves automatically, %-of-target and status
+          recompute, and the row is then marked as agreed). Edits apply to the <strong>active quarter</strong>{' '}
+          ({scope}); switch the quarter pills to set the others.
         </div>
       </div>
       <div className="panel-body no-pad">
