@@ -211,11 +211,16 @@ export function buildKpiRegisterPrompt({ rows, targets, period, scope }, filters
       continue
     }
     const tg = targets[r.key] || {}
-    const a = r.key ? achievement(tg, period_, r.num) : null
+    const manual = r.t === 'manual'
+    const a = manual
+      ? (r.kind === 'num' && r.num != null && r.target ? r.num / Number(r.target) : null)
+      : r.key ? achievement(tg, period_, r.num) : null
     acc.push([
       r.label,
-      r.t === 'live' ? r.val : 'not available yet',
-      tg.unit ? (fmtTarget(tg.unit, tg[period_]) ?? '—') : '—',
+      r.t === 'live' || (manual && r.val != null) ? r.val : manual ? 'not entered yet' : 'not available yet',
+      manual
+        ? (r.target == null || r.target === '' ? '—' : String(r.target))
+        : tg.unit ? (fmtTarget(tg.unit, tg[period_]) ?? '—') : '—',
       a == null ? '—' : `${Math.round(a * 100)}%`,
     ])
   }

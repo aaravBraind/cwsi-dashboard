@@ -633,6 +633,78 @@ export async function updateKpiTarget(kpiKey, period, value) {
   return data
 }
 
+// ---- Manually-maintained KPIs (CWSI FY26 reforecast, Sep 2026) -------------
+// Four of the reforecast's KPIs are things CWSI does but no system records — PR
+// placements, contributed articles, hero case studies, MDF claim success rate — and two
+// are not numbers at all: the Website measurement integrity RAG flag and the Organic
+// engagement time trend. Rather than leave six agreed KPIs off the dashboard, they are
+// entered by hand here, one row per KPI per period, actual AND target together (their
+// targets are not uniformly numeric, so kpi_targets could not hold them).
+//
+// Returns a nested map: { [kpiKey]: { [period]: row } }.
+export async function getKpiManual() {
+  const { data, error } = await supabase.from('kpi_manual').select('*')
+  if (error) throw error
+  const byKey = {}
+  for (const r of data || []) {
+    if (!byKey[r.kpi_key]) byKey[r.kpi_key] = {}
+    byKey[r.kpi_key][r.period] = r
+  }
+  return byKey
+}
+
+// Set one manually-entered KPI value for one period. `field` is 'value' (the actual) or
+// 'target'; the value is written to the numeric or text column per `kind`. Empty clears it.
+export async function upsertKpiManual({ kpiKey, period, field = 'value', kind = 'num', value }) {
+  if (!kpiKey) throw new Error('kpiKey required')
+  if (!['q1', 'q2', 'q3', 'q4', 'fy'].includes(period)) throw new Error(`bad period: ${period}`)
+  if (!['value', 'target'].includes(field)) throw new Error(`bad field: ${field}`)
+  const blank = value == null || String(value).trim() === ''
+  const col = `${field}_${kind === 'text' ? 'text' : 'num'}`
+  let v = null
+  if (!blank) {
+    if (kind === 'text') v = String(value).trim()
+    else {
+      const n = Number(String(value).replace(/[,€£%\s]/g, ''))
+      if (Number.isNaN(n)) throw new Error('not a number')
+      v = n
+    }
+  }
+  const { data, error } = await supabase
+    .from('kpi_manual')
+    .upsert(
+      { kpi_key: kpiKey, period, [col]: v, updated_at: new Date().toISOString(), updated_by: 'entered in the dashboard' },
+      { onConflict: 'kpi_key,period' },
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// ---- Organic traffic growth vs the prior quarter ---------------------------
+// Reforecast KPI: +20% in Q4 against the Q3 baseline. Computed rather than stored — the
+// GA4 sessions are already there, this is the same scoped query run for both quarters.
+// Only meaningful for a single quarter that HAS a predecessor: Q1 has none inside the
+// reporting year, and year-to-date is not a quarter, so both correctly return null.
+export async function getOrganicTrafficGrowth(filters = {}) {
+  const prevQ = priorQuarter(filters.quarter)
+  if (!prevQ) return { growth: null, current: null, prior: null, priorQuarter: null, reason: filters.quarter === 'ytd' || !filters.quarter ? 'ytd' : 'no-prior-quarter' }
+  const [cur, prior] = await Promise.all([
+    getWebTraffic(filters),
+    getWebTraffic({ ...filters, quarter: prevQ }),
+  ])
+  const c = Number(cur?.totals?.sessions) || 0
+  const p = Number(prior?.totals?.sessions) || 0
+  return {
+    growth: p > 0 ? (c - p) / p : null,
+    current: c,
+    prior: p,
+    priorQuarter: prevQ,
+    reason: p > 0 ? null : 'no-prior-sessions',
+  }
+}
+
 // ---- Editable campaign overrides (B4 / CC-4) ------------------------------
 // Friendly display names + regions for campaigns, keyed by campaign_key (the SF
 // campaign Id). Dashboard-side only — Salesforce stays canonical. Lives in its

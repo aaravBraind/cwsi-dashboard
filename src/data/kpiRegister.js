@@ -15,7 +15,7 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, manual, organicGrowth, period } = {}) {
   const f = funnel || {}
   const w = web || {}
   const o = outreach?.kpis || {}
@@ -83,6 +83,24 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
   const combAtt = (attendance?.attendees || 0) + (ea?.attended || 0)
   const combAttendanceV = ea && combRegs > 0 ? combAtt / combRegs : null
   const money2 = (v) => (v == null || isNA(v) ? null : `€${Number(v).toFixed(2)}`)
+
+  // CWSI FY26 reforecast (Sep 2026): six agreed KPIs that no system records. They are
+  // entered by hand (kpi_manual) rather than left off the dashboard, and are marked
+  // t:'manual' so the tracker renders an editable Actual cell and reads their target
+  // from the same row — their targets are not all numeric ('GREEN', 'Improve vs Q3').
+  const mp = period || 'fy'
+  const manualRow = (key, label, ctx, kind = 'num') => {
+    const r = manual?.[key]?.[mp] || {}
+    const v = kind === 'text' ? r.value_text : r.value_num
+    const has_ = v != null && v !== ''
+    return {
+      t: 'manual', kind, key, label,
+      val: has_ ? (kind === 'text' ? String(v) : num(v)) : null,
+      num: kind === 'num' && has_ ? Number(v) : null,
+      target: kind === 'text' ? r.target_text ?? null : r.target_num ?? null,
+      ctx,
+    }
+  }
 
   return [
     // ── Overall marketing summary (KR1/KR2: merged Pipeline Volumes + Commercial
@@ -193,6 +211,22 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     visitorToMqlV != null
       ? { t: 'live', label: 'Visitor → MQL conversion', val: pct(w.keyEvents, w.sessions, 2), ctx: 'GA4 conv ÷ sessions', key: 'visitorToMql', num: visitorToMqlV }
       : { t: 'na', label: 'Visitor → MQL conversion', ctx: 'GA4 key events ÷ sessions', key: 'visitorToMql' },
+    // Reforecast KPI: +20% in Q4 vs the Q3 baseline. Only meaningful for a quarter that has
+    // a predecessor — Q1 has none in the reporting year and year-to-date is not a quarter.
+    organicGrowth?.growth != null
+      ? { t: 'live', label: 'Organic traffic growth vs prior quarter',
+          val: `${organicGrowth.growth >= 0 ? '+' : ''}${(organicGrowth.growth * 100).toFixed(1)}%`,
+          ctx: `${num(organicGrowth.current)} sessions this quarter vs ${num(organicGrowth.prior)} in ${String(organicGrowth.priorQuarter).toUpperCase()} · GA4`,
+          key: 'organicTrafficGrowth', num: organicGrowth.growth }
+      : { t: 'na', label: 'Organic traffic growth vs prior quarter',
+          ctx: organicGrowth?.reason === 'ytd'
+            ? 'select a quarter — growth is measured against the quarter before it'
+            : organicGrowth?.reason === 'no-prior-quarter'
+              ? 'no earlier quarter in the reporting year to compare against'
+              : 'no sessions recorded in the prior quarter',
+          key: 'organicTrafficGrowth' },
+    manualRow('organicEngagementTime', 'Organic engagement time', 'entered by hand — trend vs the prior quarter (Fluro post-launch reporting)', 'text'),
+    manualRow('websiteIntegrity', 'Website measurement integrity', 'entered by hand — GA4 consent/tracking, campaign conversion events, Account Engagement and territory attribution validated', 'text'),
     // Post-QA review: her Website Performance list also names the lead-funnel + money
     // metrics — the Organic SEO channel funnel (whitepapers excluded; same as the SEO page).
     has(wf.mql)
@@ -216,6 +250,16 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     // (MQL→SQL already lives just above, so chRows' first entry is dropped).
     ...chRows('events', 'Events & Webinars channel · Salesforce-attributed', evf).slice(1),
     { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — per-event spend is not recorded in the tracker', key: 'costPerConversion' },
+
+    // ── PR, Content & Partner — CWSI FY26 reforecast (Sep 2026). Every figure here is
+    //    entered by hand: these are real commitments in the strategy, but nothing in
+    //    Salesforce, GA4 or the email platform records them. Shown with their agreed
+    //    targets so the commitment is visible even before a number is entered. ──
+    { t: 'cat', label: 'PR, Content & Partner' },
+    manualRow('prPlacements', 'Tier-1 earned media placements', 'entered by hand — no PR reporting source'),
+    manualRow('thoughtLeadershipArticles', 'Thought-leadership / contributed articles', 'entered by hand — no content-publishing source'),
+    manualRow('heroCaseStudies', 'Hero case studies produced', 'entered by hand — no content-publishing source'),
+    manualRow('mdfClaimRate', 'MDF claim success rate', 'entered by hand — claim-level data is not held in the dashboard'),
 
     // ── Outreach (Prospecting) — K1. Engagement (prospects/opens/replies) is a
     //    lifetime cadence snapshot; meetings/opps are Salesforce, contact-attributed

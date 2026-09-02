@@ -35,16 +35,24 @@ export function buildKpiRegisterHtml({ rows, targets, period, scope }, { region,
       continue
     }
     const tg = targets[r.key] || {}
-    const a = r.key ? achievement(tg, period_, r.num) : null
+    const manual = r.t === 'manual'
+    // Manual rows keep their actual + target on the row itself; text measures (RAG,
+    // trend) have no ratio, so no percentage or status dot.
+    const a = manual
+      ? (r.kind === 'num' && r.num != null && r.target ? r.num / Number(r.target) : null)
+      : r.key ? achievement(tg, period_, r.num) : null
     const live = r.t === 'live'
-    const actual = live ? r.val : 'not available yet'
-    const target = tg.unit ? (fmtTarget(tg.unit, tg[period_]) ?? '—') : '—'
+    const has = live || (manual && r.val != null)
+    const actual = has ? r.val : manual ? 'not entered yet' : 'not available yet'
+    const target = manual
+      ? (r.target == null || r.target === '' ? '—' : String(r.target))
+      : tg.unit ? (fmtTarget(tg.unit, tg[period_]) ?? '—') : '—'
     const pct = a == null ? '—' : `${Math.round(a * 100)}%`
-    const dot = live && r.key ? dotOf(a) : 'neu'
+    const dot = a == null ? 'neu' : dotOf(a)
     trs.push(
       `<tr>` +
         `<td>${esc(r.label)}</td>` +
-        `<td class="r${live ? '' : ' na'}">${esc(actual)}</td>` +
+        `<td class="r${has ? '' : ' na'}">${esc(actual)}</td>` +
         `<td class="r">${esc(target)}</td>` +
         `<td class="r">${esc(pct)}<span class="dot ${dot}"></span></td>` +
       `</tr>`,

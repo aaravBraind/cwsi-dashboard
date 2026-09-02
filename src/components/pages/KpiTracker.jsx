@@ -16,6 +16,9 @@ import {
   useEmailReport,
   useChannel,
   useLinkedInPage,
+  useKpiManual,
+  useUpdateKpiManual,
+  useOrganicTrafficGrowth,
 } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num } from '../../data/format'
@@ -43,6 +46,7 @@ const REGISTER_EXPLAIN = {
   emailOpenRate: 'aeOpenRate', emailCtr: 'aeCtr', unsubscribeRate: 'aeUnsubRate',
   // Post-QA review (17 Aug) — the per-section funnel rows
   clicks: 'linkedinSpend', paidCtr: 'linkedinSpend',
+  organicTrafficGrowth: 'organicTraffic',
   emailMqlToSql: 'conversion', emailSqlToWon: 'conversion', emailClosedOpps: 'closedWon',
   emailInfluencedPipeline: 'pipeline', emailInfluencedMargin: 'margin',
   webTotalLeads: 'mql', webMqlToSql: 'conversion', webSqlToWon: 'conversion',
@@ -96,6 +100,10 @@ export default function KpiTracker() {
   const webFunnel = useChannel('Organic SEO', 'all', ['Content/White Paper'])
   const eventsFunnel = useChannel('Events & Webinars')
   const targetsQ = useKpiTargets()
+  // Reforecast additions (Sep 2026): the hand-entered KPIs, and organic traffic growth
+  // measured against the prior quarter.
+  const manualQ = useKpiManual()
+  const organicGrowth = useOrganicTrafficGrowth()
   const { filters } = useFilters()
 
   return (
@@ -129,6 +137,8 @@ export default function KpiTracker() {
           eventsFunnel={eventsFunnel.data?.totals}
           quarter={filters.quarter}
           targets={targetsQ.data || {}}
+          manual={manualQ.data || {}}
+          organicGrowth={organicGrowth.data}
         />
       )}
     </>
@@ -205,8 +215,62 @@ function TargetCell({ kpiKey, row, period, scope }) {
   )
 }
 
-function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets }) {
-  const rows = buildKpiRegisterRows({ funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel })
+// The Actual cell for a manually-maintained KPI. Same click-to-edit interaction as the
+// target cell, but it writes the ACTUAL — these six measures have no system of record, so
+// a person is the source. Text measures (RAG, trend) take free text; the rest take a number.
+function ManualCell({ kpiKey, kind, value, period }) {
+  const upd = useUpdateKpiManual()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const begin = () => {
+    setDraft(value == null ? '' : String(value).replace(/,/g, ''))
+    setEditing(true)
+  }
+  const commit = () => {
+    setEditing(false)
+    const raw = draft.trim()
+    if ((value == null && raw === '') || raw === String(value ?? '')) return // unchanged
+    upd.mutate({ kpiKey, period, field: 'value', kind, value: raw })
+  }
+
+  if (editing)
+    return (
+      <span className="tgt-edit">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          placeholder={kind === 'text' ? 'e.g. GREEN' : '0'}
+        />
+      </span>
+    )
+
+  const empty = value == null || value === ''
+  return (
+    <button
+      type="button"
+      onClick={begin}
+      className={`tgt-btn${empty ? ' empty' : ''}${upd.isPending ? ' saving' : ''}`}
+      title="No system records this measure — enter it by hand. Saves automatically."
+    >
+      <span>{empty ? 'Enter value' : value}</span>
+      <svg className="icon tgt-pen" viewBox="0 0 24 24">{I.pencil}</svg>
+    </button>
+  )
+}
+
+function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets, manual, organicGrowth }) {
+  const rows = buildKpiRegisterRows({
+    funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage,
+    aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel,
+    manual, organicGrowth, period: periodOf(quarter),
+  })
 
   const liveCount = rows.filter((r) => r.t === 'live').length
   const kpiCount = rows.filter((r) => r.t !== 'cat').length
@@ -215,6 +279,7 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
   // How many of the visible KPIs carry a client target for the active period, so the
   // page states its own provenance rather than claiming every target is provisional
   // (they no longer are) or that all are agreed (they are not).
+  const manualCount = rows.filter((r) => r.t === 'manual').length
   const withTarget = rows.filter((r) => r.t !== 'cat' && targets[r.key]?.[period] != null)
   const clientCount = withTarget.filter((r) => targets[r.key].source === 'client').length
   const provisionalCount = withTarget.length - clientCount
@@ -222,7 +287,13 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
   // Status pill (dot + %-of-target) for a row.
   const statusCell = (r) => {
     const row = targets[r.key]
-    const a = r.t === 'live' && r.key ? achievement(row, period, r.num) : null
+    // A manual KPI carries its own target on the row (kpi_manual), so it is scored the
+    // same way as a live one once someone has entered a figure. Text measures (RAG,
+    // trend) have no ratio to compute and stay blank.
+    const a =
+      r.t === 'manual'
+        ? r.kind === 'num' && r.num != null && r.target ? r.num / Number(r.target) : null
+        : r.t === 'live' && r.key ? achievement(row, period, r.num) : null
     const cls = a == null ? 'neu' : a >= 0.95 ? 'green' : a >= 0.8 ? 'amber' : 'red'
     return (
       <span className={`tl ${cls}`}>
@@ -237,7 +308,8 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
         <div className="left">
           <div className="panel-title">Full KPI Register · FY2026</div>
           <div className="panel-sub">
-            {liveCount} of {kpiCount} live (Salesforce + GA4) · n/a = data not available yet ·{' '}
+            {liveCount} of {kpiCount} live (Salesforce + GA4)
+            {manualCount > 0 && ` · ${manualCount} entered by hand`} · n/a = data not available yet ·{' '}
             {clientCount} agreed target{clientCount === 1 ? '' : 's'} this {scope === 'FY' ? 'year' : 'quarter'}
             {provisionalCount > 0 && `, ${provisionalCount} still provisional`}
           </div>
@@ -277,11 +349,27 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
                       {r.ctx && <div className="metric-ctx">{r.ctx}</div>}
                     </td>
                     <td className="r">
-                      <span className={`metric-actual${r.t === 'na' ? ' na' : ''}`}>
-                        {r.t === 'na' ? 'not available yet' : r.val}
-                      </span>
+                      {r.t === 'manual' ? (
+                        <ManualCell kpiKey={r.key} kind={r.kind} value={r.val} period={period} />
+                      ) : (
+                        <span className={`metric-actual${r.t === 'na' ? ' na' : ''}`}>
+                          {r.t === 'na' ? 'not available yet' : r.val}
+                        </span>
+                      )}
                     </td>
-                    <td className="r"><TargetCell kpiKey={r.key} row={targets[r.key]} period={period} scope={scope} /></td>
+                    <td className="r">
+                      {r.t === 'manual' ? (
+                        <span className="metric-actual">
+                          {r.target == null || r.target === ''
+                            ? '—'
+                            : r.kind === 'text'
+                              ? String(r.target)
+                              : fmtByUnit(r.key === 'mdfClaimRate' ? 'rate' : 'count', r.target)}
+                        </span>
+                      ) : (
+                        <TargetCell kpiKey={r.key} row={targets[r.key]} period={period} scope={scope} />
+                      )}
+                    </td>
                     <td className="c">{statusCell(r)}</td>
                   </tr>
                 )

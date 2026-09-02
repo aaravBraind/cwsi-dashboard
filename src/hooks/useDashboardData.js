@@ -14,6 +14,9 @@ import {
   getCurrentVsOngoing,
   getSalesCycle,
   getCampaignOpportunities,
+  getKpiManual,
+  upsertKpiManual,
+  getOrganicTrafficGrowth,
   getUnassignedOpps,
   getOpportunityStage,
   getChannel,
@@ -72,6 +75,29 @@ export function useUpdateKpiTarget() {
       qc.invalidateQueries({ queryKey: ['kpi-targets'] })
       qc.invalidateQueries({ queryKey: ['board-pack'] })
     },
+  })
+}
+
+// Manually-maintained KPIs (PR placements, contributed articles, hero case studies, MDF
+// claim rate, plus the RAG + trend measures). Same cache treatment as kpi_targets.
+export function useKpiManual() {
+  return useQuery({ queryKey: ['kpi-manual'], queryFn: getKpiManual, staleTime: 5 * 60 * 1000 })
+}
+
+export function useUpdateKpiManual() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args) => upsertKpiManual(args),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kpi-manual'] }),
+  })
+}
+
+// Organic traffic growth vs the prior quarter — region + quarter scoped like the rest.
+export function useOrganicTrafficGrowth() {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['organic-traffic-growth', filters.region, filters.quarter],
+    queryFn: () => getOrganicTrafficGrowth({ region: filters.region, quarter: filters.quarter }),
   })
 }
 
