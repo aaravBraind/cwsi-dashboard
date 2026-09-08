@@ -649,9 +649,150 @@ export async function getMetricSource(metricKey, filters = {}) {
   const spec = METRIC_SOURCES[metricKey]
   if (!spec) return null
 
+  // A RATE is a division, not a sum, so it has no rows of its own. Resolve each side
+  // instead and hand back both — the panel then shows "149 ÷ 783 = 19.0%" with each side
+  // openable. Both sides are ordinary registered metrics, so nothing is computed twice.
+  if (spec.kind === 'ratio') {
+    const [numerator, denominator] = await Promise.all([
+      getMetricSource(spec.num, filters),
+      getMetricSource(spec.den, filters),
+    ])
+    const n = numerator?.total ?? null
+    const d = denominator?.total ?? null
+    return {
+      metricKey, kind: 'ratio', label: spec.label, unit: 'rate',
+      note: spec.note || null, gapNote: spec.gapNote || null,
+      numMetric: spec.num, denMetric: spec.den,
+      numLabel: numerator?.label || spec.num, denLabel: denominator?.label || spec.den,
+      numTotal: n, denTotal: d,
+      total: d ? n / d : null,
+      hasData: Boolean(d),
+    }
+  }
+
+  // DISTINCT-COUNTED metrics. Outreach meetings and opportunities are deduplicated by key
+  // before counting — Salesforce writes one row per attendee, and one deal can be attributed
+  // to several sequences — so summing rows would over-count. The headline counts each thing
+  // ONCE; the per-sequence rows below can therefore add to MORE than the total, and the panel
+  // says so rather than reporting a false discrepancy.
+  if (spec.kind === 'distinct') {
+    const scope = (q, dateCol) => {
+      if (filters.quarter && filters.quarter !== 'ytd') {
+        q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+      } else {
+        q = q.eq('year', REPORTING_YEAR)
+      }
+      q = q.lte(dateCol, toDateCapIso())
+      if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+      return q
+    }
+    const isOpps = spec.from === 'outreachOppRows'
+    let raw = isOpps
+      ? await fetchAll(() => scope(supabase.from('v_outreach_attributed_opps')
+          .select('opp_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_name'])
+      : await fetchAll(() => scope(supabase.from('v_outreach_meetings_v2')
+          .select('meeting_key,sequence_name,region_code,year,quarter,activity_date'), 'activity_date'), ['meeting_key', 'sequence_name'])
+
+    // The Outreach view is only the three marketing workstreams, and these tiers are the
+    // OUTBOUND prospecting ones — the same two filters the page applies.
+    raw = raw.filter((r) => isMarketingSequence(r.sequence_name) && outreachSeqCategory(r.sequence_name) === 'Outbound prospecting')
+
+    const idOf = (r) => (isOpps ? r.opp_id : r.meeting_key)
+    const UNQ = 'Unqualified opp'
+    const valOf = (r) => {
+      const amt = Number(r.amount_eur) || 0
+      const open = !r.is_closed && r.stage_name !== UNQ ? amt : 0
+      const won = r.is_won ? amt : 0
+      if (spec.measure === 'won') return won
+      if (spec.measure === 'pipeline') return open
+      // Influenced pipeline is open PLUS won — a deal that closed was still influenced —
+      // so measuring only the open side under-reports it against its own headline.
+      if (spec.measure === 'openPlusWon') return open + won
+      return 1
+    }
+    // First occurrence of an id wins, matching how the page values a deal once.
+    const seen = new Map()
+    for (const r of raw) if (!seen.has(idOf(r))) seen.set(idOf(r), valOf(r))
+    const total = [...seen.values()].reduce((a, v) => a + v, 0)
+
+    const groups = [...groupBy(raw, (r) => r.sequence_name || null)]
+      .map(([gKey, gRows]) => {
+        const local = new Map()
+        for (const r of gRows) if (!local.has(idOf(r))) local.set(idOf(r), valOf(r))
+        return {
+          key: gKey ?? '(none)',
+          label: gKey ?? 'Unnamed sequence',
+          total: [...local.values()].reduce((a, v) => a + v, 0),
+          items: [...local.entries()].map(([id, v]) => ({
+            key: id, label: id, total: v, rowCount: 1,
+            rows: gRows.filter((r) => idOf(r) === id).map((r) => ({
+              date: isOpps ? r.created_date : r.activity_date,
+              value: v, region: r.region_code ?? null,
+            })).slice(0, 1),
+          })).filter((i) => i.total !== 0).sort((a, b) => b.total - a.total),
+        }
+      })
+      .filter((g) => g.total !== 0)
+      .sort((a, b) => b.total - a.total)
+
+    const overlapping = groups.reduce((a, g) => a + g.total, 0) !== total
+    return {
+      metricKey, label: spec.label, unit: spec.unit, note: spec.note || null,
+      groupLabel: 'Sequence', subLabel: isOpps ? 'Opportunity' : 'Meeting',
+      rowLabel: isOpps ? 'Created' : 'Date',
+      total, groups, hasData: groups.length > 0,
+      gapNote: overlapping
+        ? 'Each meeting or deal is counted ONCE in the total, but can be attributed to more than one sequence — so the sequence rows above add to more than the figure.'
+        : (spec.gapNote || null),
+    }
+  }
+
+  // A hand-entered KPI has no source rows because no system records it — the source is a
+  // person. The panel says exactly that, and shows who entered it and when.
+  if (spec.kind === 'manual') {
+    const manual = await getKpiManual()
+    const period = !filters.quarter || filters.quarter === 'ytd' ? 'fy' : filters.quarter
+    const row = manual?.[metricKey]?.[period] || {}
+    const textual = spec.textual === true
+    return {
+      metricKey, kind: 'manual', label: spec.label, unit: spec.unit,
+      note: spec.note || null, period,
+      value: textual ? row.value_text ?? null : row.value_num ?? null,
+      target: textual ? row.target_text ?? null : row.target_num ?? null,
+      updatedBy: row.updated_by || null,
+      updatedAt: row.updated_at ? String(row.updated_at).slice(0, 10) : null,
+      hasData: true,
+    }
+  }
+
+  // Quarter-on-quarter growth: two runs of the same scoped figure, so the "source" is the
+  // pair of quarters rather than a set of rows.
+  if (spec.kind === 'growth') {
+    const g = await getOrganicTrafficGrowth(filters)
+    return {
+      metricKey, kind: 'growth', label: spec.label, unit: 'rate',
+      note: spec.note || null,
+      current: g.current, prior: g.prior, priorQuarter: g.priorQuarter,
+      baseMetric: spec.base || null,
+      total: g.growth,
+      hasData: g.growth != null,
+      reason: g.reason,
+    }
+  }
+
   let rows
   if (spec.from === 'facts') {
-    rows = await fetchFacts(filters)
+    // Channel-scoped metrics must be scoped the SAME way the figure they explain is:
+    // getChannel() passes the channel through fetchFacts then drops excluded types, and
+    // the email figures are pinned to a campaign-key list rather than a channel.
+    rows = await fetchFacts({ ...filters, channel: spec.channel || null })
+    if (spec.keys && spec.keys.length) {
+      const keep = new Set(spec.keys)
+      rows = rows.filter((r) => keep.has(r.campaign_key))
+    }
+    if (spec.excludeTypes && spec.excludeTypes.length) {
+      rows = rows.filter((r) => !spec.excludeTypes.includes(r.campaign_type))
+    }
   } else if (spec.from === 'web') {
     rows = await fetchAll(
       () => applyWebFilters(
@@ -674,6 +815,61 @@ export async function getMetricSource(metricKey, filters = {}) {
       if (filters.quarter && filters.quarter !== 'ytd') q = q.eq('quarter', filters.quarter)
       return q
     }, ['campaign_key'])
+  } else if (spec.from === 'events') {
+    const [webinar, inPerson] = await Promise.all([
+      fetchAll(() => {
+        let q = supabase.from('v_event_daily')
+          .select('event_key,event_name,activity_date,region_code,year,quarter,registrants,attendees')
+        if (filters.quarter && filters.quarter !== 'ytd') {
+          q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+        } else {
+          q = q.gte('year', HISTORY_START_YEAR)
+        }
+        q = q.lte('activity_date', toDateCapIso())
+        if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+        return q
+      }, ['event_key']),
+      fetchAll(() => {
+        let q = supabase.from('fact_event_attendance').select('event_name,region_code,registered,attended')
+        if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+        return q
+      }, ['event_name', 'region_code']),
+    ])
+    // One shape, two halves — the headline adds the in-person attendee lists to the
+    // GoToWebinar figures, so the breakdown has to as well.
+    rows = [
+      ...webinar.map((r) => ({ ...r, kind: 'Webinars (GoToWebinar)' })),
+      ...inPerson.map((r) => ({
+        event_name: r.event_name, region_code: r.region_code, activity_date: null,
+        registrants: r.registered, attendees: r.attended, kind: 'In-person (attendee lists)',
+      })),
+    ]
+  } else if (spec.from === 'outreachSeq' || spec.from === 'outreachStep') {
+    // Outreach figures are a LIFETIME cadence snapshot, not a dated series — the platform
+    // reports running per-sequence counters, so they are region-scoped only and the quarter
+    // pill does not narrow them. Marketing sequences only, matching the Outreach page.
+    const seqRows = (await fetchAll(() => {
+      let q = supabase.from('v_outreach_sequence_current')
+        .select('sequence_id,sequence_name,region_code,prospects,opens,clicks,replies,meetings')
+      if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+      return q
+    }, ['sequence_id'])).filter((r) => isMarketingSequence(r.sequence_name))
+
+    if (spec.from === 'outreachSeq') {
+      rows = seqRows
+    } else {
+      const ids = seqRows.map((r) => r.sequence_id)
+      const nameById = new Map(seqRows.map((r) => [r.sequence_id, r.sequence_name]))
+      const stepRows = ids.length
+        ? await fetchAll(() => supabase.from('v_outreach_step_current')
+            .select('id,sequence_id,step_order,step_type,delivered,opens,clicks,replies,opt_outs')
+            .in('sequence_id', ids), ['id'])
+        : []
+      // Email steps only — the same basis the page's rates use (calls have no delivery).
+      rows = stepRows
+        .filter((r) => isEmailStep(r.step_type))
+        .map((r) => ({ ...r, sequence_name: nameById.get(r.sequence_id) || 'Unnamed sequence' }))
+    }
   } else if (spec.from === 'page') {
     const [from, to] = quarterWindow(filters.quarter)
     let q = supabase.from('v_linkedin_page')
@@ -720,8 +916,10 @@ export async function getMetricSource(metricKey, filters = {}) {
     label: spec.label,
     unit: spec.unit,
     note: spec.note || null,
+    gapNote: spec.gapNote || null,
     groupLabel: spec.group.label,
     subLabel: spec.sub.label,
+    rowLabel: spec.rowLabel || 'Date',
     total: rows.reduce((a, r) => a + val(r), 0),
     groups,
     hasData: groups.length > 0,

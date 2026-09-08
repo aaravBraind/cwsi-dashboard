@@ -47,21 +47,25 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
   const diff = d && shown != null ? shown - d.total : null
   const foots = diff == null || Math.abs(diff) < 0.01
 
+  // Defensive at every level: this component renders once per KPI, so an unexpected shape
+  // from any one metric must not take the whole register down with it.
   const csvRows = (d?.groups || []).flatMap((g) =>
-    g.items.flatMap((s) => s.rows.map((r) => ({ group: g.label, sub: s.label, date: r.date, region: r.region, value: r.value }))),
+    (g.items || []).flatMap((s) => (s.rows || []).map((r) => ({
+      group: g.label, sub: s.label, date: r.date, region: r.region, value: r.value,
+    }))),
   )
   const csvCols = [
     { header: d?.groupLabel || 'Group', get: (r) => r.group },
     { header: d?.subLabel || 'Item', get: (r) => r.sub },
-    { header: 'Date', get: (r) => r.date },
+    { header: d?.rowLabel || 'Date', get: (r) => r.date },
     { header: 'Region', get: (r) => r.region },
     { header: isMoney ? 'Contribution EUR' : 'Contribution', get: (r) => (isMoney ? csvMoney(r.value) : r.value) },
   ]
 
   // Totals for the summary strip — how many things actually contributed, which is the
   // first question after "how much".
-  const groupCount = d?.groups.length || 0
-  const itemCount = (d?.groups || []).reduce((a, g) => a + g.items.length, 0)
+  const groupCount = d?.groups?.length || 0
+  const itemCount = (d?.groups || []).reduce((a, g) => a + (g.items || []).length, 0)
   const share = (v) => (d?.total ? (v / d.total) * 100 : 0)
   const plural = (n, one) => `${num(n)} ${n === 1 ? one : `${one}s`}`
 
@@ -86,6 +90,97 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
         </button>
       )}
 
+      {open && d?.kind === 'ratio' && (
+        d.hasData ? (
+          <div className="srcbd-panel">
+            <div className="srcbd-top">
+              <div className="srcbd-ratio">
+                <span className="srcbd-total">{d.total == null ? '—' : `${(d.total * 100).toFixed(1)}%`}</span>
+                <span className="srcbd-eq">=</span>
+                <span className="srcbd-side">
+                  <strong>{num(d.numTotal)}</strong> {String(d.numLabel).toLowerCase()}
+                </span>
+                <span className="srcbd-eq">÷</span>
+                <span className="srcbd-side">
+                  <strong>{num(d.denTotal)}</strong> {String(d.denLabel).toLowerCase()}
+                </span>
+              </div>
+            </div>
+            <p className="srcbd-note">
+              This is a rate, so it has no records of its own — it divides two figures that do. Open either side to
+              see the campaigns behind it.{d.note ? ` ${d.note}` : ''}
+            </p>
+            <div className="srcbd-nested">
+              <SourceBreakdown metric={d.numMetric} value={d.numTotal} label={d.numLabel} compact />
+              <SourceBreakdown metric={d.denMetric} value={d.denTotal} label={d.denLabel} compact />
+            </div>
+          </div>
+        ) : (
+          <p className="srcbd-note">
+            This rate cannot be calculated at this region and quarter — the figure it divides by is zero.
+          </p>
+        )
+      )}
+
+      {/* Entered by hand — the honest answer is "a person typed it", with who and when. */}
+      {open && d?.kind === 'manual' && (
+        <div className="srcbd-panel">
+          <div className="srcbd-top">
+            <div className="srcbd-stats">
+              <span className="srcbd-total">
+                {d.value == null || d.value === ''
+                  ? 'Not entered yet'
+                  : d.unit === 'rate' ? `${(Number(d.value) * 100).toFixed(1)}%` : String(d.value)}
+              </span>
+              <span className="srcbd-meta">
+                {d.target != null && d.target !== '' && (
+                  <>target {d.unit === 'rate' ? `${(Number(d.target) * 100).toFixed(0)}%` : String(d.target)} · </>
+                )}
+                {String(d.period).toUpperCase()}
+              </span>
+            </div>
+          </div>
+          <p className="srcbd-note">
+            <strong>No system records this measure</strong> — it is entered by hand in this register, so the source
+            is a person rather than a feed. {d.note}
+            {d.updatedBy
+              ? ` Last set by ${d.updatedBy}${d.updatedAt ? ` on ${d.updatedAt}` : ''}.`
+              : ' No one has entered a figure for this period yet.'}
+          </p>
+        </div>
+      )}
+
+      {/* Growth compares the same scoped figure across two quarters. */}
+      {open && d?.kind === 'growth' && (
+        d.hasData ? (
+          <div className="srcbd-panel">
+            <div className="srcbd-top">
+              <div className="srcbd-ratio">
+                <span className="srcbd-total">{`${d.total >= 0 ? '+' : ''}${(d.total * 100).toFixed(1)}%`}</span>
+                <span className="srcbd-eq">=</span>
+                <span className="srcbd-side"><strong>{num(d.current)}</strong> this quarter</span>
+                <span className="srcbd-eq">vs</span>
+                <span className="srcbd-side"><strong>{num(d.prior)}</strong> in {String(d.priorQuarter).toUpperCase()}</span>
+              </div>
+            </div>
+            <p className="srcbd-note">{d.note}</p>
+            {d.baseMetric && (
+              <div className="srcbd-nested">
+                <SourceBreakdown metric={d.baseMetric} value={d.current} label="this quarter’s sessions" compact />
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="srcbd-note">
+            {d.reason === 'ytd'
+              ? 'Select a quarter — growth is measured against the quarter before it, so it has no meaning across the whole year.'
+              : d.reason === 'no-prior-quarter'
+                ? 'There is no earlier quarter in the reporting year to compare this one against.'
+                : 'No sessions were recorded in the prior quarter, so there is nothing to compare against.'}
+          </p>
+        )
+      )}
+
       {open && q.isLoading && (
         <div className="srcbd-panel">
           <div className="srcbd-skel" />
@@ -94,14 +189,19 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
         </div>
       )}
       {open && q.isError && <p className="srcbd-note warn">Could not load the breakdown — please try again.</p>}
-      {open && d && !d.hasData && (
+      {/* Belt and braces: an open panel must never render as nothing. Opening many at once
+          can leave a query briefly settled with no data, and silence reads as a bug. */}
+      {open && !q.isLoading && !q.isError && !d && (
+        <p className="srcbd-note">Still fetching the contributing records — reopen this if it does not appear.</p>
+      )}
+      {open && d && !d.hasData && !d.kind && (
         <p className="srcbd-note">
           Nothing contributed to {label || d.label} at this region and quarter — the figure is a genuine zero, not
           missing data.
         </p>
       )}
 
-      {open && d?.hasData && (
+      {open && d?.hasData && !d.kind && (
         <div className="srcbd-panel">
           {/* What the number is, and how much evidence sits behind it, in one line. */}
           <div className="srcbd-top">
@@ -133,7 +233,7 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
                   <tr key={g.key} className="srcbd-group">
                     <td>
                       <span className="srcbd-gname">{g.label}</span>
-                      <span className="srcbd-gcount">{plural(g.items.length, String(d.subLabel).toLowerCase())}</span>
+                      <span className="srcbd-gcount">{plural((g.items || []).length, String(d.subLabel).toLowerCase())}</span>
                     </td>
                     <td className="r mono srcbd-val">{fmt(g.total)}</td>
                     <td className="r">
@@ -143,7 +243,7 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
                       </span>
                     </td>
                   </tr>,
-                  ...g.items.map((s) => {
+                  ...(g.items || []).map((s) => {
                     const k = `${g.key}|${s.key}`
                     const isOpen = !!expanded[k]
                     return [
@@ -174,13 +274,13 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
                             <table className="tbl">
                               <thead>
                                 <tr>
-                                  <th>Date</th>
+                                  <th>{d.rowLabel || 'Date'}</th>
                                   <th>Region</th>
                                   <th className="r">{isMoney ? 'Contribution €' : 'Contribution'}</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {s.rows.map((r, i) => (
+                                {(s.rows || []).map((r, i) => (
                                   <tr key={i}>
                                     <td className="mono mono-d">{r.date || '—'}</td>
                                     <td style={{ opacity: 0.75 }}>{r.region || '—'}</td>
@@ -216,8 +316,8 @@ export default function SourceBreakdown({ metric, value, label, compact = false,
                   <>
                     The figure above reads <strong>{fmt(shown)}</strong>, which is {fmt(Math.abs(diff))}{' '}
                     {diff > 0 ? 'higher' : 'lower'} than these records add up to.
-                    {metric === 'totalMqls'
-                      ? ' That is the funnel floor described above, not a discrepancy: the headline is the larger of the Leads and MQL counts.'
+                    {d.gapNote
+                      ? ` ${d.gapNote}`
                       : ' That is not expected — please flag it, as it points to a fault in the dashboard rather than in the source data.'}
                   </>
                 )}

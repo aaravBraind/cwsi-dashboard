@@ -344,7 +344,8 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
               {rows.map((r, i) => {
                 if (r.t === 'cat')
                   return <tr className="cat" key={i}><td colSpan={4}>{r.label}</td></tr>
-                const traceable = r.t === 'live' && hasSource(r.key)
+                // Hand-entered rows are traceable too — their answer is "a person typed it".
+                const traceable = (r.t === 'live' || r.t === 'manual') && hasSource(r.key)
                 return [
                   <tr className={`kpi-row${traceable ? ' has-src' : ''}`} key={i}>
                     <td>

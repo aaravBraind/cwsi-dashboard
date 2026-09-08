@@ -622,6 +622,11 @@ body::before{
 }
 .srcbd-csv:hover{background:var(--hover);color:var(--text);border-color:var(--cwsi-blue);}
 
+.srcbd-ratio{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2);}
+.srcbd-ratio .srcbd-eq{color:var(--text-4);font-weight:600;}
+.srcbd-ratio .srcbd-side strong{color:var(--text);font-weight:700;font-size:14px;}
+.srcbd-nested{display:flex;flex-direction:column;gap:6px;padding:4px 14px 12px;}
+.srcbd-nested .srcbd-panel{margin-top:6px;}
 .srcbd-note{font-size:12px;color:var(--text-2);opacity:.85;margin:0;padding:10px 14px 0;line-height:1.55;}
 .srcbd-note.warn{color:var(--amber);opacity:1;}
 
