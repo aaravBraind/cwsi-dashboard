@@ -107,5 +107,11 @@ export async function runExport({ report, format, region, quarter }) {
     const { generateReportPpt } = await import('./gammaClient')
     return generateReportPpt(report, filters)
   }
+  // The verification workbook: every underlying record behind every dashboard figure,
+  // plus an index showing how each figure is reproduced from them.
+  if (format === 'XLSX') {
+    const { generateVerificationWorkbook } = await import('./verificationWorkbook')
+    return generateVerificationWorkbook(filters)
+  }
   throw new Error(`Unsupported export: ${report}/${format}`)
 }

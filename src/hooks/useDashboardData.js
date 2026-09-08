@@ -17,6 +17,7 @@ import {
   getKpiManual,
   upsertKpiManual,
   getOrganicTrafficGrowth,
+  getMetricSource,
   getUnassignedOpps,
   getOpportunityStage,
   getChannel,
@@ -75,6 +76,17 @@ export function useUpdateKpiTarget() {
       qc.invalidateQueries({ queryKey: ['kpi-targets'] })
       qc.invalidateQueries({ queryKey: ['board-pack'] })
     },
+  })
+}
+
+// "Where does this number come from?" — the contributing rows behind any registered
+// metric. Only fetched once the user actually opens a breakdown (`enabled`).
+export function useMetricSource(metricKey, enabled = true) {
+  const { filters } = useFilters()
+  return useQuery({
+    queryKey: ['metric-source', metricKey, filters.region, filters.quarter],
+    queryFn: () => getMetricSource(metricKey, { region: filters.region, quarter: filters.quarter }),
+    enabled: Boolean(enabled && metricKey),
   })
 }
 

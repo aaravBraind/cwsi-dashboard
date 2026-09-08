@@ -386,32 +386,57 @@ body::before{
 @media(max-width:1000px){.cols-2,.cols-3,.cols-2-3{grid-template-columns:minmax(0,1fr);}}
 
 /* HORIZONTAL FUNNEL */
+/* The funnel is a GRID whose rows are shared by every stage (label / value / extra), so a
+   stage with a long wrapping label cannot push its own number below its neighbours'.
+   Each stage adopts the parent's rows via `subgrid` — the alignment then holds at any
+   window width and for any label length, which per-stage flexbox could not do. */
 .h-funnel{
-  display:flex;align-items:stretch;gap:0;width:100%;
+  display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+  grid-template-rows:auto auto auto;
+  align-items:stretch;gap:0;width:100%;
   background:var(--bg-2);border-radius:10px;padding:6px;
   position:relative;
 }
 .h-funnel-stage{
-  flex:1;padding:14px 14px;display:flex;flex-direction:column;justify-content:center;
+  min-width:0;padding:14px 14px;
+  display:grid;grid-template-rows:subgrid;grid-row:1 / -1;
+  grid-template-columns:minmax(0,1fr);
+  align-content:start;justify-items:start;
   position:relative;
 }
 .h-funnel-stage:not(:last-child)::after{
-  content:'';position:absolute;right:-1px;top:50%;transform:translateY(-50%);
+  content:'';
+  grid-area:2 / 1;            /* the shared VALUE row — aligns the arrow with the numbers */
+  justify-self:end;align-self:center;
+  margin-right:-22px;         /* sit in the gap between stages */
   width:0;height:0;
-  border-top:9px solid transparent;
-  border-bottom:9px solid transparent;
-  border-left:9px solid var(--surface);
-  z-index:2;
+  border-top:7px solid transparent;
+  border-bottom:7px solid transparent;
+  border-left:7px solid var(--border-strong);
+  pointer-events:none;z-index:2;
 }
 .h-funnel-stage .stage-name{
   font-size:11px;color:var(--text-3);font-weight:600;
   letter-spacing:.08em;text-transform:uppercase;font-family:var(--mono);
-  margin-bottom:6px;
+  margin-bottom:8px;
+  grid-area:1 / 1;
+  display:flex;align-items:center;gap:2px;flex-wrap:wrap;
+  line-height:1.35;
+  letter-spacing:.05em;
+  /* Floor only — the shared subgrid row above is what guarantees alignment. */
+  min-height:1.4em;
+  align-self:start;
 }
+/* The default eye is sized for body text; in an 11px caption it forces a wrap and reads
+   heavy. Alignment survives a wrap now either way, but it should not wrap at usual widths. */
+.h-funnel-stage .stage-name .explain-btn{width:17px;height:17px;}
+.h-funnel-stage .stage-name .explain-btn .icon{width:12px;height:12px;}
 .h-funnel-stage .stage-val{
+  grid-area:2 / 1;
   font-size:24px;font-weight:800;letter-spacing:-0.02em;line-height:1;
 }
 .h-funnel-stage .stage-extra{
+  grid-area:3 / 1;
   font-size:11.5px;color:var(--text-3);margin-top:4px;
 }
 .h-funnel-conv{
@@ -539,6 +564,120 @@ body::before{
 .drill-row-btn:hover{color:var(--cwsi-blue-soft);}
 .drill-row-btn .chev{width:13px;height:13px;opacity:.65;transition:transform .18s ease;flex-shrink:0;}
 .drill-row-btn.is-open .chev{transform:rotate(90deg);opacity:1;}
+
+/* A funnel figure you can click to trace back to its campaigns. */
+.h-funnel-stage .stage-val-btn{
+  appearance:none;background:none;border:0;padding:0;cursor:pointer;
+  /* NOT `font:inherit` — that shorthand resets font-size/weight and was rendering these
+     figures at body size instead of the 24px/800 .stage-val sets. */
+  font-family:inherit;color:inherit;
+  /* Shrink to the number and stay left-aligned with the label above it — a button
+     otherwise stretches to fill its cell and centres its own text. */
+  justify-self:start;text-align:left;width:auto;
+  border-bottom:1px dashed var(--border-strong);
+  transition:color .15s,border-bottom-color .15s;
+}
+.h-funnel-stage .stage-val-btn:hover{color:var(--cwsi-blue-soft);border-bottom-color:var(--cwsi-blue);}
+.h-funnel-stage .stage-val-btn:focus-visible{outline:2px solid var(--cwsi-blue);outline-offset:3px;border-radius:2px;}
+.h-funnel-stage.is-active .stage-val-btn{color:var(--cwsi-blue-soft);border-bottom-style:solid;border-bottom-color:var(--cwsi-blue);}
+
+/* "Where does this number come from?" — the generic source breakdown.
+   Built to be READ AT A GLANCE: proportion bars carry the magnitude, the channel rows
+   sit visibly above their campaigns, and the verdict is a status strip rather than a
+   stray line of text — it is the point of the panel, not a footnote. */
+.srcbd{padding:6px 4px 10px;}
+.srcbd.is-compact{padding:0;}
+/* The register's breakdown row: no cell padding of its own, and no hover tint — it is a
+   panel, not a data row. */
+.kpi-reg tr.kpi-src-row > td{padding:0 14px 12px;border-top:0;}
+.kpi-reg tr.kpi-src-row:hover td{background:none;}
+.kpi-reg tr.kpi-row.has-src td{border-bottom:0;}
+.srcbd-panel{
+  margin-top:8px;border:1px solid var(--border);border-radius:10px;
+  background:rgba(255,255,255,0.015);overflow:hidden;
+}
+.srcbd-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  font-size:13px;color:var(--text);padding:2px 0 4px;
+}
+.srcbd-x{
+  appearance:none;background:none;border:0;cursor:pointer;color:var(--text-3);
+  font-size:20px;line-height:1;padding:0 4px;
+}
+.srcbd-x:hover{color:var(--text);}
+
+/* Summary strip: the figure being explained, and how much evidence sits behind it. */
+.srcbd-top{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding:12px 14px;border-bottom:1px solid var(--border);
+}
+.srcbd-stats{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0;}
+.srcbd-total{font-size:19px;font-weight:700;letter-spacing:-0.01em;color:var(--text);}
+.srcbd-meta{font-size:12px;color:var(--text-3);}
+.srcbd-csv{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  font:inherit;font-size:12px;font-weight:600;background:none;color:var(--text-2);cursor:pointer;
+  border:1px solid var(--border-strong);border-radius:7px;padding:5px 11px;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.srcbd-csv:hover{background:var(--hover);color:var(--text);border-color:var(--cwsi-blue);}
+
+.srcbd-note{font-size:12px;color:var(--text-2);opacity:.85;margin:0;padding:10px 14px 0;line-height:1.55;}
+.srcbd-note.warn{color:var(--amber);opacity:1;}
+
+/* Proportion bar — magnitude you can see without reading the number. */
+.srcbd-share{display:inline-flex;align-items:center;justify-content:flex-end;gap:9px;}
+.srcbd-bar{
+  width:62px;height:6px;border-radius:3px;flex-shrink:0;
+  background:rgba(255,255,255,0.07);overflow:hidden;
+}
+.srcbd-bar > span{display:block;height:100%;border-radius:3px;background:var(--cwsi-blue);min-width:2px;}
+.srcbd-bar.sub > span{background:rgba(20,113,230,0.5);}
+
+/* Channel rows sit above their campaigns: accent edge, brighter label, own ground. */
+.srcbd-tbl tr.srcbd-group td{
+  background:rgba(255,255,255,0.035);
+  border-top:1px solid var(--border-strong);
+  padding-top:11px;padding-bottom:11px;
+}
+.srcbd-tbl tr.srcbd-group td:first-child{box-shadow:inset 3px 0 0 var(--cwsi-blue);}
+.srcbd-gname{font-weight:700;color:var(--text);letter-spacing:.01em;}
+.srcbd-gcount{margin-left:8px;font-size:11.5px;color:var(--text-3);}
+.srcbd-tbl tr.srcbd-group .srcbd-val{font-weight:700;color:var(--text);}
+.srcbd-tbl tr.srcbd-item td:first-child{padding-left:26px;}
+.srcbd-tbl tr.srcbd-item.is-open td{background:rgba(20,113,230,0.05);}
+.srcbd-tbl tr.srcbd-rows > td{padding:0 0 8px 44px;background:rgba(255,255,255,0.02);}
+
+/* The verdict — did the evidence add up to the number on screen? */
+.srcbd-verdict{
+  display:flex;align-items:flex-start;gap:9px;
+  font-size:12px;line-height:1.5;padding:10px 14px;
+  border-top:1px solid var(--border);
+}
+.srcbd-verdict.ok{background:var(--green-bg);color:var(--green);}
+.srcbd-verdict.warn{background:var(--amber-bg);color:var(--amber);}
+.srcbd-verdict strong{font-weight:700;}
+/* The glyph must be painted from the STATE colour, not currentColor — setting
+   `background:currentColor` alongside `color` on the same element resolves both to the
+   same value and the tick disappears into its own disc. */
+.srcbd-verdict-icn{
+  flex-shrink:0;width:17px;height:17px;border-radius:50%;margin-top:1px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;line-height:1;
+  color:var(--bg-2);
+}
+.srcbd-verdict.ok .srcbd-verdict-icn{background:var(--green);}
+.srcbd-verdict.warn .srcbd-verdict-icn{background:var(--amber);}
+
+/* Loading placeholder — shaped like the table it becomes. */
+.srcbd-skel{
+  height:13px;margin:12px 14px;border-radius:4px;
+  background:linear-gradient(90deg,rgba(255,255,255,0.05),rgba(255,255,255,0.09),rgba(255,255,255,0.05));
+  background-size:200% 100%;animation:srcbdShimmer 1.2s ease-in-out infinite;
+}
+.srcbd-skel.short{width:40%;}
+@keyframes srcbdShimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+@media(prefers-reduced-motion:reduce){.srcbd-skel{animation:none;}}
 
 /* Collapsible callout — long explanatory notes stay available without pushing the
    actual figures below the fold. */

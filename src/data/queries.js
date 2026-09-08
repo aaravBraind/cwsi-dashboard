@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabaseClient'
 import { themeForCampaign, THEME_ORDER, themeMeta } from './themes'
 import { CURATED_CAMPAIGNS, CURATED_KEY_SET, EMAIL_FAMILIES, EMAIL_FAMILY_FACT_KEYS, emailFamilyOf, emailFamiliesFor } from './pinnedCampaigns'
 import { isSalesGenerated } from './attribution'
+import { METRIC_SOURCES } from './metricSources'
 import {
   GSC_PRIMARY_SITE,
   REPORTING_YEAR,
@@ -631,6 +632,154 @@ export async function updateKpiTarget(kpiKey, period, value) {
     .single()
   if (error) throw error
   return data
+}
+
+// ---- Where does this number come from? -------------------------------------
+// Margot, 6 Sep 2026: "someone who is going through the database should know where this
+// number is coming from, which campaign, LinkedIn or any other thing."
+//
+// One generic reader behind every figure. The metric declares its source and grouping in
+// metricSources.js; this fetches the contributing rows THROUGH THE SAME SCOPED FETCHERS the
+// dashboard figure uses — fetchFacts in particular, so the campaign region overrides are
+// applied identically — then groups them channel → campaign → the individual dated rows.
+//
+// Contributions of zero are dropped: a campaign that produced no MQLs is not part of the
+// answer to "where did the MQLs come from", and listing it buries the ones that are.
+export async function getMetricSource(metricKey, filters = {}) {
+  const spec = METRIC_SOURCES[metricKey]
+  if (!spec) return null
+
+  let rows
+  if (spec.from === 'facts') {
+    rows = await fetchFacts(filters)
+  } else if (spec.from === 'web') {
+    rows = await fetchAll(
+      () => applyWebFilters(
+        supabase.from('v_web_daily')
+          .select('activity_date,region_code,hostname,channel_group,sessions,engaged_sessions,key_events,users,page_views')
+          .ilike('hostname', '%cwsisecurity.com'),
+        filters,
+      ),
+      ['activity_date', 'region_code', 'hostname', 'channel_group'],
+    )
+  } else if (spec.from === 'ads') {
+    // The paid figures on screen come from Margot's authoritative LinkedIn table, NOT
+    // fact_channel_daily — and it is scoped by the campaign's own `quarter` and its
+    // multi-market `regions` array, not by an activity date. Reading the wrong table here
+    // would have shown a breakdown of 0 against a non-zero tile.
+    rows = await fetchAll(() => {
+      let q = supabase.from('linkedin_campaign_2026')
+        .select('campaign_key,campaign_name,region_code,regions,impressions,clicks,leads,quarter')
+      if (filters.region && filters.region !== 'all') q = q.contains('regions', [filters.region])
+      if (filters.quarter && filters.quarter !== 'ytd') q = q.eq('quarter', filters.quarter)
+      return q
+    }, ['campaign_key'])
+  } else if (spec.from === 'page') {
+    const [from, to] = quarterWindow(filters.quarter)
+    let q = supabase.from('v_linkedin_page')
+      .select('activity_date,region_code,page_key,followers_new_total,impressions_total,engagements_total')
+      .gte('activity_date', from).lte('activity_date', to)
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    rows = await fetchAll(() => q, ['activity_date', 'region_code', 'page_key'])
+  } else {
+    return null
+  }
+
+  if (spec.where) rows = rows.filter(spec.where)
+  // A metric can be built from SEVERAL columns — influenced pipeline is the gross profit on
+  // open opportunities PLUS the gross profit on won deals, and a breakdown that summed only
+  // the open side would report a false discrepancy against its own headline.
+  const cols = spec.columns || [spec.column]
+  const val = (r) => cols.reduce((a, c) => a + (Number(r[c]) || 0), 0)
+
+  // channel → campaign → dated rows, each level carrying what it contributed.
+  const groups = [...groupBy(rows, (r) => r[spec.group.field] ?? null)]
+    .map(([gKey, gRows]) => ({
+      key: gKey ?? '(none)',
+      label: gKey ?? spec.group.fallback,
+      total: gRows.reduce((a, r) => a + val(r), 0),
+      items: [...groupBy(gRows, (r) => r[spec.sub.field] ?? null)]
+        .map(([sKey, sRows]) => ({
+          key: sKey ?? '(none)',
+          label: sKey ?? spec.sub.fallback,
+          total: sRows.reduce((a, r) => a + val(r), 0),
+          rowCount: sRows.length,
+          rows: sRows
+            .map((r) => ({ date: r[spec.date] ?? null, value: val(r), region: r.region_code ?? null }))
+            .filter((r) => r.value !== 0)
+            .sort((a, b) => String(a.date).localeCompare(String(b.date))),
+        }))
+        .filter((s) => s.total !== 0)
+        .sort((a, b) => b.total - a.total),
+    }))
+    .filter((g) => g.total !== 0)
+    .sort((a, b) => b.total - a.total)
+
+  return {
+    metricKey,
+    label: spec.label,
+    unit: spec.unit,
+    note: spec.note || null,
+    groupLabel: spec.group.label,
+    subLabel: spec.sub.label,
+    total: rows.reduce((a, r) => a + val(r), 0),
+    groups,
+    hasData: groups.length > 0,
+  }
+}
+
+// ---- Raw source rows for the verification workbook -------------------------
+// Margot, 3 Sep: "What I'm looking for is all of the data that's feeding into all
+// numbers being displayed in the dashboard so I can verify whether the data displayed
+// is correct… I've tried verifying all of the data in the dashboard and it seems harder
+// than I expected."
+//
+// The per-panel drill-downs answer one figure at a time. This returns the WHOLE
+// underlying record set, so the export can hand over every row behind every number.
+// Everything is paginated through fetchAll — several of these exceed the 1,000-row
+// response cap, and a silently truncated sheet would be worse than no sheet at all.
+export async function getVerificationData(filters = {}) {
+  const y0 = `${HISTORY_START_YEAR}-01-01`
+  const cap = toDateCapIso()
+  const region = filters.region && filters.region !== 'all' ? filters.region : null
+  // Region-scope only the row sets that actually carry a region CODE. fact_channel_daily
+  // and fact_marketing_spend key region by numeric id, so they go in whole and the
+  // "Figures" sheet says so rather than quietly shipping a half-filtered sheet.
+  const byRegion = (q) => (region ? q.eq('region_code', region) : q)
+
+  const [deals, funnel, campaigns, web, linkedinAds, linkedinPage, meetings, emails, spend, targets, manual] =
+    await Promise.all([
+      fetchAll(() => byRegion(supabase.from('fact_opportunity')
+        .select('opp_id,opp_name,account_name,campaign_key,campaign_name,channel_name,campaign_type,region_code,stage_name,is_won,is_closed,amount_eur,margin_eur,created_date,close_date')
+        .gte('created_date', y0)), ['opp_id']),
+      fetchAll(() => byRegion(supabase.from('v_fact_enriched')
+        .select('fact_id,activity_date,campaign_key,campaign_name,channel_name,campaign_type,region_code,leads,mql_count,sql_count,created_opp_count,opp_count,closed_won_count,pipeline_value,closed_won_value,margin_value,pipeline_margin_value')
+        .gte('activity_date', y0).lte('activity_date', cap)), ['fact_id']),
+      fetchAll(() => supabase.from('dim_campaign')
+        .select('campaign_key,campaign_name,campaign_type,start_date,parent_id,parent_name,source_system,audience_size,number_sent')
+        .eq('is_current', true), ['campaign_key']),
+      fetchAll(() => byRegion(supabase.from('v_web_daily')
+        .select('activity_date,region_code,hostname,channel_group,sessions,engaged_sessions,key_events,users,page_views')
+        .gte('activity_date', y0).lte('activity_date', cap)
+        .ilike('hostname', '%cwsisecurity.com')), ['activity_date', 'region_code', 'hostname', 'channel_group']),
+      fetchAll(() => supabase.from('fact_channel_daily')
+        .select('fact_id,activity_date,campaign_key,region_id,source,spend,impressions,clicks,leads,mql_count,sql_count,pipeline_value,closed_won_value')
+        .gte('activity_date', y0).lte('activity_date', cap), ['fact_id']),
+      fetchAll(() => byRegion(supabase.from('v_linkedin_page')
+        .select('activity_date,region_code,page_key,followers_new_total,impressions_total,engagements_total,clicks_total,reactions_total,comments_total,reposts_total,page_views_total,unique_visitors_total')
+        .gte('activity_date', y0).lte('activity_date', cap)), ['activity_date', 'region_code', 'page_key']),
+      fetchAll(() => supabase.from('fact_meeting')
+        .select('meeting_id,subject,activity_date,contact_email,region_id,what_type')
+        .gte('activity_date', y0).lte('activity_date', cap), ['meeting_id']),
+      fetchAll(() => supabase.from('fact_ae_email')
+        .select('ae_email_id,email_name,sent_at,campaign_key,sent,delivered,unique_opens,total_opens,unique_clicks,total_clicks,opt_outs,hard_bounces,soft_bounces'), ['ae_email_id']),
+      fetchAll(() => supabase.from('fact_marketing_spend')
+        .select('spend_id,activity_date,quarter,budget_line,primary_audience,region_id,status,owner,amount,currency,notes,source'), ['spend_id']),
+      getKpiTargets(),
+      getKpiManual(),
+    ])
+
+  return { deals, funnel, campaigns, web, linkedinAds, linkedinPage, meetings, emails, spend, targets, manual }
 }
 
 // ---- Manually-maintained KPIs (CWSI FY26 reforecast, Sep 2026) -------------

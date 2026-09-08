@@ -15,6 +15,9 @@ const REPORTS = [
   { id: 'kpi', title: 'Full KPI Register', sub: 'Every KPI · actual vs target · status', formats: ['PDF', 'PPTX'] },
   { id: 'board', title: 'Board Pack', sub: 'Branded board pack — figures, detail + AI narrative', formats: ['BRANDED', 'PPTX'] },
   { id: 'pipeline', title: 'Pipeline Report', sub: 'Funnel + by-channel breakdown', formats: ['PDF', 'PPTX'] },
+  // Margot, 3 Sep: every record behind every figure, so the dashboard can be checked
+  // rather than trusted. Excel, not PDF — it exists to be filtered and summed.
+  { id: 'verification', title: 'All Underlying Data', sub: 'Every record behind every figure · for checking the dashboard', formats: ['XLSX'] },
 ]
 
 // Every report offers the same two branded routes:
@@ -22,7 +25,7 @@ const REPORTS = [
 //     by the browser's own print engine — vector, selectable text, no server.
 //   PPTX = the attractive, editable Gamma deck via n8n (preserve-mode, figures kept
 //     verbatim). 'BRANDED' is surfaced simply as "PDF".
-const FORMAT_LABEL = { BRANDED: 'PDF' }
+const FORMAT_LABEL = { BRANDED: 'PDF', XLSX: 'Excel' }
 const fmtLabel = (f) => FORMAT_LABEL[f] || f
 
 export default function Export() {
@@ -133,6 +136,14 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
               Renders an <strong>editable PowerPoint deck</strong> (.pptx) from the live figures + the latest source-checked AI narrative — kept verbatim, never paraphrased. Generate the narrative on the Board Pack page first for this scope so it's included.
             </div>
           )}
+          {format === 'XLSX' && (
+            <div className="modal-note">
+              Produces an <strong>Excel workbook</strong>: one sheet per data source (deals, campaign
+              funnel, web traffic, LinkedIn, email, meetings, spend), plus a <strong>Figures</strong> sheet
+              listing every headline number with the sheet and filter that reproduces it. Start there.
+              The <strong>Read me</strong> sheet covers the four things that make a hand tally differ.
+            </div>
+          )}
           {report !== 'board' && format === 'PDF' && (
             <div className="modal-note">
               Renders a <strong>CWSI-branded PDF</strong> (matches the on-screen design) — figures are pulled fresh for this scope and checked against the source data.
@@ -146,7 +157,7 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
           {/* The PDF is produced by the browser's own print-to-PDF, so the user finishes
               in the save dialog. Two settings there change the output, so say so up
               front rather than letting a plain-looking file be a surprise. */}
-          {format !== 'PPTX' && (
+          {format !== 'PPTX' && format !== 'XLSX' && (
             <div className="modal-note">
               Your browser's <strong>Save as PDF</strong> window will open. Choose <strong>Save as PDF</strong> as the destination, then under <strong>More settings</strong> tick <strong>Background graphics</strong> so the CWSI colours are included and untick <strong>Headers and footers</strong>. Your browser remembers these for next time.
             </div>
@@ -157,7 +168,7 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
         <div className="modal-foot">
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={busy}>
-            {busy ? 'Preparing…' : format === 'PPTX' ? 'Generate deck' : 'Generate PDF'}
+            {busy ? 'Preparing…' : format === 'PPTX' ? 'Generate deck' : format === 'XLSX' ? 'Generate workbook' : 'Generate PDF'}
           </button>
         </div>
       </div>

@@ -7,6 +7,8 @@ import { eur, num, pct, ratio, isNA } from '../../data/format'
 import { periodOf, scopeLabel, achievement, lightOf, targetAt, fmtTarget } from '../../data/kpiRegister'
 import { I } from '../icons'
 import Explain from '../Explain'
+import SourceBreakdown from '../SourceBreakdown'
+import { hasSource } from '../../data/metricSources'
 import MarketingBudget from '../MarketingBudget'
 import CurrentVsOngoing from '../CurrentVsOngoing'
 import { SALES_EXCLUDED_BY_DEFAULT, SALES_CAMPAIGN_LABELS } from '../../data/attribution'
@@ -53,6 +55,8 @@ function Body({ data }) {
   // excluded amount is always visible either way. See data/attribution.js.
   const sg = rawFunnel.salesGenerated
   const [excludeSales, setExcludeSales] = useState(SALES_EXCLUDED_BY_DEFAULT)
+  // Which funnel figure the user has asked to trace (null = none open).
+  const [src, setSrc] = useState(null)
   const applySplit = excludeSales && sg
   const funnel = applySplit
     ? {
@@ -218,12 +222,24 @@ function Body({ data }) {
         </div>
         <div className="panel-body">
           <div className="h-funnel">
-            <Stage name="MQLs" val={num(funnel.mql)} explainId="mql" />
-            <Stage name="SQLs" val={num(funnel.sql)} explainId="sql" />
-            <Stage name="Created Opportunities" val={isNA(funnel.createdOpps) ? 0 : num(funnel.createdOpps)} explainId="createdOpps" />
-            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? 0 : num(funnel.opp)} explainId="opportunities" />
-            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? 0 : num(funnel.closedWonCount)} explainId="closedWon" />
+            <Stage name="MQLs" val={num(funnel.mql)} explainId="mql" metric="totalMqls" active={src === 'totalMqls'} onPick={setSrc} />
+            <Stage name="SQLs" val={num(funnel.sql)} explainId="sql" metric="totalSqls" active={src === 'totalSqls'} onPick={setSrc} />
+            <Stage name="Created Opportunities" val={isNA(funnel.createdOpps) ? 0 : num(funnel.createdOpps)} explainId="createdOpps" metric="createdOpportunities" active={src === 'createdOpportunities'} onPick={setSrc} />
+            <Stage name="Qualified Opportunities" val={isNA(funnel.opp) ? 0 : num(funnel.opp)} explainId="opportunities" metric="opportunities" active={src === 'opportunities'} onPick={setSrc} />
+            <Stage name="Closed Won" val={isNA(funnel.closedWonCount) ? 0 : num(funnel.closedWonCount)} explainId="closedWon" metric="closedWonCount" active={src === 'closedWonCount'} onPick={setSrc} />
           </div>
+          <p className="panel-note" style={{ fontSize: 12, opacity: 0.7, margin: '10px 4px 0' }}>
+            Click any figure above to see the campaigns and channels it is made up of.
+          </p>
+          {src && (
+            <SourceBreakdown
+              metric={src}
+              label={FUNNEL_LABEL[src]}
+              value={FUNNEL_VALUE(funnel)[src]}
+              onClose={() => setSrc(null)}
+              alwaysOpen
+            />
+          )}
           <div className="h-funnel-conv">
             <span className="conv">▶ {pct(funnel.sql, funnel.mql)} MQL → SQL</span>
             <span className="conv">▶ {isNA(funnel.opp) ? 'SQL → Qualified n/a' : `${pct(funnel.opp, funnel.sql)} SQL → Qualified`}</span>
@@ -345,10 +361,43 @@ function Body({ data }) {
   )
 }
 
-const Stage = ({ name, val, extra, explainId }) => (
-  <div className="h-funnel-stage">
-    <div className="stage-name">{name}{explainId && <Explain id={explainId} align="left" />}</div>
-    <div className="stage-val">{val}</div>
-    {extra ? <div className="stage-extra">{extra}</div> : null}
-  </div>
-)
+// The headline each funnel breakdown must foot against, and how to name it.
+const FUNNEL_LABEL = {
+  totalMqls: 'MQLs',
+  totalSqls: 'SQLs',
+  createdOpportunities: 'Created Opportunities',
+  opportunities: 'Qualified Opportunities',
+  closedWonCount: 'Closed Won',
+}
+const FUNNEL_VALUE = (f) => ({
+  totalMqls: f.mql,
+  totalSqls: f.sql,
+  createdOpportunities: isNA(f.createdOpps) ? null : f.createdOpps,
+  opportunities: isNA(f.opp) ? null : f.opp,
+  closedWonCount: isNA(f.closedWonCount) ? null : f.closedWonCount,
+})
+
+// A funnel stage. Where the metric is one we can trace (metricSources.js), the tile itself
+// becomes the control for the breakdown below the funnel — Margot, 6 Sep: "someone going
+// through the dashboard should know where this number is coming from."
+const Stage = ({ name, val, extra, explainId, metric, active, onPick }) => {
+  const traceable = metric && hasSource(metric)
+  return (
+    <div className={`h-funnel-stage${traceable ? ' is-traceable' : ''}${active ? ' is-active' : ''}`}>
+      <div className="stage-name">{name}{explainId && <Explain id={explainId} align="left" />}</div>
+      {traceable ? (
+        <button
+          type="button"
+          className="stage-val stage-val-btn"
+          onClick={() => onPick(active ? null : metric)}
+          title={active ? 'Hide where this number comes from' : 'Show where this number comes from'}
+        >
+          {val}
+        </button>
+      ) : (
+        <div className="stage-val">{val}</div>
+      )}
+      {extra ? <div className="stage-extra">{extra}</div> : null}
+    </div>
+  )
+}

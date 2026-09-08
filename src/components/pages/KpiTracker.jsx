@@ -25,6 +25,8 @@ import { eur, num } from '../../data/format'
 import { buildKpiRegisterRows, periodOf, scopeLabel, achievement } from '../../data/kpiRegister'
 import { I } from '../icons'
 import Explain from '../Explain'
+import SourceBreakdown from '../SourceBreakdown'
+import { hasSource } from '../../data/metricSources'
 
 // Register row key → methodology-registry id (client "how we got this" eye-button).
 const REGISTER_EXPLAIN = {
@@ -342,8 +344,9 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
               {rows.map((r, i) => {
                 if (r.t === 'cat')
                   return <tr className="cat" key={i}><td colSpan={4}>{r.label}</td></tr>
-                return (
-                  <tr className="kpi-row" key={i}>
+                const traceable = r.t === 'live' && hasSource(r.key)
+                return [
+                  <tr className={`kpi-row${traceable ? ' has-src' : ''}`} key={i}>
                     <td>
                       <div className="metric-name">{r.label}{REGISTER_EXPLAIN[r.key] && <Explain id={REGISTER_EXPLAIN[r.key]} align="left" />}</div>
                       {r.ctx && <div className="metric-ctx">{r.ctx}</div>}
@@ -371,8 +374,17 @@ function Register({ f, web, events, attendance, outreach, outreachMeetings, link
                       )}
                     </td>
                     <td className="c">{statusCell(r)}</td>
-                  </tr>
-                )
+                  </tr>,
+                  // Every KPI we can trace carries its own source breakdown, on its own
+                  // full-width row so the table has room to be read.
+                  traceable && (
+                    <tr className="kpi-src-row" key={`${i}-src`}>
+                      <td colSpan={4}>
+                        <SourceBreakdown metric={r.key} value={r.num} label={r.label} compact />
+                      </td>
+                    </tr>
+                  ),
+                ]
               })}
             </tbody>
           </table>
