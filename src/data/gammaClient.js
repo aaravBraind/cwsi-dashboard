@@ -247,7 +247,8 @@ export function buildPipelinePrompt({ funnel, bySource }, filters = {}) {
         ['Closed-won (count)', real(f.closedWonCount, num)],
         ['Influenced pipeline (gross profit)', real(f.marginPipeline, eur)],
         ['Influenced pipeline — revenue basis (secondary)', real(f.pipeline, eur)],
-        ['Closed-won value (revenue)', real(f.closedWon, eur)],
+        ['Closed-won value (gross profit)', real(f.closedWon, eur)],
+        ['Closed-won value (revenue basis)', real(f.closedWonRevenue, eur)],
       ],
     )}`,
   )

@@ -23,7 +23,7 @@ const CAMPAIGN = { field: 'campaign_name', label: 'Campaign', fallback: 'No camp
 const CHANNEL = { field: 'channel_name', label: 'Channel', fallback: 'Other / Unmapped' }
 
 // Why a funnel-stage breakdown can legitimately not add up to its own headline.
-const FLOOR = 'The dashboard shows each funnel stage as at least as large as the next, so this figure can be slightly higher than the rows below add up to — it is the larger of the Leads, MQL and SQL counts. Leads and MQL are the same measure by definition (agreed 9 July).'
+const FLOOR = 'The dashboard shows each funnel stage as at least as large as the next — anyone who reached a later stage must have passed the earlier ones — so this figure can read slightly higher than its own rows add up to. Where that happens the panel says so and gives both numbers. MQLs are responded Salesforce campaign members; Leads and MQL are the same measure by definition (agreed 9 July).'
 
 const WEB_CHANNEL = 'Organic SEO'
 const WEB_EXCLUDE = ['Content/White Paper'] // reported on the Email page instead
@@ -43,18 +43,27 @@ const facts = (label, column, extra = {}) => ({
 
 export const METRIC_SOURCES = {
   // ---- Funnel counts -------------------------------------------------------
-  totalMqls: facts('MQLs', 'leads', { gapNote: FLOOR }),
-  totalSqls: facts('SQLs', 'sql_count'),
+  // MQLs are RESPONDED SALESFORCE CAMPAIGN MEMBERS (`mql_count`), not `leads`. `leads`
+  // additionally carries LinkedIn lead-gen form fills, which are not campaign members and
+  // must not appear in a figure the client reconciles against Salesforce (Margot, 18 Sep).
+  totalMqls: facts('MQLs', 'mql_count', { floorOver: ['mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  totalSqls: facts('SQLs', 'sql_count', { floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
   createdOpportunities: facts('Created opportunities', 'created_opp_count', {
     note: 'Every opportunity created in the period, at any stage — not only qualified ones.',
   }),
-  opportunities: facts('Qualified opportunities', 'opp_count'),
+  opportunities: facts('Qualified opportunities', 'opp_count', { floorOver: ['opp_count', 'closed_won_count'], gapNote: FLOOR }),
   closedWonCount: facts('Closed-won opportunities', 'closed_won_count'),
 
   // ---- Money ---------------------------------------------------------------
-  closedWonValue: facts('Closed-won value (revenue)', 'closed_won_value', {
+  closedWonValue: facts('Closed-won value (gross profit)', 'margin_value', {
     unit: 'money',
-    note: 'Revenue, not gross profit — this is the one money figure on the dashboard reported at full deal value.',
+    note: WON_GP_NOTE + ' This is the same set of deals, and the same figure, as influenced margin — closed-won states the outcome, influenced margin states the profit on it.',
+  }),
+  // The revenue basis, kept as an explicitly labelled secondary so the full deal value
+  // stays checkable against Salesforce rather than disappearing.
+  closedWonRevenue: facts('Closed-won value (revenue)', 'closed_won_value', {
+    unit: 'money',
+    note: 'Full deal value on won deals. Shown alongside the gross-profit figure, which is the reported basis.',
   }),
   influencedMargin: facts('Influenced margin (gross profit)', 'margin_value', {
     unit: 'money',
@@ -124,8 +133,8 @@ export const METRIC_SOURCES = {
 
   // ---- Website Performance — the Organic SEO channel, whitepapers excluded --
   // Scoped exactly as the SEO page scopes it, so the two can never disagree.
-  webTotalLeads: facts('Website: total leads', 'leads', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, gapNote: FLOOR }),
-  webSqls: facts('Website: SQLs', 'sql_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE }),
+  webTotalLeads: facts('Website: total leads', 'leads', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  webSqls: facts('Website: SQLs', 'sql_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
   webClosedOpps: facts('Website: closed-won opportunities', 'closed_won_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE }),
   webInfluencedPipeline: facts('Website: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, note: GP_NOTE,
@@ -137,8 +146,8 @@ export const METRIC_SOURCES = {
   webSqlToWon: { kind: 'ratio', label: 'Website: SQL → Closed/Won', num: 'webClosedOpps', den: 'webSqls' },
 
   // ---- Events Performance — the Events & Webinars channel ------------------
-  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, gapNote: FLOOR }),
-  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL }),
+  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
   eventsClosedOpps: facts('Events: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL }),
   eventsInfluencedPipeline: facts('Events: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, note: GP_NOTE,
@@ -228,8 +237,12 @@ export const METRIC_SOURCES = {
     note: 'Webinars (GoToWebinar) and in-person events (attendee lists) combined.' },
 
   // ---- Outreach outcomes, attributed by contact ----------------------------
-  // Counted ONCE each: Salesforce writes one row per meeting attendee, and one deal can be
-  // attributed to several sequences. Outbound prospecting sequences only.
+  // Counted ONCE each, because Salesforce writes one row per meeting ATTENDEE — a meeting with
+  // three attendees is three rows and one meeting. The de-duplication also spans sequences, but
+  // that is a safety net rather than a description of the data: within the three marketing
+  // workstreams no meeting and no opportunity is currently attributed to more than one sequence
+  // (verified 18 Sep — 5 meetings, 138 opportunities, all one-to-one), so per-sequence rows add
+  // to the total. Outbound prospecting sequences only.
   outreachMeetings: {
     kind: 'distinct', from: 'outreachMeetingRows', label: 'Meetings booked (outbound)', unit: 'count',
     note: 'Salesforce meetings attributed to outbound sequences, counted once per meeting rather than once per attendee.',
@@ -270,8 +283,8 @@ export const METRIC_SOURCES = {
   // ---- Email Performance — pinned to the four named campaign families ------
   // Scoped by campaign key, not by channel: these campaigns span the Email and SEO
   // channels, which is why the Email page pins them explicitly.
-  emailMqls: facts('Email: MQLs', 'leads', { keys: EMAIL_FAMILY_FACT_KEYS, gapNote: FLOOR }),
-  emailSqls: facts('Email: SQLs', 'sql_count', { keys: EMAIL_FAMILY_FACT_KEYS }),
+  emailMqls: facts('Email: MQLs', 'leads', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  emailSqls: facts('Email: SQLs', 'sql_count', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
   emailClosedOpps: facts('Email: closed-won opportunities', 'closed_won_count', { keys: EMAIL_FAMILY_FACT_KEYS }),
   emailInfluencedPipeline: facts('Email: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', keys: EMAIL_FAMILY_FACT_KEYS, note: GP_NOTE,

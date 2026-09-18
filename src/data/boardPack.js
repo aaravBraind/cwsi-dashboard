@@ -335,7 +335,7 @@ export async function getBoardPack(filters = {}) {
     add(`ch.${c.channel}.pipeline`, `${c.channel} pipeline`, c.pipeline, c.pipelineDisplay)
     if (real(c.mql) && c.mql > 0) add(`ch.${c.channel}.mql`, `${c.channel} MQLs`, c.mql, c.mqlDisplay)
     if (c.pipelineShare != null) add(`ch.${c.channel}.share`, `${c.channel} pipeline share`, c.pipelineShare * 100, c.pipelineShareDisplay)
-    if (real(c.closedWon) && c.closedWon > 0) add(`ch.${c.channel}.won`, `${c.channel} closed-won`, c.closedWon, c.closedWonDisplay)
+    if (real(c.closedWon) && c.closedWon > 0) add(`ch.${c.channel}.won`, `${c.channel} closed-won (gross profit)`, c.closedWon, c.closedWonDisplay)
   }
   for (const r of regions) {
     add(`rg.${r.region}.pipeline`, `${r.region} pipeline`, r.pipeline, r.pipelineDisplay)

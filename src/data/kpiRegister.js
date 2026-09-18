@@ -117,7 +117,11 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     has(f.marginPipeline)
       ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(f.marginPipeline), ctx: `gross profit on generated (open + closed-won) opportunities · ${eur(f.pipeline)} on the revenue basis`, key: 'influencedPipeline', num: f.marginPipeline }
       : { t: 'na', label: 'Influenced pipeline (gross profit)', ctx: 'open-deal gross profit arrives at the next data refresh', key: 'influencedPipeline' },
-    { t: 'live', label: 'Closed-won value (revenue)', val: eur(f.closedWon), ctx: 'won deal value — revenue basis, by close date', key: 'closedWonValue', num: f.closedWon },
+    // Gross profit, per the client's standing instruction that every financial figure is
+    // gross margin (20 Aug, restated 18 Sep). Revenue is stated alongside, not dropped.
+    { t: 'live', label: 'Closed-won value (gross profit)', val: eur(f.closedWon),
+      ctx: `gross profit on won deals, by close date · ${eur(f.closedWonRevenue)} on the revenue basis`,
+      key: 'closedWonValue', num: f.closedWon },
     has(f.margin)
       ? {
           t: 'live', label: 'Influenced margin (gross profit)',
@@ -132,7 +136,7 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
       ? { t: 'live', label: 'Cost per lead', val: money2(lie.cplForm), ctx: 'LinkedIn paid — the only channel with spend recorded; a blended CPL needs per-channel spend for the rest', key: 'costPerLead', num: Number(lie.cplForm) }
       : { t: 'na', label: 'Cost per lead', ctx: 'no data source yet — per-channel spend beyond LinkedIn is not recorded', key: 'costPerLead' },
     lie.roiPipeline != null && !isNA(lie.roiPipeline)
-      ? { t: 'live', label: 'Return on spend', val: `${Number(lie.roiPipeline).toFixed(1)}×`, ctx: 'LinkedIn paid — SF-attributed pipeline (revenue) ÷ spend; blended return needs per-channel spend', key: 'returnOnSpend', num: Number(lie.roiPipeline) }
+      ? { t: 'live', label: 'Return on spend', val: `${Number(lie.roiPipeline).toFixed(1)}×`, ctx: 'LinkedIn paid — SF-attributed influenced pipeline (gross profit) ÷ spend; blended return needs per-channel spend', key: 'returnOnSpend', num: Number(lie.roiPipeline) }
       : { t: 'na', label: 'Return on spend', ctx: 'no data source yet — per-channel spend beyond LinkedIn is not recorded', key: 'returnOnSpend' },
 
     // ── Paid & Digital Acquisition (the acquisition funnel; conversions shown once here) ──

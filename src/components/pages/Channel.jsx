@@ -163,13 +163,13 @@ function LinkedInSnapshot() {
           </div>
           <div className="kpis cols-3" style={{ marginTop: 14, marginBottom: 0 }}>
             <RoiKpi
-              label="ROI · influenced pipeline (revenue)"
+              label="ROI · influenced pipeline (gross profit)"
               explainId="linkedinRoi"
               val={roiStr(eff?.roiPipeline)}
               sub={isNA(eff?.pipeline) ? 'attribution pending' : `${eur(eff.pipeline)} pipeline ÷ ${eur(totals.spend)} spend`}
             />
             <RoiKpi
-              label="ROI · won revenue"
+              label="ROI · closed-won (gross profit)"
               val={roiStr(eff?.roiRevenue)}
               sub={isNA(eff?.closedWon) ? 'attribution pending' : `${eur(eff.closedWon)} closed-won ÷ ${eur(totals.spend)} spend`}
             />

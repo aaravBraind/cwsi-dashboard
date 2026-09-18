@@ -96,7 +96,7 @@ export async function assemblePipeline(filters) {
 // 'PDF' (kpi/pipeline) and 'BRANDED' (board) are the same branded print-to-PDF;
 // 'PPTX' is the Gamma deck. Clients are lazy-imported so the render libraries stay
 // off the dashboard bundle until an export is actually triggered.
-export async function runExport({ report, format, region, quarter }) {
+export async function runExport({ report, format, region, quarter, onProgress }) {
   const filters = { region, quarter }
 
   if (format === 'PDF' || format === 'BRANDED') {
@@ -106,6 +106,12 @@ export async function runExport({ report, format, region, quarter }) {
   if (format === 'PPTX') {
     const { generateReportPpt } = await import('./gammaClient')
     return generateReportPpt(report, filters)
+  }
+  // Every campaign/record behind every figure, for Q1-Q4 and year-to-date at once.
+  // Quarter is ignored: the report covers all periods by design.
+  if (format === 'COMPOSITION') {
+    const { generateCompositionReport } = await import('./compositionReport')
+    return generateCompositionReport({ region, onProgress })
   }
   // The verification workbook: every underlying record behind every dashboard figure,
   // plus an index showing how each figure is reproduced from them.

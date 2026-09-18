@@ -190,11 +190,16 @@ function funnelOf(rows) {
   const won = wonRaw
   const opp = Math.max(oppRaw, won)
   const sql = Math.max(sqlRaw, opp)
-  const leads = Math.max(leadsRaw, mqlRaw, sql)
+  // MQL = RESPONDED SALESFORCE CAMPAIGN MEMBERS, and nothing else (Margot, 18 Sep:
+  // "I specifically asked for the reporting to be based on campaign members (responded)").
+  // `leadsRaw` is deliberately NOT in this floor: the LinkedIn lead-gen feed writes `leads`
+  // without `mql_count`, so including it lifted the headline above the Salesforce campaign
+  // member count (11 form leads across NCSE / CSOC UK Event / CWSI & MSFT AI Webinar put
+  // Q2 at 662 against 651 members) and broke reconciliation against Salesforce — the exact
+  // problem she is reporting. Those form leads remain reported on the LinkedIn page, where
+  // they drive cost per form lead; they are simply not Salesforce MQLs.
+  const leads = Math.max(mqlRaw, sql)
   // MQL = Leads by definition (Margot, 9 Jul call — the lead/MQL distinction was dropped).
-  // Forcing equality here also absorbs the small asymmetry from non-Salesforce feeds (e.g.
-  // the LinkedIn lead-gen feed writes `leads` without `mql_count`), so the funnel reads
-  // Leads = MQL exactly on every page.
   const mql = leads
 
   // Influenced margin coverage: margin is gross profit (EUR) — Gross_Profit_Value__c,
@@ -250,7 +255,13 @@ function funnelOf(rows) {
     // (open opps counted per-opp at ingest; won deals via the margin_value row coverage).
     marginPipelineKnownOpps: openGpKnown + marginKnownDeals,
     marginPipelinePendingOpps: openGpPending + marginPendingDeals,
-    closedWon: sum(rows, 'closed_won_value'),
+    // CLOSED-WON IS GROSS PROFIT (Margot, 20 Aug "total pipeline created AND the amount
+    // closed, both on gross margin", restated 18 Sep "all financial figures ... should
+    // therefore also apply to closed-won deals"). Same won deals as before, valued on
+    // Salesforce Gross Profit instead of Amount. All 36 won 2026 deals carry gross profit,
+    // so nothing drops out of the total. Revenue stays available, explicitly labelled.
+    closedWon: wonGp,
+    closedWonRevenue: sum(rows, 'closed_won_value'),
     // Count of won deals (terminal funnel stage). NA (not 0) until the SF
     // workflow re-runs to populate closed_won_count.
     closedWonCount: wonRaw > 0 ? won : NA,
@@ -271,7 +282,9 @@ function funnelOf(rows) {
         marginPipeline:
           sum(sg.filter((r) => r.pipeline_margin_value != null), 'pipeline_margin_value') +
           sum(sg.filter((r) => r.margin_value != null), 'margin_value'),
-        closedWon: sum(sg, 'closed_won_value'),
+        // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+        closedWon: sum(sg.filter((r) => r.margin_value != null), 'margin_value'),
+        closedWonRevenue: sum(sg, 'closed_won_value'),
         margin: sum(sg.filter((r) => r.margin_value != null), 'margin_value'),
         createdOpps: sum(sg, 'created_opp_count'),
         campaigns: [...new Set(sg.map((r) => r.campaign_key).filter(Boolean))],
@@ -416,14 +429,18 @@ export function unmappedBreakdown(rows) {
       campaignType: rs[0]?.campaign_type || null,
       mql: sum(rs, 'mql_count'),
       pipeline: sum(rs, 'pipeline_value'),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
     }))
     .filter((c) => c.mql || c.pipeline || c.closedWon)
     .sort((a, b) => b.closedWon - a.closedWon || b.pipeline - a.pipeline)
   return {
     campaigns: byCampaign,
     pipeline: sum(un, 'pipeline_value'),
-    closedWon: sum(un, 'closed_won_value'),
+    // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+    closedWon: sum(un.filter((r) => r.margin_value != null), 'margin_value'),
+    closedWonRevenue: sum(un, 'closed_won_value'),
     count: byCampaign.length,
   }
 }
@@ -507,9 +524,16 @@ export async function getOverview(filters) {
   const byChannel = [...groupBy(rows, displayChannel)]
     .map(([channel, rs]) => ({
       channel,
+      // Gross profit is the reported basis, so the per-channel panel compares gross profit
+      // against gross profit rather than a revenue bar beside a gross-profit one.
+      marginPipeline:
+        sum(rs.filter((r) => r.pipeline_margin_value != null), 'pipeline_margin_value') +
+        sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
       // Generated pipeline = open + closed-won so Closed Won is always a subset (OV6).
       pipeline: sum(rs, 'pipeline_value') + sum(rs, 'closed_won_value'),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
       // Gross-profit counterpart. "Closed-Won" means gross profit on Campaigns, Events, Email,
       // SEO and the per-channel pages, so it has to mean gross profit here too — the client
       // asked for one basis across the dashboard, and the same label meaning two different
@@ -519,7 +543,7 @@ export async function getOverview(filters) {
       spend: naIfAllZero(rs, 'spend'),
       spendCurrency: 'GBP',
     }))
-    .sort((a, b) => b.pipeline - a.pipeline)
+    .sort((a, b) => b.marginPipeline - a.marginPipeline)
   return { funnel, byChannel, unmapped, hasData: rows.length > 0, rowCount: rows.length }
 }
 
@@ -570,7 +594,9 @@ export async function getBoardPackData(filters = {}) {
       sql: sum(rs, 'sql_count'),
       // Generated pipeline = open + closed-won so Closed Won is always a subset (OV6).
       pipeline: sum(rs, 'pipeline_value') + sum(rs, 'closed_won_value'),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
     }))
     .filter((c) => c.pipeline > 0 || c.mql > 0 || c.closedWon > 0)
     .sort((a, b) => b.pipeline - a.pipeline)
@@ -586,7 +612,9 @@ export async function getBoardPackData(filters = {}) {
       createdOpps: sum(rs, 'created_opp_count'),
       // Generated pipeline = open + closed-won so Closed Won is always a subset (OV6).
       pipeline: sum(rs, 'pipeline_value') + sum(rs, 'closed_won_value'),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
     }))
     .filter((r) => r.pipeline > 0 || r.mql > 0 || r.closedWon > 0)
     .sort((a, b) => b.pipeline - a.pipeline)
@@ -657,8 +685,8 @@ export async function getMetricSource(metricKey, filters = {}) {
       getMetricSource(spec.num, filters),
       getMetricSource(spec.den, filters),
     ])
-    const n = numerator?.total ?? null
-    const d = denominator?.total ?? null
+    const n = numerator?.displayedTotal ?? numerator?.total ?? null
+    const d = denominator?.displayedTotal ?? denominator?.total ?? null
     return {
       metricKey, kind: 'ratio', label: spec.label, unit: 'rate',
       note: spec.note || null, gapNote: spec.gapNote || null,
@@ -882,6 +910,18 @@ export async function getMetricSource(metricKey, filters = {}) {
   }
 
   if (spec.where) rows = rows.filter(spec.where)
+  // FLOORED figures: the dashboard shows each funnel stage as at least as large as the next,
+  // so what it DISPLAYS can exceed the sum of the contributing records. The records are still
+  // the right composition, but a report quoting only their sum would contradict the screen —
+  // which is exactly what this machinery exists to prevent. `floorOver` names the columns the
+  // floor maxes over, so both numbers are available: `total` (the records) and
+  // `displayedTotal` (what the dashboard shows).
+  let displayedTotal = null
+  if (spec.floorOver?.length) {
+    displayedTotal = Math.max(
+      ...spec.floorOver.map((c) => rows.reduce((a, r) => a + (Number(r[c]) || 0), 0)),
+    )
+  }
   // A metric can be built from SEVERAL columns — influenced pipeline is the gross profit on
   // open opportunities PLUS the gross profit on won deals, and a breakdown that summed only
   // the open side would report a false discrepancy against its own headline.
@@ -921,6 +961,7 @@ export async function getMetricSource(metricKey, filters = {}) {
     subLabel: spec.sub.label,
     rowLabel: spec.rowLabel || 'Date',
     total: rows.reduce((a, r) => a + val(r), 0),
+    displayedTotal,
     groups,
     hasData: groups.length > 0,
   }
@@ -1109,7 +1150,9 @@ export async function getPipeline(filters) {
           sum(rs.filter((r) => r.margin_value != null), 'margin_value')
         return v > 0 ? v : NA
       })(),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
       // Gross profit on won deals — the displayed basis for "Closed-Won" everywhere else, so
       // Pipeline by Source has to match or the same column header means two different things.
       margin: sum(rs, 'margin_value'),
@@ -1500,7 +1543,9 @@ export async function getChannel(channelName, filters, excludeTypes = null) {
         sql,
         createdOpps: sum(rs, 'created_opp_count'),
         pipeline: sum(rs, 'pipeline_value'),
-        closedWon: sum(rs, 'closed_won_value'),
+        // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+        closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+        closedWonRevenue: sum(rs, 'closed_won_value'),
         // Gross-profit counterparts, so the per-campaign table can sit on the same basis
         // as the tiles above it (Margot, 20 Aug: gross margin everywhere).
         marginPipeline: sum(rs, 'pipeline_margin_value'),
@@ -1593,7 +1638,9 @@ export async function getEmailReport(filters = {}) {
       audience: delivered > 0 ? delivered : NA, // deliveries across the family's sends
       audienceEmails: famEmails.length,
       oppValue: sum(rs, 'pipeline_value'),
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
       // Gross-profit basis (Margot, 20 Aug) — what the page's money columns now show.
       oppValueMargin: sum(rs, 'pipeline_margin_value'),
       margin: sum(rs, 'margin_value'),
@@ -1883,14 +1930,23 @@ export async function getLinkedInSnapshot(filters = {}) {
     const chRows = await fetchAll(() => {
       let q = supabase
         .from('v_fact_enriched')
-        .select('fact_id,region_code,pipeline_value,closed_won_value')
+        .select('fact_id,region_code,pipeline_value,closed_won_value,pipeline_margin_value,margin_value')
         .eq('channel_name', 'LinkedIn Paid')
         .gte('year', HISTORY_START_YEAR)
         .lte('activity_date', toDateCapIso())
       if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
       return q
     }, ['fact_id'])
-    attributed = { pipeline: sum(chRows, 'pipeline_value'), closedWon: sum(chRows, 'closed_won_value') }
+    // Gross profit is the reported basis dashboard-wide (Margot, 20 Aug + 18 Sep), so paid ROI
+    // divides gross profit by spend. Revenue retained for the labelled secondary line.
+    attributed = {
+      pipeline:
+        sum(chRows.filter((r) => r.pipeline_margin_value != null), 'pipeline_margin_value') +
+        sum(chRows.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWon: sum(chRows.filter((r) => r.margin_value != null), 'margin_value'),
+      pipelineRevenue: sum(chRows, 'pipeline_value') + sum(chRows, 'closed_won_value'),
+      closedWonRevenue: sum(chRows, 'closed_won_value'),
+    }
   } catch {
     /* attribution best-effort — leave ROI as NA rather than fabricate */
   }
@@ -2155,7 +2211,9 @@ export async function getEventsDetail(filters = {}) {
       pipelineCreatedMargin: sum(rs, 'created_opp_margin_value'), // …on the gross-profit basis
       pipeline: sum(rs, 'pipeline_value'),
       marginPipeline: sum(rs, 'pipeline_margin_value'), // gross-profit basis
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
       margin: sum(rs, 'margin_value'), // gross profit on won deals
     }
   }).sort((a, b) => b.pipeline - a.pipeline)
@@ -2306,7 +2364,9 @@ export async function getCampaignThemes(filters = {}) {
       pipelineCreatedMargin: sum(rs, 'created_opp_margin_value'), // …on the gross-profit basis
       pipeline: sum(rs, 'pipeline_value'),
       marginPipeline: sum(rs, 'pipeline_margin_value'), // gross-profit basis
-      closedWon: sum(rs, 'closed_won_value'),
+      // Closed-won on the GROSS-PROFIT basis (Margot, 20 Aug + 18 Sep). Revenue kept below, labelled.
+      closedWon: sum(rs.filter((r) => r.margin_value != null), 'margin_value'),
+      closedWonRevenue: sum(rs, 'closed_won_value'),
       margin: sum(rs, 'margin_value'), // gross profit on won deals
       wonCount: won,
       theme,

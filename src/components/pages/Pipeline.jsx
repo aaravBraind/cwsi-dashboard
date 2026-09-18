@@ -133,7 +133,12 @@ function Body({ data }) {
               ))}
               {outbound && (outbound.createdOpps > 0 || outbound.won > 0) && (
                 <tr style={{ opacity: 0.85 }}>
-                  <td>Outreach · outbound <span className="chip neu">contact-attributed</span></td>
+                  <td>Outreach · outbound{' '}
+                    <span
+                      className="chip neu"
+                      title="These deals are matched to outreach by contact, not by Salesforce campaign, so they are not in the campaign-linked opportunity feed that carries Gross Profit — only 8 of 138 have one. They are therefore shown at deal value and left out of the total above, rather than mixed into a gross-profit figure."
+                    >contact-attributed · revenue basis</span>
+                  </td>
                   <td className="r mono">—</td>
                   <td className="r mono">—</td>
                   <td className="r mono">{num(outbound.createdOpps)}</td>

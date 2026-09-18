@@ -166,19 +166,19 @@ export const METHODOLOGY = {
       'The basis changed on 11 Aug 2026 at CWSI’s request — figures before that date were shown on the REVENUE basis (full deal value), so earlier screenshots read higher. Gross profit depends on deal type: for CWSI’s own services revenue and margin are set equal in Salesforce, so gross profit can sit close to deal value today. Three pipeline terms are used consistently on the dashboard — New Pipeline Created (opportunities created this period), Influenced Pipeline (open + won — this) and Closed-Won (won only), all three on gross profit; only campaign-attributed opportunities are included, not the whole sales pipeline. Per-campaign tables show an “Open Pipeline” column alongside “Closed-Won”, so a campaign can show €0 open pipeline next to a Closed-Won value — its opportunities have already closed and been won, not missing data.',
   },
   closedWon: {
-    label: 'Closed Won (revenue)',
-    what: 'The REVENUE from won opportunities that marketing touched — deal value, not gross margin.',
-    source: 'won, campaign-attributed opportunities in Salesforce (the opportunity Amount field).',
-    calc: 'Sum of won deal values, converted to EUR when the data is synced using the Salesforce corporate exchange rate. Won deals are counted in the quarter they CLOSED.',
-    caveat: 'Revenue basis — the profit on these same deals is the separate Influenced Margin figure. A deal is only ever in one state at a time: once it closes and is won it moves OUT of open pipeline INTO Closed-Won. So seeing a Closed-Won value alongside €0 open pipeline is expected — it means those deals have already landed. It never appears in both at once.',
+    label: 'Closed Won (gross profit)',
+    what: 'The GROSS PROFIT on won opportunities that marketing touched. The full deal value is shown alongside it, labelled as the revenue basis.',
+    source: 'won, campaign-attributed opportunities in Salesforce — each opportunity’s Gross Profit Value (or Amount × Gross Profit Margin % where only the % is set). The secondary revenue figure uses the Amount field.',
+    calc: 'Sum of gross profit (EUR) across won deals, converted to EUR using the Salesforce corporate exchange rate. Won deals are counted in the quarter they CLOSED. A deal with no Gross Profit in Salesforce is excluded rather than counted at its full value — every won 2026 deal currently carries one, so nothing is excluded today.',
+    caveat: 'The basis changed on 18 September 2026 at CWSI’s request, so that every financial figure on the dashboard is gross profit; earlier screenshots show the higher revenue figure. This is the same set of deals, and the same number, as Influenced Margin — Closed-Won states the outcome, Influenced Margin states the profit on it. A deal is only ever in one state at a time: once it closes and is won it moves OUT of open pipeline INTO Closed-Won, so a Closed-Won value alongside €0 open pipeline is expected, not missing data.',
   },
   margin: {
     label: 'Influenced Margin (gross profit)',
-    what: 'The GROSS PROFIT on the marketing-attributed won deals — a profit basis, unlike Influenced Pipeline and Closed-Won, which are revenue.',
+    what: 'The GROSS PROFIT on the marketing-attributed won deals. Since September 2026 Closed-Won is reported on the same gross-profit basis, so the two figures are deliberately identical — this row names the profit, Closed-Won names the deals it came from.',
     source: 'the opportunity’s Gross Profit field in Salesforce (or amount × gross-profit-margin % where only the % is set).',
     calc: 'Sum of gross profit (EUR) across won deals. A deal with neither field filled is excluded — never counted as full revenue.',
     caveat:
-      'Gross profit depends on the type of deal: for CWSI’s OWN SERVICES, revenue and margin are set equal in Salesforce, while resold third-party product carries a real margin below the deal value. In the current 2026 data, 20 of the 24 won-deal records show gross profit equal to the full deal value and only 4 show a margin below it — a blended ~91% — so this figure presently tracks close to revenue. That is faithful to Salesforce, not a dashboard error. The useful signal is the GAP between this and Closed-Won: it widens as more resold product enters the marketing-influenced mix. Pending with CWSI: confirming those equal-value deals are genuinely all own-services rather than resold deals with cost not yet entered.',
+      'Gross profit depends on the type of deal: for CWSI’s OWN SERVICES, revenue and margin are set equal in Salesforce, while resold third-party product carries a real margin below the deal value. In the current 2026 data, 20 of the 24 won-deal records show gross profit equal to the full deal value and only 4 show a margin below it — a blended ~91% — so this figure presently tracks close to revenue. That is faithful to Salesforce, not a dashboard error. The useful signal is the GAP between this and the revenue basis shown beside Closed-Won: it widens as more resold product enters the marketing-influenced mix. Pending with CWSI: confirming those equal-value deals are genuinely all own-services rather than resold deals with cost not yet entered.',
   },
   retention: {
     label: 'Retained Contracts',

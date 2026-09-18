@@ -18,6 +18,8 @@ const REPORTS = [
   // Margot, 3 Sep: every record behind every figure, so the dashboard can be checked
   // rather than trusted. Excel, not PDF — it exists to be filtered and summed.
   { id: 'verification', title: 'All Underlying Data', sub: 'Every record behind every figure · for checking the dashboard', formats: ['XLSX'] },
+  // Margot, 8 Sep: the campaigns behind each number, for every period at once.
+  { id: 'composition', title: 'Full Calculation & Composition Report', sub: 'Every figure: source, method, and every contributing campaign · all periods in one document', formats: ['COMPOSITION'] },
 ]
 
 // Every report offers the same two branded routes:
@@ -25,7 +27,7 @@ const REPORTS = [
 //     by the browser's own print engine — vector, selectable text, no server.
 //   PPTX = the attractive, editable Gamma deck via n8n (preserve-mode, figures kept
 //     verbatim). 'BRANDED' is surfaced simply as "PDF".
-const FORMAT_LABEL = { BRANDED: 'PDF', XLSX: 'Excel' }
+const FORMAT_LABEL = { BRANDED: 'PDF', XLSX: 'Excel', COMPOSITION: 'Report' }
 const fmtLabel = (f) => FORMAT_LABEL[f] || f
 
 export default function Export() {
@@ -85,17 +87,22 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
   const [quarter, setQuarter] = useState(defaultQuarter)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  // The full report makes a few hundred queries; a silent minute reads as a hang, so it
+  // reports how far through it is.
+  const [prog, setProg] = useState(null)
 
   const go = async () => {
     setBusy(true)
     setErr(null)
+    setProg(null)
     try {
       const { runExport } = await import('../../data/exporters')
-      await runExport({ report, format, region, quarter })
+      await runExport({ report, format, region, quarter, onProgress: (d, t) => setProg({ d, t }) })
       onClose()
     } catch (e) {
       setErr(e?.message || 'Export failed — please try again.')
       setBusy(false)
+      setProg(null)
     }
   }
 
@@ -157,7 +164,18 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
           {/* The PDF is produced by the browser's own print-to-PDF, so the user finishes
               in the save dialog. Two settings there change the output, so say so up
               front rather than letting a plain-looking file be a surprise. */}
-          {format !== 'PPTX' && format !== 'XLSX' && (
+          {format === 'COMPOSITION' && (
+            <div className="modal-note">
+              <strong>Everything in one document.</strong> For every figure: where it comes from, how
+              it is calculated, why it might not tie — and <strong>every contributing campaign, event,
+              sequence and page</strong> across <strong>Q1, Q2, Q3 and the year to date</strong>, each
+              table stating its own total. Opens with an at-a-glance summary of all four periods. The
+              quarter chosen above is ignored; the report covers all of them. It reads the same
+              calculation code as the dashboard, so figures match the screen by construction. This
+              makes a few hundred queries and can take a minute or two.
+            </div>
+          )}
+          {format !== 'PPTX' && format !== 'XLSX' && format !== 'COMPOSITION' && (
             <div className="modal-note">
               Your browser's <strong>Save as PDF</strong> window will open. Choose <strong>Save as PDF</strong> as the destination, then under <strong>More settings</strong> tick <strong>Background graphics</strong> so the CWSI colours are included and untick <strong>Headers and footers</strong>. Your browser remembers these for next time.
             </div>
@@ -168,7 +186,12 @@ function ExportDialog({ report, title, format, defaultRegion, defaultQuarter, on
         <div className="modal-foot">
           <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button className="btn primary" onClick={go} disabled={busy}>
-            {busy ? 'Preparing…' : format === 'PPTX' ? 'Generate deck' : format === 'XLSX' ? 'Generate workbook' : 'Generate PDF'}
+            {busy
+              ? prog ? `Preparing… ${Math.round((prog.d / prog.t) * 100)}%` : 'Preparing…'
+              : format === 'PPTX' ? 'Generate deck'
+              : format === 'XLSX' ? 'Generate workbook'
+              : format === 'COMPOSITION' ? 'Generate report'
+              : 'Generate PDF'}
           </button>
         </div>
       </div>

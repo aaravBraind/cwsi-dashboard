@@ -202,7 +202,7 @@ function ChannelSection({ channels, meta }) {
     <Expandable
       icon={I.grid}
       title="Channel Contribution"
-      sub={`Pipeline & MQL share by channel · revenue basis (shares are basis-independent; the headline Influenced Pipeline is gross profit) · ${meta.regionLabel} · ${meta.quarterLabel}`}
+      sub={`Pipeline & MQL share by channel · closed-won on the gross-profit basis, pipeline on the revenue basis (shares are basis-independent; the headline Influenced Pipeline is gross profit) · ${meta.regionLabel} · ${meta.quarterLabel}`}
       chip={<span className="chip blue">{channels.length} channel{channels.length === 1 ? '' : 's'}</span>}
     >
       <ShareDonut title="Pipeline share" items={channels.map((c) => ({ label: c.channel, share: c.pipelineShare, display: c.pipelineShareDisplay }))} />
@@ -210,7 +210,7 @@ function ChannelSection({ channels, meta }) {
         <table className="tbl">
           <thead>
             <tr>
-              <th>Channel <Explain id="otherChannel" /></th><th className="r">MQLs <Explain id="mql" /></th><th className="r">Pipeline <Explain id="pipeline" /></th><th className="r">Closed-Won <Explain id="closedWon" /></th>
+              <th>Channel <Explain id="otherChannel" /></th><th className="r">MQLs <Explain id="mql" /></th><th className="r">Pipeline <Explain id="pipeline" /></th><th className="r">Closed-Won (gross profit) <Explain id="closedWon" /></th>
             </tr>
           </thead>
           <tbody>
@@ -346,7 +346,7 @@ function RegionSection({ regions }) {
               <th className="r">SQLs <Explain id="sql" /></th>
               <th className="r">Created Opportunities <Explain id="createdOpps" /></th>
               <th className="r">Pipeline <Explain id="pipeline" /></th>
-              <th className="r">Closed-Won <Explain id="closedWon" /></th>
+              <th className="r">Closed-Won (gross profit) <Explain id="closedWon" /></th>
             </tr>
           </thead>
           <tbody>

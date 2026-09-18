@@ -69,7 +69,7 @@ function Body({ data }) {
     : rawFunnel
   const { filters } = useFilters()
   const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
-  const maxPipe = Math.max(1, ...byChannel.map((c) => c.pipeline))
+  const maxPipe = Math.max(1, ...byChannel.map((c) => c.marginPipeline))
 
   // Outreach shown as an INDICATIVE group (P4/OV6): meetings & opps are attributed by
   // contact (a sequenced contact is on the opp), not by campaign, so they can overlap
@@ -151,19 +151,25 @@ function Body({ data }) {
               <span className="tl-dot" />{isNA(funnel.margin) ? 'n/a' : pctOf(funnel.margin, 'influencedMargin')}
             </span>
           </div>
-          <div className="kpi-label">Influenced Margin (gross profit) <Explain id="margin" /></div>
-          <div className="kpi-val">{isNA(funnel.margin) ? '—' : eur(funnel.margin)}</div>
+          {/* One figure, not two. Closed-won is now reported on the gross-profit basis
+              (Margot, 18 Sep), which makes it the same number as influenced margin — the
+              same won deals valued on the same Salesforce field. Showing both as separate
+              tiles would put one number on the page twice. The influenced-margin TARGET is
+              the target for exactly this measure, so it still scores against it, and the
+              named row survives in the KPI Tracker where she asked for it. */}
+          <div className="kpi-label">Closed-Won (gross profit) <Explain id="closedWon" /></div>
+          <div className="kpi-val">{isNA(funnel.margin) ? '—' : eur(funnel.closedWon)}</div>
           <div className="kpi-sub">
             {isNA(funnel.margin) ? (
               <NotAvailable
-                what="Influenced margin"
+                what="Closed-won gross profit"
                 why={`gross profit pending${funnel.marginPendingDeals ? ` for ${num(funnel.marginPendingDeals)} won deal${funnel.marginPendingDeals === 1 ? '' : 's'}` : ''}`}
               />
             ) : (
               <>
                 <span className="kpi-target">{tgtSub('influencedMargin')}</span>
                 <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                  of {isNA(funnel.margin) ? eur(0) : eur(funnel.margin)} closed-won (gross profit)
+                  {eur(funnel.closedWonRevenue)} on the revenue basis (full deal value)
                   {funnel.marginPendingDeals > 0 &&
                     ` · ${num(funnel.marginKnownDeals)} of ${num(funnel.marginKnownDeals + funnel.marginPendingDeals)} deals have gross profit · rest pending in Salesforce`}
                 </span>
@@ -291,7 +297,7 @@ function Body({ data }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Pipeline vs Closed-Won by Channel <Explain id="otherChannel" /></div>
-            <div className="panel-sub">Influenced pipeline against the revenue it converted into, per channel</div>
+            <div className="panel-sub">Influenced pipeline against the closed-won it converted into, per channel — both on gross profit</div>
           </div>
         </div>
         <div className="panel-body">
@@ -304,8 +310,8 @@ function Body({ data }) {
                 <div className="stack">
                   <div className="bar-row">
                     <div className="bar-label">Influenced pipeline</div>
-                    <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.pipeline / maxPipe) * 100}%` }} /></div>
-                    <div className="bar-val">{eur(c.pipeline)}</div>
+                    <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${(c.marginPipeline / maxPipe) * 100}%` }} /></div>
+                    <div className="bar-val">{eur(c.marginPipeline)}</div>
                   </div>
                   <div className="bar-row">
                     <div className="bar-label">Closed-won</div>
