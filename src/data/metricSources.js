@@ -260,11 +260,11 @@ export const METRIC_SOURCES = {
   },
   outreachClosedWon: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'won', label: 'Closed-won (outbound)', unit: 'money',
-    note: 'Won value of opportunities attributed to outbound sequences, each deal valued once. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
+    note: 'Gross profit on won opportunities attributed to outbound sequences, each deal valued once. Deal value is shown alongside it. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
   },
   outreachPipeline: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'openPlusWon', label: 'Influenced pipeline (outbound)', unit: 'money',
-    note: 'Open qualified opportunities PLUS those already won, attributed to outbound sequences by contact — so closed-won is always a subset. Unqualified deals are excluded and each deal is valued once. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
+    note: 'Gross profit on open qualified opportunities PLUS those already won, attributed to outbound sequences by contact — so closed-won is always a subset. Unqualified deals are excluded, each deal is valued once, and a deal with no gross profit in Salesforce contributes nothing rather than its full value. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
   },
 
   // ---- Marketing email platform (Account Engagement) -----------------------

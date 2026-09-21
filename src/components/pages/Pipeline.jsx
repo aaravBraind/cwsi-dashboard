@@ -136,15 +136,17 @@ function Body({ data }) {
                   <td>Outreach · outbound{' '}
                     <span
                       className="chip neu"
-                      title="These deals are matched to outreach by contact, not by Salesforce campaign, so they are not in the campaign-linked opportunity feed that carries Gross Profit — only 8 of 138 have one. They are therefore shown at deal value and left out of the total above, rather than mixed into a gross-profit figure."
-                    >contact-attributed · revenue basis</span>
+                      title="These deals are matched to outreach by contact rather than through a Salesforce campaign. Their gross profit is now read directly from Salesforce, so they sit on the same basis as every other figure; they stay out of the total above because the same deal can also be campaign-attributed and would otherwise be counted twice."
+                    >contact-attributed</span>
                   </td>
                   <td className="r mono">—</td>
                   <td className="r mono">—</td>
                   <td className="r mono">{num(outbound.createdOpps)}</td>
-                  {/* contact-attributed path carries deal value only (no per-opp GP yet) — labelled to avoid a silent basis mix */}
-                  <td className="r mono">{eur(outbound.pipeline)} <span style={{ opacity: 0.6 }}>(revenue)</span></td>
-                  <td className="r mono">{eur(outbound.won)}</td>
+                  {/* Gross profit since 21 Sep — the contact-opportunity feed now carries it, so this
+                      row is on the same basis as every other money figure. NA until that feed has
+                      re-run, rather than a false zero. */}
+                  <td className="r mono">{isNA(outbound.pipeline) ? '—' : eur(outbound.pipeline)}</td>
+                  <td className="r mono">{isNA(outbound.won) ? '—' : eur(outbound.won)}</td>
                 </tr>
               )}
               <tr className="total">

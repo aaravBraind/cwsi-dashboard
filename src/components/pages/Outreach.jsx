@@ -308,7 +308,7 @@ function Body({ data, meetings }) {
                 <td className="r mono">{eb && eb.delivered > 0 ? ratePct(eb.replyRate) : 'n/a'}</td>
                 <td className="r mono">{meetings ? num(meetings.tiers.outbound) : '—'}</td>
                 <td className="r mono">{meetings?.oppTiers?.outbound ? num(meetings.oppTiers.outbound.createdOpps) : '—'}</td>
-                <td className="r mono">{meetings?.oppTiers?.outbound ? eur(meetings.oppTiers.outbound.won) : '—'}</td>
+                <td className="r mono">{meetings?.oppTiers?.outbound && !isNA(meetings.oppTiers.outbound.won) ? eur(meetings.oppTiers.outbound.won) : '—'}</td>
               </tr>
             </tbody>
           </table>

@@ -768,7 +768,7 @@ export async function getMetricSource(metricKey, filters = {}) {
     const isOpps = spec.from === 'outreachOppRows'
     let raw = isOpps
       ? await fetchAll(() => scope(supabase.from('v_outreach_attributed_opps')
-          .select('opp_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_name'])
+          .select('opp_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id', 'sequence_name'])
       : await fetchAll(() => scope(supabase.from('v_outreach_meetings_v2')
           .select('meeting_key,sequence_name,region_code,year,quarter,activity_date'), 'activity_date'), ['meeting_key', 'sequence_name'])
 
@@ -779,7 +779,12 @@ export async function getMetricSource(metricKey, filters = {}) {
     const idOf = (r) => (isOpps ? r.opp_id : r.meeting_key)
     const UNQ = 'Unqualified opp'
     const valOf = (r) => {
-      const amt = Number(r.amount_eur) || 0
+      // GROSS PROFIT, matching the page. This path feeds the report and every "where does this
+      // number come from" panel, and it was left on amount_eur when the page moved to gross
+      // profit on 21 Sep — the same one-site-not-its-twin defect the client has reported four
+      // times this month, reintroduced here. A deal with no gross profit contributes nothing
+      // rather than its full value, so the breakdown foots to the figure above it.
+      const amt = r.margin_eur == null ? 0 : Number(r.margin_eur) || 0
       const open = !r.is_closed && r.stage_name !== UNQ ? amt : 0
       const won = r.is_won ? amt : 0
       if (spec.measure === 'won') return won
@@ -2902,7 +2907,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       .select('meeting_id,region_code,year,quarter,activity_date,contact_email'), 'activity_date'), ['meeting_id']),
     fetchAll(() => scope(supabase
       .from('v_outreach_attributed_opps')
-      .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur'), 'created_date'), ['opp_id', 'sequence_id']),
+      .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id', 'sequence_id']),
     // Quarter- and region-scoped, so the callout explaining the figure can never disagree with
     // the figure itself. Read from an all-time view, the card said 2 under Q2 while the sentence
     // beneath it still said 3.
@@ -2939,15 +2944,23 @@ export async function getOutreachAttributedMeetings(filters = {}) {
   // ---- Opportunities (OR9): distinct opps per tier + per sequence; pipeline = open &
   //      qualified, won = IsWon. Per-opp value counted once (an opp can span sequences). ----
   const UNQ = 'Unqualified opp'
-  const oppVal = new Map()             // opp_id -> { pipeline, won }
+  const oppVal = new Map()             // opp_id -> { pipeline, won, pipelineRev, wonRev }
   const oppOut = new Set(), oppExcl = new Set(), oppAny = new Set()
   const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
   for (const o of opps) {
     if (marketingOnly && !isMarketingSequence(o.sequence_name)) continue // 3 workstreams only (Margot 20 Jul)
     const amt = Number(o.amount_eur) || 0
-    const pipe = (!o.is_closed && o.stage_name !== UNQ) ? amt : 0
-    const won = o.is_won ? amt : 0
-    if (!oppVal.has(o.opp_id)) oppVal.set(o.opp_id, { pipeline: pipe, won })
+    // GROSS PROFIT is the reported basis here too, from 21 Sep — these deals now carry it
+    // (the contact-opportunity feed pulls Salesforce Gross Profit directly, so an Outreach deal
+    // no longer has to be campaign-linked to have a margin). A deal with no gross profit in
+    // Salesforce contributes NOTHING rather than its full value, exactly as everywhere else.
+    const gp = o.margin_eur == null ? null : Number(o.margin_eur) || 0
+    const open = !o.is_closed && o.stage_name !== UNQ
+    const pipe = open && gp != null ? gp : 0
+    const won = o.is_won && gp != null ? gp : 0
+    const pipeRev = open ? amt : 0
+    const wonRev = o.is_won ? amt : 0
+    if (!oppVal.has(o.opp_id)) oppVal.set(o.opp_id, { pipeline: pipe, won, pipelineRev: pipeRev, wonRev, gpKnown: gp != null })
     const cat = outreachSeqCategory(o.sequence_name)
     oppAny.add(o.opp_id)
     if (cat !== 'Broadcast / newsletter') oppExcl.add(o.opp_id)
@@ -2958,9 +2971,26 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     if (!ps.opps.has(o.opp_id)) { ps.opps.add(o.opp_id); ps.pipeline += pipe; ps.won += won }
   }
   const sumTier = (set) => {
-    let p = 0, w = 0
-    for (const id of set) { const v = oppVal.get(id); p += v.pipeline; w += v.won }
-    return { createdOpps: set.size, pipeline: p, won: w }
+    let p = 0, w = 0, pRev = 0, wRev = 0, known = 0
+    for (const id of set) {
+      const v = oppVal.get(id)
+      p += v.pipeline; w += v.won; pRev += v.pipelineRev; wRev += v.wonRev
+      if (v.gpKnown) known += 1
+    }
+    // pipeline/won are GROSS PROFIT; the revenue pair is kept for the labelled secondary line,
+    // and the coverage counts let the page say how many deals carry a gross profit at all.
+    // If NOT ONE deal in scope carries a gross profit, the feed has not been re-run yet. Return
+    // NA rather than a confident EUR 0 — a false zero on a money figure is worse than a stated
+    // gap, and silently falling back to revenue would reintroduce the mixed-basis problem the
+    // client raised in the first place.
+    const noCoverage = known === 0 && (pRev > 0 || wRev > 0)
+    return {
+      createdOpps: set.size,
+      pipeline: noCoverage ? NA : p,
+      won: noCoverage ? NA : w,
+      pipelineRevenue: pRev, wonRevenue: wRev,
+      gpKnownOpps: known, gpPendingOpps: set.size - known,
+    }
   }
 
   // ---- Merge meetings ∪ opps into one per-sequence row set ----
