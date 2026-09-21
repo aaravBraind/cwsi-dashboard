@@ -220,7 +220,11 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     organicGrowth?.growth != null
       ? { t: 'live', label: 'Organic traffic growth vs prior quarter',
           val: `${organicGrowth.growth >= 0 ? '+' : ''}${(organicGrowth.growth * 100).toFixed(1)}%`,
-          ctx: `${num(organicGrowth.current)} sessions this quarter vs ${num(organicGrowth.prior)} in ${String(organicGrowth.priorQuarter).toUpperCase()} · GA4`,
+          ctx: `${num(organicGrowth.current)} sessions this quarter vs ${num(organicGrowth.prior)} in ${String(organicGrowth.priorQuarter).toUpperCase()}`
+            + (organicGrowth.comparedOverDays
+                ? ` · like-for-like over the first ${num(organicGrowth.comparedOverDays)} days of each quarter, because this one is still running`
+                : '')
+            + ' · GA4',
           key: 'organicTrafficGrowth', num: organicGrowth.growth }
       : { t: 'na', label: 'Organic traffic growth vs prior quarter',
           ctx: organicGrowth?.reason === 'ytd'

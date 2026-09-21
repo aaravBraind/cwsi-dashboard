@@ -65,13 +65,57 @@ export function quarterWindow(quarter) {
 // 0 won; the monotonic floor then lifts Leads/MQL to match). Real figures are
 // untouched: open pipeline is dated by CreatedDate (past) and won deals can't close
 // in the future, so only those future-dated artifacts drop out.
+// The effective upper date bound for a read: the reporting to-date cap, narrowed
+// further when a caller asks for a shorter window (see comparableWindow below).
+function capIso(f = {}) {
+  const cap = toDateCapIso()
+  return f.maxDate && f.maxDate < cap ? f.maxDate : cap
+}
+
+// Start/end dates of a quarter in the reporting year.
+function quarterBounds(quarter) {
+  const n = Number(String(quarter).replace('q', ''))
+  return {
+    start: new Date(Date.UTC(REPORTING_YEAR, (n - 1) * 3, 1)),
+    end: new Date(Date.UTC(REPORTING_YEAR, n * 3, 0)),
+  }
+}
+
+// PARTIAL-PERIOD GUARD.
+//
+// Comparing an in-progress quarter against a completed one divides unequal windows and
+// understates the current period for almost every day of the quarter. It caused the
+// organic-traffic KPI to report a 32% FALL during a 68% rise (18 Sep): Q3 held 47 days of
+// data against Q2's 90, and the missing six weeks were reported as a decline.
+//
+// So a quarter still in progress is compared against the SAME NUMBER OF ELAPSED DAYS of the
+// prior quarter, rather than against its full total. Returns null when the current quarter is
+// complete (compare in full) or when there is no prior quarter.
+const DAY_MS = 86400000
+export function comparableWindow(quarter) {
+  const prev = priorQuarter(quarter)
+  if (!prev) return null
+  const { start, end } = quarterBounds(quarter)
+  const cap = new Date(`${toDateCapIso()}T00:00:00Z`)
+  if (cap >= end) return null // quarter complete — a full-quarter comparison is like-for-like
+  const elapsedDays = Math.floor((cap - start) / DAY_MS) + 1
+  if (elapsedDays <= 0) return null
+  const priorStart = quarterBounds(prev).start
+  return {
+    priorQuarter: prev,
+    elapsedDays,
+    // cap the PRIOR quarter at the same elapsed day, so both windows are equal length
+    priorMaxDate: new Date(priorStart.getTime() + (elapsedDays - 1) * DAY_MS).toISOString().slice(0, 10),
+  }
+}
+
 function applyFilters(q, f = {}) {
   if (f.quarter && f.quarter !== 'ytd') {
     q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(f.quarter).replace('q', '')))
   } else {
     q = q.gte('year', HISTORY_START_YEAR) // ytd: 2026 onward
   }
-  q = q.lte('activity_date', toDateCapIso()) // to-date cap, capped at Q2 2026 close (see note above)
+  q = q.lte('activity_date', capIso(f)) // to-date cap (see above), narrowed by f.maxDate for like-for-like comparisons
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   if (f.channel) q = q.eq('channel_name', f.channel)
   if (f.campaign && f.campaign !== 'all') q = q.eq('campaign_key', f.campaign)
@@ -573,11 +617,15 @@ function priorQuarter(quarter) {
 // raw set into the metric/lever/trace structure; this layer only aggregates.
 export async function getBoardPackData(filters = {}) {
   const prevQ = priorQuarter(filters.quarter)
+  // PARTIAL-PERIOD GUARD: the board pack's trend arrows divide this quarter by the prior one.
+  // Mid-quarter that compares unequal windows and shows every metric falling, so the prior
+  // quarter is capped at the same elapsed day. Same helper as the organic-growth KPI.
+  const win = comparableWindow(filters.quarter)
   // Retention (retained contracts + expansion) removed from the board pack per Margot
   // (9 Jul call) — so it is no longer fetched or traced here.
   const [rows, prevRows, stage] = await Promise.all([
     fetchFacts(filters),
-    prevQ ? fetchFacts({ ...filters, quarter: prevQ }) : Promise.resolve(null),
+    prevQ ? fetchFacts({ ...filters, quarter: prevQ, maxDate: win ? win.priorMaxDate : null }) : Promise.resolve(null),
     getOpportunityStage(filters),
   ])
 
@@ -623,6 +671,9 @@ export async function getBoardPackData(filters = {}) {
     funnel,
     prevFunnel,
     prevQuarter: prevQ,
+    // Set while the current quarter is in progress: the prior quarter was capped at the same
+    // elapsed day, so the trend arrows compare equal windows. The board pack states this.
+    prevComparedOverDays: win ? win.elapsedDays : null,
     byChannel,
     byRegion,
     stage, // { stages, snapshotDate, hasData } — open-pipeline snapshot (region-scoped)
@@ -843,6 +894,22 @@ export async function getMetricSource(metricKey, filters = {}) {
       if (filters.quarter && filters.quarter !== 'ytd') q = q.eq('quarter', filters.quarter)
       return q
     }, ['campaign_key'])
+  } else if (spec.from === 'aeEmail') {
+    // The three marketing-platform email rates were live on screen but had NO traceability
+    // entry, so "every number is traceable" was overstated. They are read through
+    // getAeEmailEngagement itself rather than re-querying v_ae_email, so the breakdown is
+    // scoped exactly as the figure above it — the quarter pill selects CAMPAIGNS, not send
+    // dates (a send-date filter emptied Q1 entirely, the bug reported on 20 Aug).
+    const ae = await getAeEmailEngagement(filters)
+    rows = (ae?.emails || []).map((e) => ({
+      campaign_name: e.campaignName,
+      email_name: e.name,
+      sent_date: e.sentDate,
+      delivered: e.delivered,
+      unique_opens: e.uniqueOpens,
+      unique_clicks: e.uniqueClicks,
+      opt_outs: e.optOuts,
+    }))
   } else if (spec.from === 'events') {
     const [webinar, inPerson] = await Promise.all([
       fetchAll(() => {
@@ -1078,9 +1145,13 @@ export async function upsertKpiManual({ kpiKey, period, field = 'value', kind = 
 export async function getOrganicTrafficGrowth(filters = {}) {
   const prevQ = priorQuarter(filters.quarter)
   if (!prevQ) return { growth: null, current: null, prior: null, priorQuarter: null, reason: filters.quarter === 'ytd' || !filters.quarter ? 'ytd' : 'no-prior-quarter' }
+  // PARTIAL-PERIOD GUARD: while the quarter is in progress, compare it against the same
+  // number of elapsed days of the prior quarter. Dividing a part-quarter by a whole one
+  // reported a 32% fall during a 68% rise (18 Sep) — see comparableWindow.
+  const win = comparableWindow(filters.quarter)
   const [cur, prior] = await Promise.all([
     getWebTraffic(filters),
-    getWebTraffic({ ...filters, quarter: prevQ }),
+    getWebTraffic({ ...filters, quarter: prevQ, maxDate: win ? win.priorMaxDate : null }),
   ])
   const c = Number(cur?.totals?.sessions) || 0
   const p = Number(prior?.totals?.sessions) || 0
@@ -1089,6 +1160,9 @@ export async function getOrganicTrafficGrowth(filters = {}) {
     current: c,
     prior: p,
     priorQuarter: prevQ,
+    // when set, both sides cover this many days — surfaced so the UI can state the basis
+    comparedOverDays: win ? win.elapsedDays : null,
+    partialPeriod: !!win,
     reason: p > 0 ? null : 'no-prior-sessions',
   }
 }
@@ -3037,7 +3111,7 @@ function applyWebFilters(q, f = {}) {
   } else {
     q = q.gte('year', HISTORY_START_YEAR)
   }
-  q = q.lte('activity_date', toDateCapIso()) // to-date cap — GA4/SEO stop at the reporting window end
+  q = q.lte('activity_date', capIso(f)) // to-date cap — GA4/SEO stop at the reporting window end
   if (f.region && f.region !== 'all') q = q.eq('region_code', f.region)
   return q
 }

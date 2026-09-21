@@ -168,6 +168,9 @@ export const METRIC_SOURCES = {
   // ---- Quarter-on-quarter growth -------------------------------------------
   organicTrafficGrowth: {
     kind: 'growth', label: 'Organic traffic growth vs prior quarter', base: 'totalOrganicTraffic',
+    // While a quarter is still running it is compared against the SAME number of elapsed days
+    // of the prior quarter. Dividing a part-quarter by a whole one reported a 32% fall during
+    // a 68% rise (18 Sep), and understates the current quarter on almost every day of it.
     note: 'Measured against the quarter before the one selected, so it is blank for Q1 (no earlier quarter in the reporting year) and for the year-to-date view (not a quarter).',
   },
 
@@ -253,16 +256,52 @@ export const METRIC_SOURCES = {
   },
   outreachCreatedOpps: {
     kind: 'distinct', from: 'outreachOppRows', label: 'Opportunities created (outbound)', unit: 'count',
-    note: 'Opportunities attributed to outbound sequences by contact, counted once per deal.',
+    note: 'Opportunities attributed to outbound sequences by contact, counted once per deal. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
   },
   outreachClosedWon: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'won', label: 'Closed-won (outbound)', unit: 'money',
-    note: 'Won value of opportunities attributed to outbound sequences, each deal valued once.',
+    note: 'Won value of opportunities attributed to outbound sequences, each deal valued once. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
   },
   outreachPipeline: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'openPlusWon', label: 'Influenced pipeline (outbound)', unit: 'money',
-    note: 'Open qualified opportunities PLUS those already won, attributed to outbound sequences by contact — so closed-won is always a subset. Unqualified deals are excluded and each deal is valued once.',
+    note: 'Open qualified opportunities PLUS those already won, attributed to outbound sequences by contact — so closed-won is always a subset. Unqualified deals are excluded and each deal is valued once. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
   },
+
+  // ---- Marketing email platform (Account Engagement) -----------------------
+  // Scoped to the named campaigns exactly as the Email page and the KPI Tracker scope them.
+  // Each rate resolves both sides, so "60% open rate" opens as opens ÷ delivered with every
+  // contributing email listed.
+  aeDelivered: {
+    label: 'Emails delivered (marketing platform)', from: 'aeEmail', column: 'delivered', unit: 'count',
+    group: { field: 'campaign_name', label: 'Campaign', fallback: 'Unattributed' },
+    sub: { field: 'email_name', label: 'Email', fallback: 'Unnamed email' }, date: 'sent_date',
+    note: 'Emails the platform confirmed as delivered — sends minus hard and soft bounces. The denominator for all three rates below.',
+  },
+  aeUniqueOpens: {
+    label: 'Unique opens (marketing platform)', from: 'aeEmail', column: 'unique_opens', unit: 'count',
+    group: { field: 'campaign_name', label: 'Campaign', fallback: 'Unattributed' },
+    sub: { field: 'email_name', label: 'Email', fallback: 'Unnamed email' }, date: 'sent_date',
+    note: 'People who opened, counted once each however many times they opened. Opens are pixel events, so they undercount where images are blocked.',
+  },
+  aeUniqueClicks: {
+    label: 'Unique clicks (marketing platform)', from: 'aeEmail', column: 'unique_clicks', unit: 'count',
+    group: { field: 'campaign_name', label: 'Campaign', fallback: 'Unattributed' },
+    sub: { field: 'email_name', label: 'Email', fallback: 'Unnamed email' }, date: 'sent_date',
+    note: 'People who clicked, counted once each however many links they clicked.',
+  },
+  aeOptOuts: {
+    label: 'Unsubscribes (marketing platform)', from: 'aeEmail', column: 'opt_outs', unit: 'count',
+    group: { field: 'campaign_name', label: 'Campaign', fallback: 'Unattributed' },
+    sub: { field: 'email_name', label: 'Email', fallback: 'Unnamed email' }, date: 'sent_date',
+    note: 'People who unsubscribed from an email in these campaigns.',
+  },
+  emailOpenRate: { kind: 'ratio', label: 'Open rate (marketing email)', num: 'aeUniqueOpens', den: 'aeDelivered',
+    note: 'Unique opens ÷ delivered — the platform basis, so it cannot exceed 100% per person.' },
+  emailCtr: { kind: 'ratio', label: 'Click-through rate (marketing email)', num: 'aeUniqueClicks', den: 'aeDelivered',
+    note: 'People who clicked ÷ delivered.' },
+  unsubscribeRate: { kind: 'ratio', label: 'Unsubscribe rate (marketing email)', num: 'aeOptOuts', den: 'aeDelivered',
+    note: 'Opt-outs ÷ delivered.' },
+
 
   // ---- Entered by hand — no system records these ---------------------------
   // The honest answer to "where does this number come from" is "a person typed it", so

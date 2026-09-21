@@ -51,7 +51,7 @@ const field = (c) => FIELD_LABEL[c] || c
 // Where each figure sits in the report, matching the KPI Tracker's own order.
 export const SECTIONS = [
   ['Commercial outcomes', ['totalMqls', 'totalSqls', 'createdOpportunities', 'opportunities',
-    'closedWonCount', 'influencedPipeline', 'closedWonValue', 'influencedMargin',
+    'closedWonCount', 'influencedPipeline', 'closedWonValue', 'closedWonRevenue', 'influencedMargin',
     'mqlToSql', 'sqlToWon', 'overallConversion']],
   ['Paid media — LinkedIn Ads', ['impressions', 'clicks']],
   ['Organic social — LinkedIn company page', ['pageImpressions', 'pageEngagements', 'engagementRate', 'followerGrowth']],
@@ -60,7 +60,10 @@ export const SECTIONS = [
     'webClosedOpps', 'webInfluencedPipeline', 'webInfluencedMargin',
     'organicEngagementTime', 'websiteIntegrity']],
   ['Email', ['emailMqls', 'emailSqls', 'emailMqlToSql', 'emailSqlToWon', 'emailClosedOpps',
-    'emailInfluencedPipeline', 'emailInfluencedMargin']],
+    'emailInfluencedPipeline', 'emailInfluencedMargin',
+    // marketing-platform engagement — live on screen since Aug, traceable since 20 Sep
+    'aeDelivered', 'aeUniqueOpens', 'aeUniqueClicks', 'aeOptOuts',
+    'emailOpenRate', 'emailCtr', 'unsubscribeRate']],
   ['Events', ['registrations', 'eventRegistrants', 'eventAttendees', 'attendanceRate',
     'eventsMqls', 'eventsMqlRaw', 'eventsSqls', 'mqlToSqlEvents', 'eventsSqlToWon',
     'eventsClosedOpps', 'eventsInfluencedPipeline', 'eventsInfluencedMargin']],
@@ -80,6 +83,7 @@ export const COMPOSITION_FIGURES = new Set([
   'totalOrganicTraffic', 'socialSessions', 'impressions', 'clicks',
   'pageImpressions', 'pageEngagements', 'followerGrowth',
   'eventRegistrants', 'eventAttendees', 'registrations',
+  'aeDelivered', 'aeUniqueOpens', 'aeUniqueClicks', 'aeOptOuts',
   'outreachProspects', 'outreachDelivered', 'outreachOpens', 'outreachClicks',
   'outreachReplies', 'outreachOptOuts',
   'outreachMeetings', 'outreachCreatedOpps', 'outreachClosedWon', 'outreachPipeline',
