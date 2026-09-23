@@ -44,7 +44,7 @@ export function download(content, filename, mime) {
 // scoped figures, mirroring the dashboard pages.
 
 export async function assembleKpiRegister(filters) {
-  const [kpi, webRes, events, evtRes, targets, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailReport, webChannel, eventsChannel, linkedinPage, manual, organicGrowth] = await Promise.all([
+  const [kpi, webRes, events, evtRes, targets, outreach, outreachMeetings, linkedin, aeEmail, eventAttendance, emailReport, webChannel, eventsChannel, webinarChannel, linkedinPage, manual, organicGrowth] = await Promise.all([
     getKpiTracker(filters),
     getWebTraffic(filters),
     getEventTypeFunnel(filters),
@@ -57,7 +57,9 @@ export async function assembleKpiRegister(filters) {
     getEventAttendance(filters),
     getEmailReport(filters),
     getChannel('Organic SEO', filters, ['Content/White Paper']),
-    getChannel('Events & Webinars', filters),
+    // in-person events and webinars separately, exactly as the KPI Tracker scopes them
+    getChannel('Events & Webinars', filters, ['Webinar']),
+    getChannel('Events & Webinars', filters, null, ['Webinar']),
     // linkedinPage was missing here, so the LinkedIn engagement-rate and follower-growth
     // rows exported as "not available yet" while the screen showed real figures.
     getLinkedInPage(filters),
@@ -78,6 +80,7 @@ export async function assembleKpiRegister(filters) {
     emailFunnel: emailReport?.totals,
     webFunnel: webChannel?.totals,
     eventsFunnel: eventsChannel?.totals,
+    webinarFunnel: webinarChannel?.totals,
     linkedinPage,
     manual,
     organicGrowth,

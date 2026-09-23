@@ -15,7 +15,7 @@ import { eur, num, pct, isNA } from './format'
 
 const has = (x) => x != null && !isNA(x)
 
-export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, manual, organicGrowth, period } = {}) {
+export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, webinarFunnel, manual, organicGrowth, period } = {}) {
   const f = funnel || {}
   const w = web || {}
   const o = outreach?.kpis || {}
@@ -39,10 +39,13 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
   // register only showed each once — these channel-scoped funnels fill her lists.
   //   emailFunnel  — the four named email campaigns (same scope as the Email page)
   //   webFunnel    — the Organic SEO channel excl. whitepapers (same as the SEO page)
-  //   eventsFunnel — the Events & Webinars channel (same as the Events page)
+  //   eventsFunnel — IN-PERSON events: the Events & Webinars channel minus Webinar campaigns
+  //   webinarFunnel — WEBINARS: Webinar campaigns only (Margot, 23 Sep: events and webinars
+  //                   are reported separately; the register showed them as one figure)
   const ef = emailFunnel || {}
   const wf = webFunnel || {}
   const evf = eventsFunnel || {}
+  const wbf = webinarFunnel || {}
   // Channel-scoped derived-rate + funnel rows, built one way for all three sections.
   const chRows = (p, ctx, fn) => {
     const won = has(fn.closedWonCount) ? fn.closedWonCount : null
@@ -60,28 +63,43 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
         ? { t: 'live', label: 'Influenced pipeline (gross profit)', val: eur(fn.marginPipeline), ctx, key: `${p}InfluencedPipeline`, num: fn.marginPipeline }
         : { t: 'na', label: 'Influenced pipeline (gross profit)', ctx: `${ctx} — none in scope yet`, key: `${p}InfluencedPipeline` },
       has(fn.margin)
-        ? { t: 'live', label: 'Influenced margin (gross profit)', val: eur(fn.margin), ctx, key: `${p}InfluencedMargin`, num: fn.margin }
-        : { t: 'na', label: 'Influenced margin (gross profit)', ctx: `${ctx} — no won deals with gross profit in scope yet`, key: `${p}InfluencedMargin` },
+        // Labelled for what it is — gross profit on the won deals (Margot, 23 Sep: "influenced
+        // margin" is obsolete now that every figure is gross profit). Key kept for targets.
+        ? { t: 'live', label: 'Closed-won value (gross profit)', val: eur(fn.margin), ctx, key: `${p}InfluencedMargin`, num: fn.margin }
+        : { t: 'na', label: 'Closed-won value (gross profit)', ctx: `${ctx} — no won deals with gross profit in scope yet`, key: `${p}InfluencedMargin` },
     ]
   }
 
+  // GA4 CONVERSIONS ARE HIDDEN (Margot, 23 Sep 2026: "Conversions haven't been set up
+  // correctly. Delete this section for now."). The GA4 key events are not configured to mean
+  // downloads + form fills, so every figure built on them — total conversions, conversions
+  // from organic and visitor → MQL — is left off until CWSI fixes the GA4 set-up. Flip this
+  // to true to bring all three back; nothing else needs to change.
+  const SHOW_GA4_CONVERSIONS = false
   const convCtx = has(w.keyEvents) && w.sessions ? `${pct(w.keyEvents, w.sessions)} of sessions` : 'GA4 conversions'
 
-  const evTypes = events?.byType || []
-  const evLeads = evTypes.reduce((s, t) => s + (Number(t.leads) || 0), 0)
-  const evMql = evTypes.reduce((s, t) => s + (Number(t.mql) || 0), 0)
-  const evSql = evTypes.reduce((s, t) => s + (Number(t.sql) || 0), 0)
+  // In-person events only (webinars have their own section below).
+  const evLeads = Number(evf.leads) || 0
+  const evMql = Number(evf.mql) || 0
+  const evSql = Number(evf.sql) || 0
+  const wbLeads = Number(wbf.leads) || 0
 
   const visitorToMqlV = has(w.keyEvents) && Number(w.sessions) > 0 ? w.keyEvents / w.sessions : null
   const mqlToSqlV = has(f.sql) && f.mql ? f.sql / f.mql : null
   const sqlToWonV = has(f.closedWonCount) && f.sql ? f.closedWonCount / f.sql : null
   const overallConvV = has(f.closedWonCount) && f.mql ? f.closedWonCount / f.mql : null
   const eventsMqlSqlV = evMql > 0 ? evSql / evMql : null
-  const attendanceV = attendance && attendance.registrants > 0 ? attendance.attendees / attendance.registrants : null
   // Combined attendance = GoToWebinar (webinars) + the attendee lists (in-person), when loaded.
-  const combRegs = (attendance?.registrants || 0) + (ea?.registered || 0)
-  const combAtt = (attendance?.attendees || 0) + (ea?.attended || 0)
-  const combAttendanceV = ea && combRegs > 0 ? combAtt / combRegs : null
+  // Webinar attendee lists (webinars GoToWebinar does not carry) count on the webinar side.
+  // Attendance is reported per side (23 Sep): in-person events from the attendee lists only;
+  // webinars from GoToWebinar plus the webinar attendee lists GoToWebinar does not carry.
+  const eaw = eventAttendance?.webinarTotals || null
+  const evRegs = ea?.registered || 0
+  const evAtt = ea?.attended || 0
+  const evAttendanceV = evRegs > 0 ? evAtt / evRegs : null
+  const wbRegs = (attendance?.registrants || 0) + (eaw?.registered || 0)
+  const wbAtt = (attendance?.attendees || 0) + (eaw?.attended || 0)
+  const wbAttendanceV = wbRegs > 0 ? wbAtt / wbRegs : null
   const money2 = (v) => (v == null || isNA(v) ? null : `€${Number(v).toFixed(2)}`)
 
   // CWSI FY26 reforecast (Sep 2026): six agreed KPIs that no system records. They are
@@ -158,9 +176,9 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     lie.cpm != null && !isNA(lie.cpm)
       ? { t: 'live', label: 'Cost per thousand (CPM)', val: money2(lie.cpm), ctx: 'LinkedIn Ads (EUR)', key: 'cpm', num: Number(lie.cpm) }
       : { t: 'na', label: 'Cost per thousand (CPM)', ctx: 'LinkedIn spend/impressions pending', key: 'cpm' },
-    has(w.keyEvents)
+    ...(!SHOW_GA4_CONVERSIONS ? [] : [has(w.keyEvents)
       ? { t: 'live', label: 'Total conversions (downloads & form fills)', val: num(w.keyEvents), ctx: `GA4 on-site conversions, paid + organic traffic · ${convCtx}`, key: 'totalConversions', num: w.keyEvents }
-      : { t: 'na', label: 'Total conversions (downloads & form fills)', ctx: 'GA4 key events (on-site conversions)', key: 'totalConversions' },
+      : { t: 'na', label: 'Total conversions (downloads & form fills)', ctx: 'GA4 key events (on-site conversions)', key: 'totalConversions' }]),
     { t: 'live', label: 'MQL → SQL conversion', val: pct(f.sql, f.mql), ctx: 'derived', key: 'mqlToSql', num: mqlToSqlV },
     has(f.closedWonCount)
       ? { t: 'live', label: 'SQL → Closed/Won', val: pct(f.closedWonCount, f.sql), ctx: 'derived', key: 'sqlToWon', num: sqlToWonV }
@@ -209,12 +227,14 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     has(w.sessions) && Number(w.sessions) > 0
       ? { t: 'live', label: 'Total organic traffic (sessions)', val: num(w.sessions), ctx: 'GA4', key: 'totalOrganicTraffic', num: w.sessions }
       : { t: 'na', label: 'Total organic traffic', ctx: 'GA4 sessions', key: 'totalOrganicTraffic' },
-    has(w.keyEvents)
-      ? { t: 'live', label: 'Conversions from organic (GA4)', val: num(w.keyEvents), ctx: convCtx, key: 'conversionsFromOrganic', num: w.keyEvents }
-      : { t: 'na', label: 'Conversions from organic', ctx: 'GA4 key events', key: 'conversionsFromOrganic' },
-    visitorToMqlV != null
-      ? { t: 'live', label: 'Visitor → MQL conversion', val: pct(w.keyEvents, w.sessions, 2), ctx: 'GA4 conv ÷ sessions', key: 'visitorToMql', num: visitorToMqlV }
-      : { t: 'na', label: 'Visitor → MQL conversion', ctx: 'GA4 key events ÷ sessions', key: 'visitorToMql' },
+    ...(!SHOW_GA4_CONVERSIONS ? [] : [
+      has(w.keyEvents)
+        ? { t: 'live', label: 'Conversions from organic (GA4)', val: num(w.keyEvents), ctx: convCtx, key: 'conversionsFromOrganic', num: w.keyEvents }
+        : { t: 'na', label: 'Conversions from organic', ctx: 'GA4 key events', key: 'conversionsFromOrganic' },
+      visitorToMqlV != null
+        ? { t: 'live', label: 'Visitor → MQL conversion', val: pct(w.keyEvents, w.sessions, 2), ctx: 'GA4 conv ÷ sessions', key: 'visitorToMql', num: visitorToMqlV }
+        : { t: 'na', label: 'Visitor → MQL conversion', ctx: 'GA4 key events ÷ sessions', key: 'visitorToMql' },
+    ]),
     // Reforecast KPI: +20% in Q4 vs the Q3 baseline. Only meaningful for a quarter that has
     // a predecessor — Q1 has none in the reporting year and year-to-date is not a quarter.
     organicGrowth?.growth != null
@@ -242,22 +262,29 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
       : { t: 'na', label: 'Total leads', ctx: 'Organic SEO channel · campaign responders', key: 'webTotalLeads' },
     ...chRows('web', 'Organic SEO channel · Salesforce-attributed', wf),
 
-    { t: 'cat', label: 'Events Performance' },
+    { t: 'cat', label: 'Events Performance (in-person)' },
     evLeads > 0
-      ? { t: 'live', label: 'Registrations (leads)', val: num(evLeads), ctx: 'campaign membership · event campaigns', key: 'registrations', num: evLeads }
-      : { t: 'na', label: 'Registrations (leads)', ctx: 'event-campaign members (at the next data refresh)', key: 'registrations' },
-    combAttendanceV != null
-      ? { t: 'live', label: 'Attendance rate', val: `${(combAttendanceV * 100).toFixed(0)}%`, ctx: `webinars (GoToWebinar) + in-person (attendee lists) combined · ${num(combAtt)} of ${num(combRegs)}`, key: 'attendanceRate', num: combAttendanceV }
-      : attendanceV != null
-      ? { t: 'live', label: 'Attendance rate (webinar)', val: pct(attendance.attendees, attendance.registrants), ctx: 'GoToWebinar · webinar only until the in-person attendee lists load', key: 'attendanceRate', num: attendanceV }
-      : { t: 'na', label: 'Attendance rate', ctx: 'GoToWebinar attendance match pending', key: 'attendanceRate' },
+      ? { t: 'live', label: 'Registrations (leads)', val: num(evLeads), ctx: 'campaign membership · in-person event campaigns', key: 'registrations', num: evLeads }
+      : { t: 'na', label: 'Registrations (leads)', ctx: 'in-person event-campaign members', key: 'registrations' },
+    evAttendanceV != null
+      ? { t: 'live', label: 'Attendance rate', val: `${(evAttendanceV * 100).toFixed(0)}%`, ctx: `in-person attendee lists · ${num(evAtt)} of ${num(evRegs)}`, key: 'attendanceRate', num: evAttendanceV }
+      : { t: 'na', label: 'Attendance rate', ctx: 'no in-person event with attendee lists in this period', key: 'attendanceRate' },
     eventsMqlSqlV != null
-      ? { t: 'live', label: 'MQL → SQL conversion (events)', val: pct(evSql, evMql), ctx: 'event-campaign funnel', key: 'mqlToSqlEvents', num: eventsMqlSqlV }
-      : { t: 'na', label: 'MQL → SQL conversion (events)', ctx: 'event-campaign funnel (at the next data refresh)', key: 'mqlToSqlEvents' },
+      ? { t: 'live', label: 'MQL → SQL conversion (events)', val: pct(evSql, evMql), ctx: 'in-person event-campaign funnel', key: 'mqlToSqlEvents', num: eventsMqlSqlV }
+      : { t: 'na', label: 'MQL → SQL conversion (events)', ctx: 'in-person event-campaign funnel', key: 'mqlToSqlEvents' },
     // Post-QA review: her Events Performance list also names SQL→Won + the money metrics
     // (MQL→SQL already lives just above, so chRows' first entry is dropped).
-    ...chRows('events', 'Events & Webinars channel · Salesforce-attributed', evf).slice(1),
+    ...chRows('events', 'In-person events · Salesforce-attributed', evf).slice(1),
     { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — per-event spend is not recorded in the tracker', key: 'costPerConversion' },
+
+    { t: 'cat', label: 'Webinars Performance' },
+    wbLeads > 0
+      ? { t: 'live', label: 'Registrations (leads)', val: num(wbLeads), ctx: 'campaign membership · webinar campaigns', key: 'webinarRegistrations', num: wbLeads }
+      : { t: 'na', label: 'Registrations (leads)', ctx: 'webinar-campaign members', key: 'webinarRegistrations' },
+    wbAttendanceV != null
+      ? { t: 'live', label: 'Attendance rate', val: `${(wbAttendanceV * 100).toFixed(0)}%`, ctx: `GoToWebinar + webinar attendee lists · ${num(wbAtt)} of ${num(wbRegs)}`, key: 'webinarAttendanceRate', num: wbAttendanceV }
+      : { t: 'na', label: 'Attendance rate', ctx: 'no webinar attendance recorded in this period', key: 'webinarAttendanceRate' },
+    ...chRows('webinar', 'Webinars · Salesforce-attributed', wbf),
 
     // ── PR, Content & Partner — CWSI FY26 reforecast (Sep 2026). Every figure here is
     //    entered by hand: these are real commitments in the strategy, but nothing in

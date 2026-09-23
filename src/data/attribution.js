@@ -37,10 +37,12 @@ export const SALES_TYPES = new Set([])
 
 // Individual campaigns that are not marketing-generated despite their Salesforce type.
 // Each needs a reason — no unexplained entries.
+// "BLAUD - SoPro Intune Health Check" USED to be listed here as sales outreach. Margot
+// (23 Sep 2026) classifies it as an Email campaign, so it is now reported under Email via
+// campaign_overrides.channel_override and is no longer treated as sales-generated.
+// "Hubspot Imports" is excluded from every figure outright (campaign_overrides.excluded),
+// so its entry here only matters for historic views that bypass the overrides.
 export const SALES_CAMPAIGN_KEYS = {
-  // "BLAUD - SoPro Intune Health Check" — typed Advertisement, but SoPro is the outbound
-  // prospecting agency: this is cold sales outreach, the exact thing Paul asked to exclude.
-  '7013z000002JR0IAAW': 'Outbound prospecting (SoPro) — sales-generated, not a marketing campaign',
   // "Hubspot Imports" — typed Advertisement; a bulk data import, not a campaign at all.
   '7013z000001k5JLAAY': 'Data import, not a campaign',
 }
@@ -49,7 +51,6 @@ export const SALES_CAMPAIGN_KEYS = {
 // excluded without a second lookup. Kept next to the keys deliberately: if a name here
 // stops matching what Salesforce holds, the campaign was renamed and the key still rules.
 export const SALES_CAMPAIGN_LABELS = {
-  '7013z000002JR0IAAW': 'BLAUD - SoPro Intune Health Check',
   '7013z000001k5JLAAY': 'Hubspot Imports',
 }
 

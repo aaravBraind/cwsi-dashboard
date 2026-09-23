@@ -57,6 +57,10 @@ const REGISTER_EXPLAIN = {
   eventsInfluencedPipeline: 'pipeline', eventsInfluencedMargin: 'margin',
   outreachCtr: 'outreachOpenRate', outreachUnsubRate: 'outreachOpenRate',
   outreachMqls: 'outreachMeetings',
+  // Webinars section (23 Sep) — same explanations as their event counterparts
+  webinarAttendanceRate: 'webinarAttendance', webinarMqlToSql: 'conversion', webinarSqlToWon: 'conversion',
+  webinarClosedOpps: 'closedWon', webinarInfluencedPipeline: 'pipeline', webinarInfluencedMargin: 'margin',
+  webinarRegistrations: 'mql',
 }
 
 // The KPI register, in the agreed category order. `live` rows are computed from
@@ -100,7 +104,10 @@ export default function KpiTracker() {
   // the same scopes their pages use, so the register can never disagree with a page.
   const emailFunnel = useEmailReport() // the four named campaigns
   const webFunnel = useChannel('Organic SEO', 'all', ['Content/White Paper'])
-  const eventsFunnel = useChannel('Events & Webinars')
+  // Events and webinars are reported separately (Margot, 23 Sep): in-person = every event
+  // type except Webinar; webinars = Webinar only. Same channel, split by campaign type.
+  const eventsFunnel = useChannel('Events & Webinars', 'all', ['Webinar'])
+  const webinarFunnel = useChannel('Events & Webinars', 'all', null, ['Webinar'])
   const targetsQ = useKpiTargets()
   // Reforecast additions (Sep 2026): the hand-entered KPIs, and organic traffic growth
   // measured against the prior quarter.
@@ -137,6 +144,7 @@ export default function KpiTracker() {
           emailFunnel={emailFunnel.data?.totals}
           webFunnel={webFunnel.data?.totals}
           eventsFunnel={eventsFunnel.data?.totals}
+          webinarFunnel={webinarFunnel.data?.totals}
           quarter={filters.quarter}
           targets={targetsQ.data || {}}
           manual={manualQ.data || {}}
@@ -267,10 +275,10 @@ function ManualCell({ kpiKey, kind, value, period }) {
   )
 }
 
-function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, quarter, targets, manual, organicGrowth }) {
+function Register({ f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage, aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, webinarFunnel, quarter, targets, manual, organicGrowth }) {
   const rows = buildKpiRegisterRows({
     funnel: f, web, events, attendance, outreach, outreachMeetings, linkedin, linkedinPage,
-    aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel,
+    aeEmail, eventAttendance, emailFunnel, webFunnel, eventsFunnel, webinarFunnel,
     manual, organicGrowth, period: periodOf(quarter),
   })
 

@@ -51,11 +51,14 @@ const field = (c) => FIELD_LABEL[c] || c
 // Where each figure sits in the report, matching the KPI Tracker's own order.
 export const SECTIONS = [
   ['Commercial outcomes', ['totalMqls', 'totalSqls', 'createdOpportunities', 'opportunities',
-    'closedWonCount', 'influencedPipeline', 'closedWonValue', 'closedWonRevenue', 'influencedMargin',
+    // 'influencedMargin' is not listed: it is the same deals and the same figure as closed-won
+    // value (gross profit) directly above, and Margot marked it obsolete (23 Sep).
+    'closedWonCount', 'influencedPipeline', 'closedWonValue', 'closedWonRevenue',
     'mqlToSql', 'sqlToWon', 'overallConversion']],
   ['Paid media — LinkedIn Ads', ['impressions', 'clicks']],
   ['Organic social — LinkedIn company page', ['pageImpressions', 'pageEngagements', 'engagementRate', 'followerGrowth']],
-  ['Website', ['totalOrganicTraffic', 'socialSessions', 'totalConversions', 'conversionsFromOrganic',
+  // GA4 conversions left out until CWSI fixes the GA4 set-up (Margot, 23 Sep: "delete this section for now").
+  ['Website', ['totalOrganicTraffic', 'socialSessions',
     'organicTrafficGrowth', 'webTotalLeads', 'webSqls', 'webMqlToSql', 'webSqlToWon',
     'webClosedOpps', 'webInfluencedPipeline', 'webInfluencedMargin',
     'organicEngagementTime', 'websiteIntegrity']],
@@ -64,9 +67,11 @@ export const SECTIONS = [
     // marketing-platform engagement — live on screen since Aug, traceable since 20 Sep
     'aeDelivered', 'aeUniqueOpens', 'aeUniqueClicks', 'aeOptOuts',
     'emailOpenRate', 'emailCtr', 'unsubscribeRate']],
-  ['Events', ['registrations', 'eventRegistrants', 'eventAttendees', 'attendanceRate',
-    'eventsMqls', 'eventsMqlRaw', 'eventsSqls', 'mqlToSqlEvents', 'eventsSqlToWon',
+  ['Events (in-person)', ['registrations', 'eventRegistrants', 'eventAttendees', 'attendanceRate',
+    'eventsMqls', 'eventsSqls', 'mqlToSqlEvents', 'eventsSqlToWon',
     'eventsClosedOpps', 'eventsInfluencedPipeline', 'eventsInfluencedMargin']],
+  ['Webinars', ['webinarRegistrations', 'webinarRegistrants', 'webinarAttendees', 'webinarAttendanceRate', 'webinarMqls', 'webinarSqls', 'webinarMqlToSql',
+    'webinarSqlToWon', 'webinarClosedOpps', 'webinarInfluencedPipeline', 'webinarInfluencedMargin']],
   ['Outreach — prospecting', ['outreachProspects', 'outreachDelivered', 'outreachOpens',
     'outreachClicks', 'outreachReplies', 'outreachOptOuts', 'outreachOpenRate', 'outreachCtr',
     'outreachReplyRate', 'outreachUnsubRate', 'outreachMeetings', 'outreachMqls',
@@ -79,10 +84,14 @@ export const SECTIONS = [
 // they would multiply the length without showing a record the reader cannot already see.
 export const COMPOSITION_FIGURES = new Set([
   'totalMqls', 'totalSqls', 'createdOpportunities', 'opportunities', 'closedWonCount',
-  'influencedPipeline', 'closedWonValue', 'influencedMargin',
+  'influencedPipeline', 'closedWonValue',
   'totalOrganicTraffic', 'socialSessions', 'impressions', 'clicks',
   'pageImpressions', 'pageEngagements', 'followerGrowth',
-  'eventRegistrants', 'eventAttendees', 'registrations',
+  'eventRegistrants', 'eventAttendees', 'registrations', 'webinarRegistrations',
+  'webinarRegistrants', 'webinarAttendees',
+  // Website figures list their campaigns too (Margot, 23 Sep: "Can you please send a breakdown
+  // of the campaigns that have contributed so I can verify these numbers?").
+  'webTotalLeads', 'webSqls', 'webClosedOpps', 'webInfluencedPipeline', 'webInfluencedMargin',
   'aeDelivered', 'aeUniqueOpens', 'aeUniqueClicks', 'aeOptOuts',
   'outreachProspects', 'outreachDelivered', 'outreachOpens', 'outreachClicks',
   'outreachReplies', 'outreachOptOuts',
@@ -132,25 +141,26 @@ export const PREAMBLE_RULES = `## Five rules that apply to everything
 Worth reading before the detail — these account for essentially every case of an independently
 calculated figure disagreeing with the dashboard.
 
-1. **Every financial figure is gross profit, not revenue.** Influenced pipeline, influenced margin,
-   new pipeline created, closed-won and the campaign figures are all gross profit, taken from each
+1. **Every financial figure is gross profit, not revenue.** Influenced pipeline, new pipeline
+   created, closed-won and the campaign figures are all gross profit, taken from each
    opportunity's Gross Profit Value in Salesforce. Where a deal has no Gross Profit recorded it is
    left **out** of the total rather than counted at its full value — every won 2026 deal currently
    carries one, so nothing is excluded today. The full deal value is shown beside the gross-profit
    figure wherever it is useful, always labelled as the revenue basis.
 2. **Influenced pipeline is open *plus* won.** A deal that has closed was still influenced, so
    closed-won is always a subset of influenced pipeline — never a separate amount to add on.
-   Closed-won and influenced margin are the same deals valued the same way, so they are deliberately
-   the same number: one names the outcome, the other names the profit on it.
+   (A separate "influenced margin" figure is no longer reported: it was the same deals and the same
+   number as closed-won value.)
 3. **MQLs are responded Salesforce campaign members.** One MQL per campaign member that Salesforce
    has flagged as having responded — a form fill, a gated download, an event registration. Members
    who were only added to a campaign, such as bulk list uploads, are not counted. Leads and MQL are
    the same measure by definition (agreed 9 July).
 4. **The funnel has a floor.** Anyone who reached a later stage must have passed the earlier ones, so
-   each stage is shown as at least as large as the next. In the current data this affects **SQLs**,
-   where a quarter can show more qualified opportunities than leads recorded at Attempt-1 stage, and
-   the SQL figure is lifted to match. It can in principle lift MQLs the same way; it does not today.
-   Where it applies, the figure says so rather than leaving you to spot the difference.
+   each stage is shown as at least as large as the next. It is applied quarter by quarter, so a
+   year-to-date figure is always the sum of its quarters. In the current data it lifts **SQLs** where
+   a quarter has more qualified opportunities than leads at Attempt-1 stage, and it lifts the
+   **website** leads and SQLs, where deals on older website-leads campaigns have no leads of their
+   own. Where it applies, the figure says so and gives both numbers.
 5. **Dates are capped, and region can be overridden.** Nothing dated beyond today — or the end of the
    reporting window, whichever is earlier — is counted, even where later-dated records exist in the
    source systems. And a campaign reassigned to a different region in the dashboard is counted in
@@ -159,8 +169,9 @@ calculated figure disagreeing with the dashboard.
 Two further points specific to Outreach:
 
 - **Outreach engagement is a lifetime snapshot.** The platform reports a running counter per
-  sequence rather than a dated series, so prospects, opens, replies, clicks and opt-outs show the
-  **same figure in every period**. That is correct, not a fault.
+  sequence rather than a dated series, so prospects, opens, replies, clicks and opt-outs cannot
+  be split by quarter. They are shown **once, as a to-date figure**, rather than repeated under
+  each quarter. Outreach meetings and deals are dated, so they keep their quarters.
 - **Outreach meetings and deals are counted once each.** Salesforce writes one row per meeting
   attendee, so a meeting with three attendees is three rows and one meeting. Attribution to a
   sequence is one-to-one in the current data — no meeting and no opportunity in the marketing

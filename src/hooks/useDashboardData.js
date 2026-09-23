@@ -179,7 +179,7 @@ export function useOpportunityStage() {
   })
 }
 
-export function useChannel(channelName, campaign = 'all', excludeTypes = null) {
+export function useChannel(channelName, campaign = 'all', excludeTypes = null, onlyTypes = null) {
   const { filters } = useFilters()
   // The channel page owns its channel *and* its campaign selection (passed in as
   // page-local state). Strip the global `channel` and `campaign` so a campaign
@@ -191,8 +191,8 @@ export function useChannel(channelName, campaign = 'all', excludeTypes = null) {
   const { channel, campaign: _globalCampaign, ...rest } = filters
   const scoped = { ...rest, campaign }
   return useQuery({
-    queryKey: ['channel', channelName, scoped, excludeTypes],
-    queryFn: () => getChannel(channelName, scoped, excludeTypes),
+    queryKey: ['channel', channelName, scoped, excludeTypes, onlyTypes],
+    queryFn: () => getChannel(channelName, scoped, excludeTypes, onlyTypes),
   })
 }
 

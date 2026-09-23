@@ -210,6 +210,22 @@ const naIfAllZero = (rows, k) => (sum(rows, k) > 0 ? sum(rows, k) : NA)
 const GBP_TO_EUR = 1.17
 const gbpToEur = (v) => (isNA(v) ? v : Number(v) * GBP_TO_EUR)
 
+// The monotonic funnel floor (Won ≤ Opp ≤ SQL ≤ MQL), applied quarter by quarter and summed.
+// Rows carry `year` + `quarter` from v_fact_enriched; rows without them fall in one bucket,
+// which reproduces the old whole-scope floor.
+function floorPerQuarter(rows) {
+  const out = { opp: 0, sql: 0, mql: 0 }
+  for (const [, rs] of groupBy(rows, (r) => `${r.year ?? ''}-${r.quarter ?? ''}`)) {
+    const won = sum(rs, 'closed_won_count')
+    const opp = Math.max(sum(rs, 'opp_count'), won)
+    const sql = Math.max(sum(rs, 'sql_count'), opp)
+    out.opp += opp
+    out.sql += sql
+    out.mql += Math.max(sum(rs, 'mql_count'), sql)
+  }
+  return out
+}
+
 function funnelOf(rows) {
   // Raw per-stage sums. Each is a REAL actual, but the stages are dated by
   // different events (leads/MQL by lead date; SQL/Opp/Won by opportunity/close
@@ -231,9 +247,16 @@ function funnelOf(rows) {
   // double-count), this guarantees Leads ≥ MQL ≥ SQL ≥ Opp ≥ Won by construction
   // at every region + quarter, including in-progress quarters. Actuals stay real:
   // we never mutate the warehouse counts, only present the monotonic floor.
+  //
+  // The floor is applied PER QUARTER and the quarters are then added, so a year-to-date
+  // figure is always the sum of its quarters. Flooring the year as one block made YTD SQLs
+  // 359 while the three quarters showed 28 + 171 + 171 = 370 (Margot, 23 Sep: "How is it
+  // that these numbers are not always identical? They should be"). Within one quarter this
+  // is identical to the old single-block floor.
   const won = wonRaw
-  const opp = Math.max(oppRaw, won)
-  const sql = Math.max(sqlRaw, opp)
+  const fq = floorPerQuarter(rows)
+  const opp = fq.opp
+  const sql = fq.sql
   // MQL = RESPONDED SALESFORCE CAMPAIGN MEMBERS, and nothing else (Margot, 18 Sep:
   // "I specifically asked for the reporting to be based on campaign members (responded)").
   // `leadsRaw` is deliberately NOT in this floor: the LinkedIn lead-gen feed writes `leads`
@@ -242,7 +265,7 @@ function funnelOf(rows) {
   // Q2 at 662 against 651 members) and broke reconciliation against Salesforce — the exact
   // problem she is reporting. Those form leads remain reported on the LinkedIn page, where
   // they drive cost per form lead; they are simply not Salesforce MQLs.
-  const leads = Math.max(mqlRaw, sql)
+  const leads = fq.mql
   // MQL = Leads by definition (Margot, 9 Jul call — the lead/MQL distinction was dropped).
   const mql = leads
 
@@ -877,6 +900,9 @@ export async function getMetricSource(metricKey, filters = {}) {
     if (spec.excludeTypes && spec.excludeTypes.length) {
       rows = rows.filter((r) => !spec.excludeTypes.includes(r.campaign_type))
     }
+    if (spec.onlyTypes && spec.onlyTypes.length) {
+      rows = rows.filter((r) => spec.onlyTypes.includes(r.campaign_type))
+    }
   } else if (spec.from === 'web') {
     rows = await fetchAll(
       () => applyWebFilters(
@@ -899,6 +925,11 @@ export async function getMetricSource(metricKey, filters = {}) {
       if (filters.quarter && filters.quarter !== 'ytd') q = q.eq('quarter', filters.quarter)
       return q
     }, ['campaign_key'])
+    // The market label shown for each campaign is the editable one on the LinkedIn page
+    // (campaign_overrides.display_region — "BeNeLux", "UK", "IE", per Margot 23 Sep), so the
+    // report names markets the same way the screen does. Falls back to the stored region.
+    const ov = await getCampaignOverrides()
+    rows = rows.map((r) => ({ ...r, market_label: ov[r.campaign_key]?.display_region || r.region_code }))
   } else if (spec.from === 'aeEmail') {
     // The three marketing-platform email rates were live on screen but had NO traceability
     // entry, so "every number is traceable" was overstated. They are read through
@@ -929,19 +960,16 @@ export async function getMetricSource(metricKey, filters = {}) {
         if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
         return q
       }, ['event_key']),
-      fetchAll(() => {
-        let q = supabase.from('fact_event_attendance').select('event_name,region_code,registered,attended')
-        if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
-        return q
-      }, ['event_name', 'region_code']),
+      fetchAttendanceRows(filters),
     ])
     // One shape, two halves — the headline adds the in-person attendee lists to the
     // GoToWebinar figures, so the breakdown has to as well.
     rows = [
       ...webinar.map((r) => ({ ...r, kind: 'Webinars (GoToWebinar)' })),
       ...inPerson.map((r) => ({
-        event_name: r.event_name, region_code: r.region_code, activity_date: null,
-        registrants: r.registered, attendees: r.attended, kind: 'In-person (attendee lists)',
+        event_name: r.event_name, region_code: r.region_code, activity_date: r.event_date,
+        registrants: r.registered, attendees: r.attended,
+        kind: r.is_webinar ? 'Webinars (attendee lists)' : 'In-person (attendee lists)',
       })),
     ]
   } else if (spec.from === 'outreachSeq' || spec.from === 'outreachStep') {
@@ -990,9 +1018,11 @@ export async function getMetricSource(metricKey, filters = {}) {
   // `displayedTotal` (what the dashboard shows).
   let displayedTotal = null
   if (spec.floorOver?.length) {
-    displayedTotal = Math.max(
-      ...spec.floorOver.map((c) => rows.reduce((a, r) => a + (Number(r[c]) || 0), 0)),
-    )
+    // Per quarter, then summed — the same way funnelOf floors the figure on screen.
+    displayedTotal = [...groupBy(rows, (r) => `${r.year ?? ''}-${r.quarter ?? ''}`)]
+      .reduce((tot, [, rs]) => tot + Math.max(
+        ...spec.floorOver.map((c) => rs.reduce((a, r) => a + (Number(r[c]) || 0), 0)),
+      ), 0)
   }
   // A metric can be built from SEVERAL columns — influenced pipeline is the gross profit on
   // open opportunities PLUS the gross profit on won deals, and a breakdown that summed only
@@ -1001,7 +1031,14 @@ export async function getMetricSource(metricKey, filters = {}) {
   const val = (r) => cols.reduce((a, c) => a + (Number(r[c]) || 0), 0)
 
   // channel → campaign → dated rows, each level carrying what it contributed.
-  const groups = [...groupBy(rows, (r) => r[spec.group.field] ?? null)]
+  // The CHANNEL level uses displayChannel(), the same rule as the Overview's channel split,
+  // so whitepapers read "Whitepapers" (not "Organic SEO") and events split into Webinars and
+  // In-person Events. Margot flagged every whitepaper row in the composition report (23 Sep)
+  // because this panel printed the raw Salesforce channel while the dashboard did not.
+  const groupKeyOf = spec.group.field === 'channel_name'
+    ? (r) => displayChannel(r)
+    : (r) => r[spec.group.field] ?? null
+  const groups = [...groupBy(rows, groupKeyOf)]
     .map(([gKey, gRows]) => ({
       key: gKey ?? '(none)',
       label: gKey ?? spec.group.fallback,
@@ -1060,7 +1097,7 @@ export async function getVerificationData(filters = {}) {
 
   const [deals, funnel, campaigns, web, linkedinAds, linkedinPage, meetings, emails, spend, targets, manual] =
     await Promise.all([
-      fetchAll(() => byRegion(supabase.from('fact_opportunity')
+      fetchAll(() => byRegion(supabase.from('v_opportunity')
         .select('opp_id,opp_name,account_name,campaign_key,campaign_name,channel_name,campaign_type,region_code,stage_name,is_won,is_closed,amount_eur,margin_eur,created_date,close_date')
         .gte('created_date', y0)), ['opp_id']),
       fetchAll(() => byRegion(supabase.from('v_fact_enriched')
@@ -1189,12 +1226,13 @@ export async function getCampaignOverrides() {
 // 'hidden'. Empty string clears the label (→ null, falls back to the SF value).
 // Partial upsert: only the given column changes; others are preserved.
 export async function upsertCampaignOverride(campaignKey, field, value) {
-  if (!['display_name', 'display_region', 'regions', 'campaign_type', 'hidden', 'theme'].includes(field)) throw new Error(`bad field: ${field}`)
+  if (!['display_name', 'display_region', 'regions', 'campaign_type', 'hidden', 'theme', 'excluded', 'channel_override'].includes(field)) throw new Error(`bad field: ${field}`)
   if (field === 'regions') invalidateOverrideRegionCache()
   if (field === 'display_region') invalidateOverrideRegionCache()
   if (!campaignKey) throw new Error('campaignKey required')
   // `regions` is a text[] — keep it an array (or null to clear); everything else is text.
-  const v = field === 'hidden'
+  // `excluded` (23 Sep) drops the campaign from every figure — the views filter on it.
+  const v = field === 'hidden' || field === 'excluded'
     ? !!value
     : field === 'regions'
       ? (Array.isArray(value) && value.length ? value : null)
@@ -1339,7 +1377,7 @@ export async function getCurrentVsOngoing(filters = {}) {
   // complicated."). That replaces the campaign-start-date basis and, with it, the Undated
   // bucket: every opportunity has a creation date, so nothing can fall outside the split.
   let oppQ = supabase
-    .from('fact_opportunity')
+    .from('v_opportunity')
     .select('opp_id,opp_name,account_name,campaign_name,stage_name,campaign_key,channel_name,campaign_type,region_code,created_date,close_date,is_won,is_closed,amount_eur,margin_eur')
     .gte('created_date', `${HISTORY_START_YEAR}-01-01`)
   if (filters.region && filters.region !== 'all') oppQ = oppQ.eq('region_code', filters.region)
@@ -1485,7 +1523,7 @@ export async function getCampaignOpportunities(campaignKeys = []) {
   const keys = (campaignKeys || []).filter(Boolean)
   if (!keys.length) return { opps: [], hasData: false }
   const rows = await fetchAll(() => supabase
-    .from('fact_opportunity')
+    .from('v_opportunity')
     .select('opp_id,opp_name,account_name,campaign_name,campaign_key,stage_name,is_won,is_closed,amount_eur,margin_eur,created_date,close_date')
     .in('campaign_key', keys)
     .gte('created_date', `${HISTORY_START_YEAR}-01-01`), ['opp_id'])
@@ -1604,9 +1642,13 @@ export async function getOpportunityStage(filters = {}) {
 // excludeTypes: optional read-layer exclusion by campaign_type — the SEO page passes
 // ['Content/White Paper'] so whitepaper-download campaigns (reported on the Email
 // page) don't also inflate Organic SEO's leads/MQL.
-export async function getChannel(channelName, filters, excludeTypes = null) {
+// onlyTypes: the opposite — KEEP only these campaign types. Webinars are reported apart
+// from in-person events (Margot, 23 Sep 2026: "We've separated events and webinars in the
+// reporting"), and both live in the one Events & Webinars channel, so the split is by type.
+export async function getChannel(channelName, filters, excludeTypes = null, onlyTypes = null) {
   let rows = await fetchFacts({ ...filters, channel: channelName })
   if (excludeTypes && excludeTypes.length) rows = rows.filter((r) => !excludeTypes.includes(r.campaign_type))
+  if (onlyTypes && onlyTypes.length) rows = rows.filter((r) => onlyTypes.includes(r.campaign_type))
   const campaigns = [...groupBy(rows, 'campaign_key')]
     .map(([key, rs]) => {
       // MQL = campaign responders, floored ≥ SQL — matches funnelOf so the funnel now
@@ -2358,31 +2400,52 @@ export async function getEventsDetail(filters = {}) {
 // excluded at ingest (GoToWebinar owns webinar attendance; EventsSummary ADDS this
 // table on top, so including them would double-count). The Events page shows an
 // honest "pending" state until the feed's first run.
-export async function getEventAttendance(filters = {}) {
+// Attendee lists are DATED since 23 Sep (fact_event_attendance.event_date): before that the
+// table had no date, so every quarter showed every event (Margot: "This event was in Q2, so
+// that cannot be correct" ×8). A dated row counts in its own quarter; an undated one only in
+// the year-to-date view, where it cannot be misplaced. Lists that belong to a WEBINAR
+// (is_webinar) are returned apart from the in-person ones, so the in-person panel never shows
+// a webinar ("This is a webinar", p97) while the combined attendance rate still includes it.
+async function fetchAttendanceRows(filters = {}) {
   const rows = await fetchAll(() => {
-    let q = supabase.from('fact_event_attendance').select('event_name,region_code,registered,attended')
+    let q = supabase.from('fact_event_attendance').select('event_name,region_code,registered,attended,event_date,is_webinar')
     if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
     return q
   }, ['event_name', 'region_code'])
-  const byEvent = [...groupBy(rows, 'event_name')]
-    .map(([event, rs]) => {
-      const registered = sum(rs, 'registered')
-      const attended = sum(rs, 'attended')
-      return {
-        event,
-        registered,
-        attended,
-        attendanceRate: registered > 0 ? attended / registered : NA,
-        byRegion: rs.map((r) => ({ region: r.region_code, registered: Number(r.registered) || 0, attended: Number(r.attended) || 0 })),
-      }
-    })
-    .sort((a, b) => b.registered - a.registered)
-  const registered = sum(rows, 'registered')
-  const attended = sum(rows, 'attended')
+  const isYtd = !filters.quarter || filters.quarter === 'ytd'
+  const [from, to] = quarterWindow(filters.quarter)
+  return rows.filter((r) => (r.event_date ? r.event_date >= from && r.event_date <= to : isYtd))
+}
+
+export async function getEventAttendance(filters = {}) {
+  const all = await fetchAttendanceRows(filters)
+  const summarise = (rows) => {
+    const byEvent = [...groupBy(rows, 'event_name')]
+      .map(([event, rs]) => {
+        const registered = sum(rs, 'registered')
+        const attended = sum(rs, 'attended')
+        return {
+          event,
+          eventDate: rs[0]?.event_date || null,
+          registered,
+          attended,
+          attendanceRate: registered > 0 ? attended / registered : NA,
+          byRegion: rs.map((r) => ({ region: r.region_code, registered: Number(r.registered) || 0, attended: Number(r.attended) || 0 })),
+        }
+      })
+      .sort((a, b) => b.registered - a.registered)
+    const registered = sum(rows, 'registered')
+    const attended = sum(rows, 'attended')
+    return { byEvent, totals: { registered, attended, attendanceRate: registered > 0 ? attended / registered : NA } }
+  }
+  const inPerson = summarise(all.filter((r) => !r.is_webinar))
+  const webinar = summarise(all.filter((r) => r.is_webinar))
   return {
-    byEvent,
-    totals: { registered, attended, attendanceRate: registered > 0 ? attended / registered : NA },
-    hasData: rows.length > 0,
+    byEvent: inPerson.byEvent,
+    totals: inPerson.totals,
+    webinarByEvent: webinar.byEvent,
+    webinarTotals: webinar.totals,
+    hasData: all.length > 0,
   }
 }
 

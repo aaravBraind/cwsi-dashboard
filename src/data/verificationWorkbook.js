@@ -114,7 +114,8 @@ export async function generateVerificationWorkbook(filters = {}) {
     fig('Ongoing impact — closed-won (gross profit)', split?.prior?.closedWon, 'Deals', 'Status = Won, Created date BEFORE the period, closed inside the period. Sum "Gross profit EUR".'),
     fig('Organic traffic (sessions)', wt.sessions, 'Web traffic', 'Sum "Sessions". The sheet already excludes non-CWSI hostnames.'),
     fig('Traffic from organic social (sessions)', wt.socialSessions, 'Web traffic', 'Sum "Sessions" where Channel = Organic Social.'),
-    fig('Total conversions (GA4 key events)', wt.keyEvents, 'Web traffic', 'Sum "Key events".'),
+    // GA4 conversions are off the dashboard until CWSI fixes the GA4 set-up (23 Sep); the raw
+    // "Key events" column stays on the Web traffic sheet.
     fig('LinkedIn impressions', lt.impressions, 'LinkedIn Ads', 'Sum "Impressions".'),
     fig('LinkedIn clicks', lt.clicks, 'LinkedIn Ads', 'Sum "Clicks".'),
     fig('LinkedIn spend', lt.spend, 'LinkedIn Ads', 'Sum "Spend".'),

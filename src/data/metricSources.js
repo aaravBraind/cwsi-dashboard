@@ -28,6 +28,7 @@ const FLOOR = 'The dashboard shows each funnel stage as at least as large as the
 const WEB_CHANNEL = 'Organic SEO'
 const WEB_EXCLUDE = ['Content/White Paper'] // reported on the Email page instead
 const EVENTS_CHANNEL = 'Events & Webinars'
+const WEBINAR = ['Webinar'] // the one campaign type that is a webinar rather than an in-person event
 // Influenced pipeline is gross profit STILL OPEN plus gross profit ALREADY WON, so a
 // breakdown summing only the open side would disagree with its own headline.
 const GP_BOTH = ['pipeline_margin_value', 'margin_value']
@@ -57,7 +58,7 @@ export const METRIC_SOURCES = {
   // ---- Money ---------------------------------------------------------------
   closedWonValue: facts('Closed-won value (gross profit)', 'margin_value', {
     unit: 'money',
-    note: WON_GP_NOTE + ' This is the same set of deals, and the same figure, as influenced margin — closed-won states the outcome, influenced margin states the profit on it.',
+    note: WON_GP_NOTE,
   }),
   // The revenue basis, kept as an explicitly labelled secondary so the full deal value
   // stays checkable against Salesforce rather than disappearing.
@@ -112,14 +113,14 @@ export const METRIC_SOURCES = {
   // campaign and quarter rather than by day — so these rows carry no date.
   impressions: {
     label: 'Impressions', from: 'ads', column: 'impressions', unit: 'count',
-    group: { field: 'region_code', label: 'Region', fallback: 'Multi-market' },
+    group: { field: 'market_label', label: 'Market', fallback: 'Multi-market' },
     sub: { field: 'campaign_name', label: 'Campaign', fallback: 'No campaign' },
     date: 'quarter',
     note: 'LinkedIn Ads is the only paid channel running in 2026. A campaign can target several markets, so it is counted for each region it targets.',
   },
   clicks: {
     label: 'Clicks', from: 'ads', column: 'clicks', unit: 'count',
-    group: { field: 'region_code', label: 'Region', fallback: 'Multi-market' },
+    group: { field: 'market_label', label: 'Market', fallback: 'Multi-market' },
     sub: { field: 'campaign_name', label: 'Campaign', fallback: 'No campaign' },
     date: 'quarter',
   },
@@ -139,31 +140,50 @@ export const METRIC_SOURCES = {
   webInfluencedPipeline: facts('Website: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, note: GP_NOTE,
   }),
-  webInfluencedMargin: facts('Website: influenced margin (gross profit)', 'margin_value', {
+  webInfluencedMargin: facts('Website: closed-won value (gross profit)', 'margin_value', {
     unit: 'money', channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, note: WON_GP_NOTE,
   }),
   webMqlToSql: { kind: 'ratio', label: 'Website: MQL → SQL', num: 'webSqls', den: 'webTotalLeads' },
   webSqlToWon: { kind: 'ratio', label: 'Website: SQL → Closed/Won', num: 'webClosedOpps', den: 'webSqls' },
 
-  // ---- Events Performance — the Events & Webinars channel ------------------
-  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  eventsClosedOpps: facts('Events: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL }),
+  // ---- Events Performance — IN-PERSON events ---------------------------------
+  // Events and webinars are reported separately (Margot, 23 Sep 2026: "We've separated
+  // events and webinars in the reporting, but this distinction doesn't seem to be reflected
+  // in the current report"). Both live in the Events & Webinars channel, so the split is by
+  // campaign type — the same scoping the KPI Tracker uses, so each breakdown foots to its tile.
+  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  eventsClosedOpps: facts('Events: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR }),
   eventsInfluencedPipeline: facts('Events: influenced pipeline (gross profit)', null, {
-    columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, note: GP_NOTE,
+    columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, note: GP_NOTE,
   }),
-  eventsInfluencedMargin: facts('Events: influenced margin (gross profit)', 'margin_value', {
-    unit: 'money', channel: EVENTS_CHANNEL, note: WON_GP_NOTE,
+  eventsInfluencedMargin: facts('Events: closed-won value (gross profit)', 'margin_value', {
+    unit: 'money', channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, note: WON_GP_NOTE,
   }),
   eventsSqlToWon: { kind: 'ratio', label: 'Events: SQL → Closed/Won', num: 'eventsClosedOpps', den: 'eventsSqls' },
-  registrations: facts('Registrations (leads)', 'leads', {
-    channel: EVENTS_CHANNEL,
-    note: 'Campaign membership on event campaigns — the people registered, counted from Salesforce.',
+  registrations: facts('Events: registrations (leads)', 'leads', {
+    channel: EVENTS_CHANNEL, excludeTypes: WEBINAR,
+    note: 'Campaign membership on in-person event campaigns — the people registered, counted from Salesforce.',
   }),
-  // The events rate divides the RAW MQL and SQL columns, which is what the events funnel
-  // on the page does — not the floored funnel figures used in the Overall summary.
-  eventsMqlRaw: facts('Events: MQLs', 'mql_count', { channel: EVENTS_CHANNEL }),
-  mqlToSqlEvents: { kind: 'ratio', label: 'MQL → SQL conversion (events)', num: 'eventsSqls', den: 'eventsMqlRaw' },
+  // Both sides floored, exactly as the tile divides them.
+  mqlToSqlEvents: { kind: 'ratio', label: 'MQL → SQL conversion (events)', num: 'eventsSqls', den: 'eventsMqls' },
+
+  // ---- Webinars Performance — Webinar campaigns only -----------------------
+  webinarRegistrations: facts('Webinars: registrations (leads)', 'leads', {
+    channel: EVENTS_CHANNEL, onlyTypes: WEBINAR,
+    note: 'Campaign membership on webinar campaigns — the people registered, counted from Salesforce.',
+  }),
+  webinarMqls: facts('Webinars: MQLs', 'leads', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  webinarSqls: facts('Webinars: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  webinarClosedOpps: facts('Webinars: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR }),
+  webinarInfluencedPipeline: facts('Webinars: influenced pipeline (gross profit)', null, {
+    columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, note: GP_NOTE,
+  }),
+  webinarInfluencedMargin: facts('Webinars: closed-won value (gross profit)', 'margin_value', {
+    unit: 'money', channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, note: WON_GP_NOTE,
+  }),
+  webinarMqlToSql: { kind: 'ratio', label: 'Webinars: MQL → SQL conversion', num: 'webinarSqls', den: 'webinarMqls' },
+  webinarSqlToWon: { kind: 'ratio', label: 'Webinars: SQL → Closed/Won', num: 'webinarClosedOpps', den: 'webinarSqls' },
 
   // ---- Quarter-on-quarter growth -------------------------------------------
   organicTrafficGrowth: {
@@ -178,7 +198,13 @@ export const METRIC_SOURCES = {
   // A LIFETIME cadence snapshot, not a dated series: the platform reports running
   // per-sequence counters, so these are region-scoped only and the quarter pill does not
   // narrow them. Said plainly in each note, because it is the likeliest source of confusion.
+  // `lifetime: true` — Outreach engagement is a running counter per sequence, not a dated
+  // series, so the same figure appears in every quarter. The report shows these ONCE, as a
+  // to-date figure (Margot, 23 Sep: "As we're unable to provide an accurate quarterly split
+  // for Outreach, please review how the data is currently broken down by quarter … to avoid
+  // creating any confusion"). Meetings and opportunities below ARE dated and keep quarters.
   outreachProspects: {
+    lifetime: true,
     label: 'Prospects in cadence', from: 'outreachSeq', column: 'prospects', unit: 'count',
     group: { field: 'region_code', label: 'Region', fallback: 'Unassigned' },
     sub: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
@@ -186,6 +212,7 @@ export const METRIC_SOURCES = {
     note: 'A lifetime snapshot of the marketing sequences — the quarter pill does not narrow it, because the platform reports a running counter per sequence rather than a dated series.',
   },
   outreachDelivered: {
+    lifetime: true,
     label: 'Emails delivered', from: 'outreachStep', column: 'delivered', unit: 'count',
     group: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
     sub: { field: 'step_type', label: 'Step type', fallback: 'Unknown step' },
@@ -193,51 +220,77 @@ export const METRIC_SOURCES = {
     note: 'Email steps only, across the marketing sequences — call steps have no delivery. Lifetime snapshot.',
   },
   outreachOpens: {
+    lifetime: true,
     label: 'Opens', from: 'outreachStep', column: 'opens', unit: 'count',
     group: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
     sub: { field: 'step_type', label: 'Step type', fallback: 'Unknown step' },
     date: 'step_order', rowLabel: 'Step',
   },
   outreachClicks: {
+    lifetime: true,
     label: 'Clicks', from: 'outreachStep', column: 'clicks', unit: 'count',
     group: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
     sub: { field: 'step_type', label: 'Step type', fallback: 'Unknown step' },
     date: 'step_order', rowLabel: 'Step',
   },
   outreachReplies: {
+    lifetime: true,
     label: 'Replies', from: 'outreachStep', column: 'replies', unit: 'count',
     group: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
     sub: { field: 'step_type', label: 'Step type', fallback: 'Unknown step' },
     date: 'step_order', rowLabel: 'Step',
   },
   outreachOptOuts: {
+    lifetime: true,
     label: 'Opt-outs', from: 'outreachStep', column: 'opt_outs', unit: 'count',
     group: { field: 'sequence_name', label: 'Sequence', fallback: 'Unnamed sequence' },
     sub: { field: 'step_type', label: 'Step type', fallback: 'Unknown step' },
     date: 'step_order', rowLabel: 'Step',
   },
-  outreachOpenRate: { kind: 'ratio', label: 'Open rate', num: 'outreachOpens', den: 'outreachDelivered',
+  outreachOpenRate: { lifetime: true, kind: 'ratio', label: 'Open rate', num: 'outreachOpens', den: 'outreachDelivered',
     note: 'Per email delivered — the platform basis, which cannot exceed 100% per person. Opens are pixel events, so the displayed rate is capped at 100%.' },
-  outreachCtr: { kind: 'ratio', label: 'Click-through rate', num: 'outreachClicks', den: 'outreachDelivered' },
-  outreachReplyRate: { kind: 'ratio', label: 'Reply rate', num: 'outreachReplies', den: 'outreachDelivered' },
-  outreachUnsubRate: { kind: 'ratio', label: 'Unsubscribe rate', num: 'outreachOptOuts', den: 'outreachDelivered' },
+  outreachCtr: { lifetime: true, kind: 'ratio', label: 'Click-through rate', num: 'outreachClicks', den: 'outreachDelivered' },
+  outreachReplyRate: { lifetime: true, kind: 'ratio', label: 'Reply rate', num: 'outreachReplies', den: 'outreachDelivered' },
+  outreachUnsubRate: { lifetime: true, kind: 'ratio', label: 'Unsubscribe rate', num: 'outreachOptOuts', den: 'outreachDelivered' },
 
-  // ---- Events attendance ---------------------------------------------------
+  // ---- Attendance — in-person events and webinars reported apart ------------
+  // The attendance figures used to combine GoToWebinar webinars with the in-person attendee
+  // lists under one "Events" heading, so a Q1 with no in-person event at all showed 196
+  // registrants (two webinars). Events and webinars are reported separately (Margot, 23 Sep),
+  // so each side now counts only its own rows. `kind` is set by the events fetcher.
   eventRegistrants: {
-    label: 'Registrants', from: 'events', column: 'registrants', unit: 'count',
+    label: 'Events: registrants', from: 'events', column: 'registrants', unit: 'count',
+    where: (r) => r.kind === 'In-person (attendee lists)',
     group: { field: 'kind', label: 'Source', fallback: 'Unknown' },
     sub: { field: 'event_name', label: 'Event', fallback: 'Unnamed event' },
     date: 'activity_date',
-    note: 'Webinar figures come from GoToWebinar; in-person figures from the attendee lists, which are region-scoped only and so are not narrowed by the quarter pill.',
+    note: 'From the in-person attendee lists (Attendees + Non-Attendees), each counted in the quarter the event took place.',
   },
   eventAttendees: {
-    label: 'Attendees', from: 'events', column: 'attendees', unit: 'count',
+    label: 'Events: attendees', from: 'events', column: 'attendees', unit: 'count',
+    where: (r) => r.kind === 'In-person (attendee lists)',
     group: { field: 'kind', label: 'Source', fallback: 'Unknown' },
     sub: { field: 'event_name', label: 'Event', fallback: 'Unnamed event' },
     date: 'activity_date',
   },
-  attendanceRate: { kind: 'ratio', label: 'Attendance rate', num: 'eventAttendees', den: 'eventRegistrants',
-    note: 'Webinars (GoToWebinar) and in-person events (attendee lists) combined.' },
+  attendanceRate: { kind: 'ratio', label: 'Attendance rate (events)', num: 'eventAttendees', den: 'eventRegistrants',
+    note: 'In-person events only; webinar attendance is reported in the Webinars section.' },
+  webinarRegistrants: {
+    label: 'Webinars: registrants', from: 'events', column: 'registrants', unit: 'count',
+    where: (r) => String(r.kind || '').startsWith('Webinars'),
+    group: { field: 'kind', label: 'Source', fallback: 'Unknown' },
+    sub: { field: 'event_name', label: 'Webinar', fallback: 'Unnamed webinar' },
+    date: 'activity_date',
+    note: 'From GoToWebinar, plus the attendee lists for the few webinars GoToWebinar does not carry.',
+  },
+  webinarAttendees: {
+    label: 'Webinars: attendees', from: 'events', column: 'attendees', unit: 'count',
+    where: (r) => String(r.kind || '').startsWith('Webinars'),
+    group: { field: 'kind', label: 'Source', fallback: 'Unknown' },
+    sub: { field: 'event_name', label: 'Webinar', fallback: 'Unnamed webinar' },
+    date: 'activity_date',
+  },
+  webinarAttendanceRate: { kind: 'ratio', label: 'Attendance rate (webinars)', num: 'webinarAttendees', den: 'webinarRegistrants' },
 
   // ---- Outreach outcomes, attributed by contact ----------------------------
   // Counted ONCE each, because Salesforce writes one row per meeting ATTENDEE — a meeting with
@@ -328,7 +381,7 @@ export const METRIC_SOURCES = {
   emailInfluencedPipeline: facts('Email: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', keys: EMAIL_FAMILY_FACT_KEYS, note: GP_NOTE,
   }),
-  emailInfluencedMargin: facts('Email: influenced margin (gross profit)', 'margin_value', {
+  emailInfluencedMargin: facts('Email: closed-won value (gross profit)', 'margin_value', {
     unit: 'money', keys: EMAIL_FAMILY_FACT_KEYS, note: WON_GP_NOTE,
   }),
   emailMqlToSql: { kind: 'ratio', label: 'Email: MQL → SQL', num: 'emailSqls', den: 'emailMqls' },
