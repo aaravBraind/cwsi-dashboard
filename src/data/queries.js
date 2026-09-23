@@ -1727,16 +1727,13 @@ export async function getEmailReport(filters = {}) {
     // Latest email-platform snapshot for the Audience column (lifetime counters — read
     // one snapshot only; family matching includes the name-pattern rules that undo the
     // platform's contaminated campaign buckets).
-    supabase
-      .from('v_ae_email')
-      .select('ae_email_id,campaign_key,email_name,delivered,is_operational,snapshot_date')
-      .order('snapshot_date', { ascending: false })
-      .limit(400)
-      .then(({ data, error }) => {
-        if (error) throw error
-        const asOf = data?.[0]?.snapshot_date
-        return (data || []).filter((r) => r.snapshot_date === asOf && r.is_operational !== true)
-      }),
+    // v_ae_email already holds each email's LATEST snapshot. Two feeds write here (list emails,
+    // and the automated workflow emails since 24 Sep) on their own schedules, so filtering to the
+    // single newest snapshot date would hide whichever feed ran less recently.
+    fetchAll(
+      () => supabase.from('v_ae_email').select('ae_email_id,campaign_key,email_name,delivered,is_operational,snapshot_date'),
+      ['ae_email_id'],
+    ).then((data) => data.filter((r) => r.is_operational !== true)),
   ])
 
   const campaigns = emailFamiliesFor(filters.quarter).map((f) => {
@@ -1808,8 +1805,11 @@ export async function getAeEmailEngagement(filters = {}) {
   const asOf = latestRows?.[0]?.snapshot_date
   if (!asOf) return { hasData: false, hasFeed: false, asOf: null, totals: null, emails: [], campaigns: [] }
 
+  // Each email's latest snapshot (the view dedups per email). Not `.eq('snapshot_date', asOf)`:
+  // the list-email feed and the automated-workflow feed load on different days, and a global
+  // latest-date filter would drop one of them. `asOf` stays the newest load, for the label.
   const rows = await fetchAll(
-    () => supabase.from('v_ae_email').select('*').eq('snapshot_date', asOf),
+    () => supabase.from('v_ae_email').select('*'),
     ['ae_email_id'],
   )
 
