@@ -216,8 +216,11 @@ const gbpToEur = (v) => (isNA(v) ? v : Number(v) * GBP_TO_EUR)
 function floorPerQuarter(rows) {
   const out = { opp: 0, sql: 0, mql: 0 }
   for (const [, rs] of groupBy(rows, (r) => `${r.year ?? ''}-${r.quarter ?? ''}`)) {
-    const won = sum(rs, 'closed_won_count')
-    const opp = Math.max(sum(rs, 'opp_count'), won)
+    // Qualified opportunities are dated by their CREATED date and are a subset of created
+    // opportunities (Margot, 24 Sep 2026). Won deals are dated by close date, so they no longer
+    // lift the qualified count — a deal created in 2025 and won in 2026 would otherwise make
+    // qualified exceed created.
+    const opp = sum(rs, 'opp_count')
     const sql = Math.max(sum(rs, 'sql_count'), opp)
     out.opp += opp
     out.sql += sql
@@ -902,6 +905,21 @@ export async function getMetricSource(metricKey, filters = {}) {
     }
     if (spec.onlyTypes && spec.onlyTypes.length) {
       rows = rows.filter((r) => spec.onlyTypes.includes(r.campaign_type))
+    }
+    // Webinar registrations: an override webinar's Salesforce rows are replaced by its
+    // GoToWebinar registrants, exactly as the KPI Tracker counts them.
+    if (spec.gtwRegistrations) {
+      const over = new Set(Object.keys(GTW_REGISTRATION_OVERRIDES))
+      const gtw = await gtwOverrideRows(filters)
+      rows = [
+        ...rows.filter((r) => !over.has(r.campaign_key)),
+        ...gtw.map((g) => ({
+          fact_id: `gtw-${g.event_key}`, campaign_key: g.campaign_key,
+          campaign_name: `${g.event_name} (GoToWebinar registrations)`,
+          channel_name: 'Events & Webinars', campaign_type: 'Webinar', region_code: g.region_code,
+          activity_date: g.activity_date, year: g.year, quarter: g.quarter, [spec.column]: g.registrants,
+        })),
+      ]
     }
   } else if (spec.from === 'web') {
     rows = await fetchAll(
@@ -1642,6 +1660,41 @@ export async function getOpportunityStage(filters = {}) {
 // excludeTypes: optional read-layer exclusion by campaign_type — the SEO page passes
 // ['Content/White Paper'] so whitepaper-download campaigns (reported on the Email
 // page) don't also inflate Organic SEO's leads/MQL.
+// ---- Webinar registrations taken from GoToWebinar -------------------------
+// Registrations normally come from the Salesforce campaign members. For a webinar listed here the
+// Salesforce campaign did not receive its registrants, so GoToWebinar's own count is used instead
+// (Margot, 24 Sep 2026: "I'd suggest relying on the data available in GTW for this one").
+export const GTW_REGISTRATION_OVERRIDES = {
+  '701Si00000S2Zj7IAF': '19.02.2026 Webinar AI and Data Security: only 10 of its 131 GoToWebinar registrants reached the Salesforce campaign',
+}
+// GoToWebinar rows for the override webinars, scoped to the same quarter, date cap and region.
+async function gtwOverrideRows(filters = {}) {
+  const keys = Object.keys(GTW_REGISTRATION_OVERRIDES)
+  if (!keys.length) return []
+  const rows = await fetchAll(() => {
+    let q = supabase.from('v_event_daily')
+      .select('event_key,event_name,campaign_key,activity_date,year,quarter,region_code,registrants')
+      .in('campaign_key', keys)
+    if (filters.quarter && filters.quarter !== 'ytd') {
+      q = q.eq('year', REPORTING_YEAR).eq('quarter', Number(String(filters.quarter).replace('q', '')))
+    } else {
+      q = q.eq('year', REPORTING_YEAR)
+    }
+    q = q.lte('activity_date', toDateCapIso())
+    if (filters.region && filters.region !== 'all') q = q.eq('region_code', filters.region)
+    return q
+  }, ['event_key'])
+  return rows
+}
+// Registrations for a set of fact rows: Salesforce members, except that an override webinar's
+// members are replaced by its GoToWebinar registrants.
+async function registrationsFor(rows, filters) {
+  const over = new Set(Object.keys(GTW_REGISTRATION_OVERRIDES))
+  const sf = sum(rows.filter((r) => !over.has(r.campaign_key)), 'leads')
+  const gtw = sum(await gtwOverrideRows(filters), 'registrants')
+  return sf + gtw
+}
+
 // onlyTypes: the opposite — KEEP only these campaign types. Webinars are reported apart
 // from in-person events (Margot, 23 Sep 2026: "We've separated events and webinars in the
 // reporting"), and both live in the one Events & Webinars channel, so the split is by type.
@@ -1654,7 +1707,7 @@ export async function getChannel(channelName, filters, excludeTypes = null, only
       // MQL = campaign responders, floored ≥ SQL — matches funnelOf so the funnel now
       // starts at MQL with the same figure everywhere (the "Leads" stage was removed).
       const won = sum(rs, 'closed_won_count')
-      const sql = Math.max(sum(rs, 'sql_count'), won)
+      const sql = Math.max(sum(rs, 'sql_count'), sum(rs, 'opp_count'))
       const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
       return {
         campaignKey: key,
@@ -1676,8 +1729,13 @@ export async function getChannel(channelName, filters, excludeTypes = null, only
       }
     })
     .sort((a, b) => b.pipeline - a.pipeline)
+  const totals = funnelOf(rows)
+  // Registrations (webinars only): Salesforce members with the GoToWebinar override applied.
+  const coversWebinars = channelName === 'Events & Webinars' &&
+    !(excludeTypes || []).includes('Webinar') && (!onlyTypes || onlyTypes.includes('Webinar'))
+  if (coversWebinars) totals.registrations = await registrationsFor(rows, filters)
   return {
-    totals: funnelOf(rows),
+    totals,
     campaigns,
     hasData: rows.length > 0,
     rowCount: rows.length,
@@ -1739,7 +1797,7 @@ export async function getEmailReport(filters = {}) {
   const campaigns = emailFamiliesFor(filters.quarter).map((f) => {
     const rs = yearRows.filter((r) => f.factKeys.includes(r.campaign_key))
     const won = sum(rs, 'closed_won_count')
-    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const sql = Math.max(sum(rs, 'sql_count'), sum(rs, 'opp_count'))
     const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql) // MQL = campaign members (see getChannel)
     const famEmails = aeLatest.filter((r) => f.matchesEmail(r))
     const delivered = famEmails.reduce((a, r) => a + (Number(r.delivered) || 0), 0)
@@ -2316,7 +2374,7 @@ export async function getEventsDetail(filters = {}) {
     // MQL = event registrants / campaign responders (Margot 14.07: "all registered
     // attendees count as MQLs"), floored ≥ SQL — consistent with funnelOf.
     const won = sum(rs, 'closed_won_count')
-    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const sql = Math.max(sum(rs, 'sql_count'), sum(rs, 'opp_count'))
     const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
     return {
       campaignKey: key,
@@ -2490,7 +2548,7 @@ export async function getCampaignThemes(filters = {}) {
     const pinned = overrides[key]?.theme || null
     const theme = pinned ? themeMeta(pinned) : autoTheme
     const won = sum(rs, 'closed_won_count')
-    const sql = Math.max(sum(rs, 'sql_count'), won)
+    const sql = Math.max(sum(rs, 'sql_count'), sum(rs, 'opp_count'))
     const mql = Math.max(sum(rs, 'leads'), sum(rs, 'mql_count'), sql)
     return {
       campaignKey: key,

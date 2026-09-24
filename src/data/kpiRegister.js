@@ -82,7 +82,8 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
   const evLeads = Number(evf.leads) || 0
   const evMql = Number(evf.mql) || 0
   const evSql = Number(evf.sql) || 0
-  const wbLeads = Number(wbf.leads) || 0
+  // Webinar registrations: Salesforce members with the GoToWebinar override applied (19 Feb webinar).
+  const wbLeads = Number(wbf.registrations ?? wbf.leads) || 0
 
   const visitorToMqlV = has(w.keyEvents) && Number(w.sessions) > 0 ? w.keyEvents / w.sessions : null
   const mqlToSqlV = has(f.sql) && f.mql ? f.sql / f.mql : null
@@ -279,7 +280,7 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
 
     { t: 'cat', label: 'Webinars Performance' },
     wbLeads > 0
-      ? { t: 'live', label: 'Registrations (leads)', val: num(wbLeads), ctx: 'campaign membership · webinar campaigns', key: 'webinarRegistrations', num: wbLeads }
+      ? { t: 'live', label: 'Registrations (leads)', val: num(wbLeads), ctx: 'campaign membership · webinar campaigns (19 Feb webinar from GoToWebinar)', key: 'webinarRegistrations', num: wbLeads }
       : { t: 'na', label: 'Registrations (leads)', ctx: 'webinar-campaign members', key: 'webinarRegistrations' },
     wbAttendanceV != null
       ? { t: 'live', label: 'Attendance rate', val: `${(wbAttendanceV * 100).toFixed(0)}%`, ctx: `GoToWebinar + webinar attendee lists · ${num(wbAtt)} of ${num(wbRegs)}`, key: 'webinarAttendanceRate', num: wbAttendanceV }

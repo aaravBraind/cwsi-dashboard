@@ -47,12 +47,14 @@ export const METRIC_SOURCES = {
   // MQLs are RESPONDED SALESFORCE CAMPAIGN MEMBERS (`mql_count`), not `leads`. `leads`
   // additionally carries LinkedIn lead-gen form fills, which are not campaign members and
   // must not appear in a figure the client reconciles against Salesforce (Margot, 18 Sep).
-  totalMqls: facts('MQLs', 'mql_count', { floorOver: ['mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  totalSqls: facts('SQLs', 'sql_count', { floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  totalMqls: facts('MQLs', 'mql_count', { floorOver: ['mql_count', 'sql_count', 'opp_count'], gapNote: FLOOR }),
+  totalSqls: facts('SQLs', 'sql_count', { floorOver: ['sql_count', 'opp_count'], gapNote: FLOOR }),
   createdOpportunities: facts('Created opportunities', 'created_opp_count', {
     note: 'Every opportunity created in the period, at any stage — not only qualified ones.',
   }),
-  opportunities: facts('Qualified opportunities', 'opp_count', { floorOver: ['opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  // Not floored: qualified opportunities are dated by CREATED date, a subset of created opportunities
+  // (Margot, 24 Sep); won deals are dated by close date and must not lift them.
+  opportunities: facts('Qualified opportunities', 'opp_count'),
   closedWonCount: facts('Closed-won opportunities', 'closed_won_count'),
 
   // ---- Money ---------------------------------------------------------------
@@ -134,8 +136,8 @@ export const METRIC_SOURCES = {
 
   // ---- Website Performance — the Organic SEO channel, whitepapers excluded --
   // Scoped exactly as the SEO page scopes it, so the two can never disagree.
-  webTotalLeads: facts('Website: total leads', 'leads', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  webSqls: facts('Website: SQLs', 'sql_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  webTotalLeads: facts('Website: total leads', 'leads', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count'], gapNote: FLOOR }),
+  webSqls: facts('Website: SQLs', 'sql_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, floorOver: ['sql_count', 'opp_count'], gapNote: FLOOR }),
   webClosedOpps: facts('Website: closed-won opportunities', 'closed_won_count', { channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE }),
   webInfluencedPipeline: facts('Website: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: WEB_CHANNEL, excludeTypes: WEB_EXCLUDE, note: GP_NOTE,
@@ -151,8 +153,8 @@ export const METRIC_SOURCES = {
   // events and webinars in the reporting, but this distinction doesn't seem to be reflected
   // in the current report"). Both live in the Events & Webinars channel, so the split is by
   // campaign type — the same scoping the KPI Tracker uses, so each breakdown foots to its tile.
-  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  eventsMqls: facts('Events: MQLs', 'leads', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count'], gapNote: FLOOR }),
+  eventsSqls: facts('Events: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, floorOver: ['sql_count', 'opp_count'], gapNote: FLOOR }),
   eventsClosedOpps: facts('Events: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL, excludeTypes: WEBINAR }),
   eventsInfluencedPipeline: facts('Events: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, excludeTypes: WEBINAR, note: GP_NOTE,
@@ -170,11 +172,11 @@ export const METRIC_SOURCES = {
 
   // ---- Webinars Performance — Webinar campaigns only -----------------------
   webinarRegistrations: facts('Webinars: registrations (leads)', 'leads', {
-    channel: EVENTS_CHANNEL, onlyTypes: WEBINAR,
-    note: 'Campaign membership on webinar campaigns — the people registered, counted from Salesforce.',
+    channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, gtwRegistrations: true,
+    note: 'Campaign membership on webinar campaigns — the people registered, counted from Salesforce. For the 19 February webinar the GoToWebinar registrations are used instead, because its registrants did not reach the Salesforce campaign.',
   }),
-  webinarMqls: facts('Webinars: MQLs', 'leads', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  webinarSqls: facts('Webinars: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  webinarMqls: facts('Webinars: MQLs', 'leads', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count'], gapNote: FLOOR }),
+  webinarSqls: facts('Webinars: SQLs', 'sql_count', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, floorOver: ['sql_count', 'opp_count'], gapNote: FLOOR }),
   webinarClosedOpps: facts('Webinars: closed-won opportunities', 'closed_won_count', { channel: EVENTS_CHANNEL, onlyTypes: WEBINAR }),
   webinarInfluencedPipeline: facts('Webinars: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', channel: EVENTS_CHANNEL, onlyTypes: WEBINAR, note: GP_NOTE,
@@ -375,8 +377,8 @@ export const METRIC_SOURCES = {
   // ---- Email Performance — pinned to the four named campaign families ------
   // Scoped by campaign key, not by channel: these campaigns span the Email and SEO
   // channels, which is why the Email page pins them explicitly.
-  emailMqls: facts('Email: MQLs', 'leads', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
-  emailSqls: facts('Email: SQLs', 'sql_count', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['sql_count', 'opp_count', 'closed_won_count'], gapNote: FLOOR }),
+  emailMqls: facts('Email: MQLs', 'leads', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['leads', 'mql_count', 'sql_count', 'opp_count'], gapNote: FLOOR }),
+  emailSqls: facts('Email: SQLs', 'sql_count', { keys: EMAIL_FAMILY_FACT_KEYS, floorOver: ['sql_count', 'opp_count'], gapNote: FLOOR }),
   emailClosedOpps: facts('Email: closed-won opportunities', 'closed_won_count', { keys: EMAIL_FAMILY_FACT_KEYS }),
   emailInfluencedPipeline: facts('Email: influenced pipeline (gross profit)', null, {
     columns: GP_BOTH, unit: 'money', keys: EMAIL_FAMILY_FACT_KEYS, note: GP_NOTE,

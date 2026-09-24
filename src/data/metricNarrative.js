@@ -157,7 +157,9 @@ calculated figure disagreeing with the dashboard.
    the same measure by definition (agreed 9 July).
 4. **The funnel has a floor.** Anyone who reached a later stage must have passed the earlier ones, so
    each stage is shown as at least as large as the next. It is applied quarter by quarter, so a
-   year-to-date figure is always the sum of its quarters. In the current data it lifts **SQLs** where
+   year-to-date figure is always the sum of its quarters. Qualified opportunities are counted by the
+   date they were created, so they are always a subset of created opportunities; won deals are
+   counted by close date and do not lift them. In the current data the floor lifts **SQLs** where
    a quarter has more qualified opportunities than leads at Attempt-1 stage, and it lifts the
    **website** leads and SQLs, where deals on older website-leads campaigns have no leads of their
    own. Where it applies, the figure says so and gives both numbers.
