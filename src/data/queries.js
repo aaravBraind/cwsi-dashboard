@@ -3036,6 +3036,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       p_quarter: filters.quarter && filters.quarter !== 'ytd' ? Number(String(filters.quarter).replace('q', '')) : null,
       p_year: REPORTING_YEAR,
       p_region: filters.region && filters.region !== 'all' ? filters.region : null,
+      p_workstream: filters.workstream || null,
     }).then((r) => (Array.isArray(r.data) ? r.data[0] : r.data) || null),
   ])
 
@@ -3053,6 +3054,9 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       nonWorkstreamMeetingIds.add(r.meeting_key)
       continue
     }
+    // "Type of Outreach" filter: the meetings card must narrow with the engagement figures beside
+    // it (8 Oct — Microsoft TUM engagement was shown next to an all-workstream meetings count).
+    if (filters.workstream && outreachWorkstream(r.sequence_name) !== filters.workstream) continue
     const cat = outreachSeqCategory(r.sequence_name)
     // Sets hold meeting_key, so a meeting with three attendees counts ONCE.
     any.add(r.meeting_key)
@@ -3070,6 +3074,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
   const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
   for (const o of opps) {
     if (marketingOnly && !isMarketingSequence(o.sequence_name)) continue // 3 workstreams only (Margot 20 Jul)
+    if (filters.workstream && outreachWorkstream(o.sequence_name) !== filters.workstream) continue
     const amt = Number(o.amount_eur) || 0
     // GROSS PROFIT is the reported basis here too, from 21 Sep — these deals now carry it
     // (the contact-opportunity feed pulls Salesforce Gross Profit directly, so an Outreach deal

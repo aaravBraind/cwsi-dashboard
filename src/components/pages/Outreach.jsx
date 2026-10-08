@@ -22,7 +22,7 @@ export default function Outreach() {
   // Reactivation / SoPro / Microsoft TUM) — sales & one-off sequences are always excluded.
   // Hard-locked marketing-only (the "All sequences" toggle was removed).
   const q = useOutreach(workstream, true)
-  const mtg = useOutreachAttributedMeetings(true)
+  const mtg = useOutreachAttributedMeetings(true, workstream) // follows the Type of Outreach filter
 
   return (
     <>
@@ -210,7 +210,7 @@ function Body({ data, meetings }) {
         <div className="panel-head">
           <div className="left">
             <div className="panel-title">Outreach Engagement Funnel</div>
-            <div className="panel-sub">Prospects → Emails delivered → Opens → Replies → Meetings · rates per email delivered · engagement is lifetime, meetings follow the selected quarter</div>
+            <div className="panel-sub">Prospects → Emails delivered → Opens → Replies → Meetings · rates per email delivered · engagement is lifetime, meetings follow the selected quarter · all figures follow the Type of Outreach filter</div>
           </div>
           <span className="chip blue">snapshot</span>
         </div>
