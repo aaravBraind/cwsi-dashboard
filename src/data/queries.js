@@ -2361,7 +2361,9 @@ export async function getEventTypeFunnel(filters = {}) {
 // re-run (Level B) → those rows bucket as 'Untyped'.
 export async function getEventsDetail(filters = {}) {
   const sel =
-    'fact_id,campaign_key,campaign_name,campaign_type,campaign_start_date,leads,mql_count,sql_count,opp_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'
+    // the gross-profit columns must be listed: the rows below sum them, and a column left out
+    // here comes back undefined and adds up to €0 (Margot, 8 Oct 2026)
+    'fact_id,campaign_key,campaign_name,campaign_type,campaign_start_date,leads,mql_count,sql_count,opp_count,created_opp_count,created_opp_value,created_opp_margin_value,pipeline_value,pipeline_margin_value,closed_won_value,closed_won_count,margin_value'
   const scoped = { ...filters, channel: 'Events & Webinars' }
   // ATTRIBUTION WINDOW FIX: a campaign's row shows its WHOLE-2026 contribution, not
   // just the slice that fell inside the selected quarter. See campaignRows().
@@ -2528,7 +2530,7 @@ export async function getCampaignThemes(filters = {}) {
       () => applyFilters(
         supabase
           .from('v_fact_enriched')
-          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,campaign_start_date,mql_count,sql_count,leads,opp_count,created_opp_count,pipeline_value,closed_won_value,closed_won_count'),
+          .select('fact_id,campaign_key,campaign_name,campaign_type,channel_name,region_code,campaign_start_date,mql_count,sql_count,leads,opp_count,created_opp_count,created_opp_value,created_opp_margin_value,pipeline_value,pipeline_margin_value,closed_won_value,closed_won_count,margin_value'),
         { ...filters, quarter: 'ytd' },
       ),
       ['fact_id'],
