@@ -2587,7 +2587,9 @@ export async function getCampaignThemes(filters = {}) {
   const curatedRows = CURATED_CAMPAIGNS.map((cc) => {
     const members = cc.keys.map((k) => byKey.get(k)).filter(Boolean)
     const sumk = (k) => members.reduce((a, m) => a + (Number(m[k]) || 0), 0)
-    const theme = themeMeta(cc.quarter === 'Q1' ? 'q1' : 'q2')
+    // The curated quarter is the QUARTERLY CAMPAIGN the activity belongs to, not when it ran:
+    // the September E7 Suite events are Q2 activities (Margot, 8 Oct 2026). See pinnedCampaigns.js.
+    const theme = themeMeta(String(cc.quarter).toLowerCase())
     const regions = [...new Set(members.map((m) => m.regionCode).filter(Boolean))]
     return {
       campaignKey: cc.keys[0], // primary key — name/region overrides attach here
@@ -2613,9 +2615,11 @@ export async function getCampaignThemes(filters = {}) {
       memberKeys: cc.keys,
     }
   })
+  // A saved placement (campaign_overrides.theme) always wins, so an activity moved by hand stays
+  // where it was put; otherwise only Q3-dated activity lists automatically, the rest is Other.
   const rest = campaigns
     .filter((c) => !CURATED_KEY_SET.has(c.campaignKey))
-    .map((c) => (c.theme.quarter === 'Q3' ? c : { ...c, theme: themeMeta('other') }))
+    .map((c) => (c.themeOverridden || c.theme.quarter === 'Q3' ? c : { ...c, theme: themeMeta('other') }))
   const allRows2 = [...curatedRows, ...rest]
 
   // Keep only campaigns whose own quarter matches the selected pill (crossover fix).

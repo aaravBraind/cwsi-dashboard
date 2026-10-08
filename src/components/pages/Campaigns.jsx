@@ -49,18 +49,22 @@ export default function Campaigns() {
         <strong>“Innovation Without Risk”</strong>, <strong>Q3</strong> is{' '}
         <strong>“Build Trust in a Distrustful World”</strong> and <strong>Q4</strong> is{' '}
         <strong>“Cybersecurity. Safeguarding Business Growth.”</strong>{' '}
-        <strong>Q1 and Q2 list exactly the campaigns you named</strong> (4 in Q1,
-        7 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
+        <strong>Q1 and Q2 list exactly the campaigns you named</strong> (5 in Q1,
+        10 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
         activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
-        plus its on-demand version, is one row). Everything else sits under{' '}
+        plus its on-demand version, is one row). An activity sits with the quarterly campaign it was part of,
+        even when it ran later: the May LinkedIn ads for the Q1 whitepaper are a Q1 activity, and the September
+        Microsoft E7 Suite events and the Becoming Frontier legal campaign are Q2 activities. Everything else sits under{' '}
         <strong>“Other activities”</strong>, kept so the page still adds up to the Overview totals. Campaign names
         are editable (click the pencil). <Explain id="campaignTheme" />
       </Callout>
 
 
       {/* The "Theme" dropdown column was removed (Margot, 11 Aug: "I'm not sure what value
-          the Theme column adds. I'd remove it.") — Q1/Q2 placement is now fixed by her
-          curated campaign list, so there is nothing left to override. */}
+          the Theme column adds. I'd remove it.") — Q1/Q2 placement is fixed by her curated
+          campaign list (pinnedCampaigns.js), which is the quarterly CAMPAIGN an activity belongs
+          to, not the calendar quarter it ran in (Margot, 8 Oct: the September E7 Suite events are
+          Q2 activities). To move an activity, edit that list. */}
 
       {/* Locked definition: which date keys what. A campaign is placed by when it STARTED
           (name date, else Salesforce Start Date) — its end/close date is never used — while

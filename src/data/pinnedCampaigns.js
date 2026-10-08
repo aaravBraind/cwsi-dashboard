@@ -9,6 +9,18 @@
 // reconcile to the Overview), except Q3 activities, which list automatically under the Q3
 // umbrella (her list predates the Q3 window).
 //
+// A QUARTER HERE MEANS THE QUARTERLY CAMPAIGN (THEME), NOT THE CALENDAR DATE. Margot, 8 Oct
+// 2026: "some of the campaign activities seem to have shifted across quarters. Before this
+// was correct. The Data That Moves Your Business Forward LinkedIn campaign should be part of
+// the Q1 campaign. The E7 events that are in Q3 should be in Q2. Same as the Legal always-on
+// vertical campaign." The July version of this page grouped by theme keyword (date-blind);
+// from 11 Aug the auto rule keys on the date in the campaign name, which pushed the September
+// E7 Suite events and the "Q3 2026 - … Legal Always-On" campaign into Q3, and her 11 Aug list
+// had the May LinkedIn ad under Q2. So a Q1 asset promoted in May (the LinkedIn ad), the E7
+// Suite roadshow in September and the Becoming Frontier legal campaign in July are all
+// Q1 / Q2 ACTIVITIES by theme and are pinned here explicitly. The Events, KPI and Overview
+// pages still date an event by when it was held — that axis is untouched.
+//
 // Email page: "Only the following campaigns should be included" — exactly 4. An email
 // FAMILY needs name-pattern matching on top of campaign keys because the email platform's
 // campaign buckets are contaminated (verified 16 Aug): the "Q1 Data is an Asset" bucket
@@ -33,6 +45,10 @@
 //   701Tm00000c9ygeIAA  2026 - Whitepaper - Becoming Frontier: Leading the Next Phase of AI
 //   701Tm00000az9RSIAY  2026 - Microsoft E7 Offering Workflow
 //   701Tm00000ZUJUEIA5  07.05.2026 - BeNeLux - LinkedIn Ads - Data That Moves Your Business Forward
+//   701Tm00000doSViIAM  15.09.2026 - UK - The Microsoft E7 Suite: Governing AI Agents at Scale
+//   701Tm00000ZEHhcIAH  15.09.2026 - Microsoft E7-suite: Governance van AI-agents in de Publieke Sector
+//   701Tm00000dAAMDIA4  16.09.2026 - Microsoft E7-suite: Governance van AI-agents in de Private Sector
+//   701Tm00000drvHsIAI  Q3 2026 - Becoming Frontier - Legal Always-On Vertical Campaign
 //   701Tm00000cHsHgIAK  2026 - Apple for Enterprise Tech Deep Dive - Whitepaper
 //   701Tm00000ZKcd1IAD  2026 - Apple for Enterprise Tech Deep Dive 2025 Whitepaper (variant, no activity)
 //   701Tm00000ZKsmVIAT  2026 - Apple for Enterprise 2025 Whitepaper (variant, no activity)
@@ -43,14 +59,23 @@ export const CURATED_CAMPAIGNS = [
   { id: 'webinar-ai-data-security', quarter: 'Q1', label: 'Webinar AI and Data Security', keys: ['701Si00000S2Zj7IAF', '701Tm00000ZPAxlIAH'] },
   { id: 'q1-data-asset', quarter: 'Q1', label: 'Q1 Data is an Asset, Not a Liability', keys: ['701Si00000TlRLrIAN', '701Tm00000ZP4cEIAT'] },
   { id: 'data-that-moves-wp', quarter: 'Q1', label: 'Data That Moves Your Business Forward Whitepaper', keys: ['701Si00000V3LvjIAF'] },
-  // ── Q2 (7) ──
+  // The May LinkedIn ad promoted the Q1 whitepaper, so it is a Q1 activity (Margot, 8 Oct 2026;
+  // her 11 Aug list had it under Q2).
+  { id: 'benelux-li-ads-dtm', quarter: 'Q1', label: 'BeNeLux LinkedIn Ads — Data That Moves Your Business Forward', keys: ['701Tm00000ZUJUEIA5'] },
+  // ── Q2 (7 from the 11 Aug list + the 4 moved back on 8 Oct) ──
   { id: 'protect-data-power-ai', quarter: 'Q2', label: 'Protect Data, Power AI', keys: ['701Si00000UOSYCIA5', '701Tm00000Z6i5SIAR'] },
   { id: 'ms-e7-governing-ai', quarter: 'Q2', label: 'Microsoft E7: Governing AI Agents at Scale', keys: ['701Tm00000ZXsNFIA1'] },
   { id: 'agent365-public-sector', quarter: 'Q2', label: 'Innovating with Agent 365 in the Public Sector', keys: ['701Tm00000a9FhTIAU', '701Tm00000chbPpIAI'] },
   { id: 'becoming-frontier-webinar', quarter: 'Q2', label: 'Becoming Frontier: Innovating with Agent 365 without losing control', keys: ['701Si00000VBdQoIAL', '701Tm00000ZWYCBIA5'] },
   { id: 'becoming-frontier-wp', quarter: 'Q2', label: 'Whitepaper: Becoming Frontier: Leading the Next Phase of AI', keys: ['701Tm00000c9ygeIAA'] },
   { id: 'ms-e7-offering', quarter: 'Q2', label: 'Microsoft E7 Offering Workflow', keys: ['701Tm00000az9RSIAY'] },
-  { id: 'benelux-li-ads-dtm', quarter: 'Q2', label: 'BeNeLux LinkedIn Ads — Data That Moves Your Business Forward', keys: ['701Tm00000ZUJUEIA5'] },
+  // The September E7 Suite roadshow and the Becoming Frontier legal campaign belong to the Q2
+  // "Innovation Without Risk" campaign even though they ran in Q3 (Margot, 8 Oct 2026). The
+  // Events page still reports them as events held in Q3.
+  { id: 'ms-e7-suite-uk', quarter: 'Q2', label: 'The Microsoft E7 Suite: Governing AI Agents at Scale (UK)', keys: ['701Tm00000doSViIAM'] },
+  { id: 'ms-e7-suite-nl-public', quarter: 'Q2', label: 'Microsoft E7-suite: Governance van AI-agents in de Publieke Sector (NL)', keys: ['701Tm00000ZEHhcIAH'] },
+  { id: 'ms-e7-suite-nl-private', quarter: 'Q2', label: 'Microsoft E7-suite: Governance van AI-agents in de Private Sector (NL)', keys: ['701Tm00000dAAMDIA4'] },
+  { id: 'legal-always-on-vertical', quarter: 'Q2', label: 'Becoming Frontier — Legal Always-On Vertical Campaign', keys: ['701Tm00000drvHsIAI'] },
 ]
 
 // Every Salesforce key claimed by a curated row (for the "everything else → Other" split).
