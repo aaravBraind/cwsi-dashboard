@@ -65,7 +65,7 @@ export const METHODOLOGY = {
     what: 'Leads that sales actively engaged because they saw genuine potential.',
     source: 'the lead’s status in Salesforce (and, for existing customers, a booked meeting).',
     calc: 'For leads, we count those whose status reached “Attempt 1” or a later stage — a seller has started working them. For existing customers (who have no lead funnel), a booked meeting in their activity history marks them as sales-qualified.',
-    caveat: 'Because a status is a point-in-time snapshot, we treat “Attempt 1 or beyond” as sales-qualified. A few boundary statuses (for example nurture) are being confirmed with CWSI. Takes effect at the next data refresh.',
+    caveat: 'From 9 October 2026, an SQL counts for a campaign only if the lead became sales-qualified after responding to that campaign, so a lead that was already being worked when it registered for an event is not credited to the event. Salesforce has recorded status changes only since 8 October 2026, so for responses before then we cannot tell which came first and count the lead’s current status, as before.',
   },
   createdOpps: {
     label: 'Created Opportunities',
