@@ -50,10 +50,10 @@ export default function Campaigns() {
         <strong>“Build Trust in a Distrustful World”</strong> and <strong>Q4</strong> is{' '}
         <strong>“Cybersecurity. Safeguarding Business Growth.”</strong>{' '}
         <strong>Q1 and Q2 list exactly the campaigns you named</strong> (5 in Q1,
-        10 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
+        11 in Q2) — one row per campaign, with every figure attributed only to that campaign's Salesforce
         activity (a campaign spanning several Salesforce entries, like the two Protect Data events or a webinar
         plus its on-demand version, is one row). An activity sits with the quarterly campaign it was part of,
-        even when it ran later: the May LinkedIn ads for the Q1 whitepaper are a Q1 activity, and the September
+        even when it ran later: the May LinkedIn ads for the Q1 whitepaper are a Q1 activity, and the September and October
         Microsoft E7 Suite events and the Becoming Frontier legal campaign are Q2 activities. Everything else sits under{' '}
         <strong>“Other activities”</strong>, kept so the page still adds up to the Overview totals. Campaign names
         are editable (click the pencil). <Explain id="campaignTheme" />

@@ -48,6 +48,7 @@
 //   701Tm00000doSViIAM  15.09.2026 - UK - The Microsoft E7 Suite: Governing AI Agents at Scale
 //   701Tm00000ZEHhcIAH  15.09.2026 - Microsoft E7-suite: Governance van AI-agents in de Publieke Sector
 //   701Tm00000dAAMDIA4  16.09.2026 - Microsoft E7-suite: Governance van AI-agents in de Private Sector
+//   701Tm00000dnbWFIAY  22.10.2026 - BE - The Microsoft E7 Suite: Governing AI Agents at Scale
 //   701Tm00000drvHsIAI  Q3 2026 - Becoming Frontier - Legal Always-On Vertical Campaign
 //   701Tm00000cHsHgIAK  2026 - Apple for Enterprise Tech Deep Dive - Whitepaper
 //   701Tm00000ZKcd1IAD  2026 - Apple for Enterprise Tech Deep Dive 2025 Whitepaper (variant, no activity)
@@ -75,6 +76,9 @@ export const CURATED_CAMPAIGNS = [
   { id: 'ms-e7-suite-uk', quarter: 'Q2', label: 'The Microsoft E7 Suite: Governing AI Agents at Scale (UK)', keys: ['701Tm00000doSViIAM'] },
   { id: 'ms-e7-suite-nl-public', quarter: 'Q2', label: 'Microsoft E7-suite: Governance van AI-agents in de Publieke Sector (NL)', keys: ['701Tm00000ZEHhcIAH'] },
   { id: 'ms-e7-suite-nl-private', quarter: 'Q2', label: 'Microsoft E7-suite: Governance van AI-agents in de Private Sector (NL)', keys: ['701Tm00000dAAMDIA4'] },
+  // Margot, 9 Oct 2026: "The BE E7 event should show in the Q4 activity once live. From a
+  // campaigns standpoint it should be showing in the Q2 section." (Events tab dates it Q4.)
+  { id: 'ms-e7-suite-be', quarter: 'Q2', label: 'The Microsoft E7 Suite: Governing AI Agents at Scale (BE)', keys: ['701Tm00000dnbWFIAY'] },
   { id: 'legal-always-on-vertical', quarter: 'Q2', label: 'Becoming Frontier — Legal Always-On Vertical Campaign', keys: ['701Tm00000drvHsIAI'] },
 ]
 
