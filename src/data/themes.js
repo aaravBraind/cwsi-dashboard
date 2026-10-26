@@ -49,8 +49,7 @@ export const Q3_THEME = {
   label: 'Build Trust in a Distrustful World',
   blurb: 'Q3 2026 quarterly campaign — the trust narrative: the Governance Gap whitepaper and the Microsoft 365 E3/E5 capabilities workflow.',
 }
-// Q4 opens on 1 Oct 2026. The name is already agreed, so the umbrella exists now; the
-// Q4 quarter pill stays absent until the window opens (see QUARTER_PILLS).
+// Q4 opened on 1 Oct 2026; its quarter pill opened 26 Oct 2026 (see QUARTER_PILLS).
 export const Q4_THEME = {
   key: 'q4',
   quarter: 'Q4',
@@ -97,8 +96,8 @@ function quarterFromDatePrefix(name) {
   let year = Number(m[3])
   if (year < 100) year += 2000
   if (year !== REPORTING_YEAR || month < 1 || month > 12) return null
-  // Q4's theme name arrived with the 20 Aug feedback, so Q4-dated campaigns now roll up
-  // under it. The Q4 quarter PILL is still absent, so nothing Q4-dated is in scope yet.
+  // Q4's theme name arrived with the 20 Aug feedback, so Q4-dated campaigns roll up
+  // under it (Q4 pill opened 26 Oct 2026).
   return month <= 3 ? 'Q1' : month <= 6 ? 'Q2' : month <= 9 ? 'Q3' : 'Q4'
 }
 

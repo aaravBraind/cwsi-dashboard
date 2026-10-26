@@ -154,6 +154,32 @@ export const EMAIL_FAMILIES = [
     factKeys: ['701Tm00000dP1otIAC'],
     matchesEmail: (r) => r.campaign_key === '701Tm00000dP1otIAC',
   },
+  // ── Q4 (added 26 Oct when the Q4 window opened; the Q4 workflow + content pieces, by the
+  //    same rule as Q3 — webinar/event invitation sends stay on the Events page) ──
+  {
+    id: 'ai-guard-workflow',
+    quarter: 'Q4',
+    label: 'AI Guard Email Workflow',
+    kind: 'Workflow',
+    factKeys: ['701Tm00000iR8zVIAS'],
+    matchesEmail: (r) => r.campaign_key === '701Tm00000iR8zVIAS',
+  },
+  {
+    id: 'ai-security-paradox-wp',
+    quarter: 'Q4',
+    label: 'Whitepaper: The AI Security Paradox',
+    kind: 'Whitepaper',
+    factKeys: ['701Tm00000fhCpZIAU'],
+    matchesEmail: (r) => r.campaign_key === '701Tm00000fhCpZIAU',
+  },
+  {
+    id: 'switch-on-playbook',
+    quarter: 'Q4',
+    label: 'Playbook: Switch On Before You Switch Off',
+    kind: 'Whitepaper',
+    factKeys: ['701Tm00000frzXDIAY'],
+    matchesEmail: (r) => r.campaign_key === '701Tm00000frzXDIAY',
+  },
 ]
 
 // The families in scope for the selected quarter pill ('ytd' = all of them).

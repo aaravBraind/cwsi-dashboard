@@ -1,7 +1,7 @@
 import QuarterPills from '../QuarterPills'
 import { LoadingSkeleton, ErrorState, EmptyState, NotAvailablePanel, NotAvailable } from '../States'
 import { useState } from 'react'
-import { useOverview, useKpiTargets, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
+import { useOverview, useKpiTargets } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { eur, num, pct, ratio, isNA } from '../../data/format'
 import { periodOf, scopeLabel, achievement, lightOf, targetAt, fmtTarget } from '../../data/kpiRegister'
@@ -71,14 +71,6 @@ function Body({ data }) {
   const qtr = filters.quarter // 'q1'..'q4' | 'ytd' — targets resolve to this scope
   const maxPipe = Math.max(1, ...byChannel.map((c) => c.marginPipeline))
 
-  // Outreach shown as an INDICATIVE group (P4/OV6): meetings & opps are attributed by
-  // contact (a sequenced contact is on the opp), not by campaign, so they can overlap
-  // the campaign channels — excluded from the per-channel comparison and any totals,
-  // matching the Pipeline & Board pattern. Bars stay scaled to the campaign channels
-  // (maxPipe) and clamped, so the outlier-prone outreach pipeline can't rescale the
-  // real bars; Closed-Won is the reliable read (pipeline € is contact-touch).
-  const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
-  const showOutreach = outbound && (outbound.createdOpps > 0 || outbound.won > 0)
 
   // Editable targets from the kpi_targets DB table, resolved at the active quarter.
   const targets = useKpiTargets().data || {}
@@ -321,36 +313,14 @@ function Body({ data }) {
                 </div>
               </div>
             ))}
-            {showOutreach && (
-              <div className="group" key="outreach-indicative" style={{ opacity: 0.85 }}>
-                <div className="group-head">
-                  <div className="group-name">Outreach · outbound <span className="chip neu">contact-attributed</span></div>
-                  <div className="group-roi">indicative · not in totals</div>
-                </div>
-                <div className="stack">
-                  <div className="bar-row">
-                    <div className="bar-label">Influenced pipeline</div>
-                    <div className="bar-track"><div className="bar-fill bf-blue" style={{ width: `${Math.min(ratio(outbound.pipeline, maxPipe), 1) * 100}%` }} /></div>
-                    <div className="bar-val">{eur(outbound.pipeline)}</div>
-                  </div>
-                  <div className="bar-row">
-                    <div className="bar-label">Closed-won</div>
-                    <div className="bar-track"><div className="bar-fill bf-green" style={{ width: `${Math.min(ratio(outbound.won, maxPipe), 1) * 100}%` }} /></div>
-                    <div className="bar-val">{eur(outbound.won)}</div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
           <div className="callout" style={{ marginTop: 14 }}>
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
             <div className="callout-body">
-              <strong>On Outreach &amp; Paid Search:</strong> <strong>Outreach</strong> is shown as an{' '}
-              <strong>indicative row</strong> — its meetings and opportunities are attributed by <em>contact</em>{' '}
-              (Paul's method), a different basis to the campaign-attributed channels, so it can overlap them and is{' '}
-              <strong>excluded from the per-channel comparison and any totals</strong>. Read <strong>Closed-Won</strong>{' '}
-              as the reliable figure — the pipeline € is contact-touch and can be dominated by a single large sales-led
-              deal; the full breakdown is on the Outreach page. <strong>Paid Search</strong> isn't shown because no
+              <strong>On Outreach &amp; Paid Search:</strong> <strong>Outreach</strong> is counted like every other
+              channel — through its campaigns in Salesforce, so a deal appears here when Salesforce links it to one of
+              the Outreach campaigns. It only shows a bar when those campaigns have pipeline or closed-won in the period;
+              the full breakdown, including meetings, is on the Outreach page. <strong>Paid Search</strong> isn't shown because no
               paid-search campaigns ran in the period (nothing to report — not a data gap).
             </div>
           </div>

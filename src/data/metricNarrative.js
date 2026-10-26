@@ -16,8 +16,8 @@ export const SOURCE_LABEL = {
   events: 'GoToWebinar registrations and attendance, plus the in-person attendee lists',
   outreachSeq: 'Outreach.io — sequence totals (lifetime snapshot)',
   outreachStep: 'Outreach.io — cadence step totals, email steps only (lifetime snapshot)',
-  outreachMeetingRows: 'Salesforce meetings, attributed to outbound sequences by contact',
-  outreachOppRows: 'Salesforce opportunities, attributed to outbound sequences by contact',
+  outreachMeetingRows: 'Salesforce meetings with people who replied to an outbound sequence',
+  outreachOppRows: 'Salesforce opportunities linked to the Outreach campaigns',
 }
 
 const FIELD_LABEL = {

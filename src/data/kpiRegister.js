@@ -298,8 +298,8 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
     manualRow('mdfClaimRate', 'MDF claim success rate', 'entered by hand — claim-level data is not held in the dashboard'),
 
     // ── Outreach (Prospecting) — K1. Engagement (prospects/opens/replies) is a
-    //    lifetime cadence snapshot; meetings/opps are Salesforce, contact-attributed
-    //    to OUTBOUND sequences and current-view scoped (so they can overlap campaigns). ──
+    //    lifetime cadence snapshot; meetings are Salesforce meetings with people who replied
+    //    to an OUTBOUND sequence; opps are deals linked to the Outreach Salesforce campaigns. ──
     { t: 'cat', label: 'Outreach (Prospecting)' },
     o.prospects > 0
       ? { t: 'live', label: 'Prospects in cadence', val: num(o.prospects), ctx: 'marketing sequences · lifetime snapshot', key: 'outreachProspects', num: o.prospects }
@@ -323,21 +323,21 @@ export function buildKpiRegisterRows({ funnel, web, events, attendance, outreach
       ? { t: 'live', label: 'MQLs (meetings booked)', val: num(outMeetings), ctx: 'your definition counts meetings booked + content downloads; downloads aren’t recorded for outreach yet, so this is meetings only', key: 'outreachMqls', num: outMeetings }
       : { t: 'na', label: 'MQLs (meetings booked)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMqls' },
     { t: 'na', label: 'Reader → MQL', ctx: 'no data source yet — needs per-prospect content-download tracking for outreach sends', key: 'outreachReaderToMql' },
-    { t: 'na', label: 'MQL → SQL conversion', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; outcomes are contact-attributed instead', key: 'outreachMqlToSql' },
-    { t: 'na', label: 'SQL → Closed/Won', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; closed-won below is contact-attributed', key: 'outreachSqlToWon' },
+    { t: 'na', label: 'MQL → SQL conversion', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; outcomes are counted through the Outreach campaigns instead', key: 'outreachMqlToSql' },
+    { t: 'na', label: 'SQL → Closed/Won', ctx: 'not derivable — outreach prospects aren’t Salesforce leads, so there are no lead-funnel stages; closed-won below comes from the Outreach campaigns', key: 'outreachSqlToWon' },
     { t: 'na', label: 'Cost per conversion', ctx: 'no data source yet — outreach spend is not recorded in the tracker', key: 'outreachCostPerConversion' },
     { t: 'na', label: 'Influenced margin (gross profit)', ctx: 'no data source yet — contact-attributed deals don’t carry per-deal gross profit; the campaign-attributed margin is in the summary above', key: 'outreachInfluencedMargin' },
     outMeetings != null
-      ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings attributed to outbound sequences', key: 'outreachMeetings', num: outMeetings }
+      ? { t: 'live', label: 'Meetings booked (outbound)', val: num(outMeetings), ctx: 'Salesforce meetings with people who replied to an outbound sequence', key: 'outreachMeetings', num: outMeetings }
       : { t: 'na', label: 'Meetings booked (outbound)', ctx: 'outbound-attributed meetings (at the next data refresh)', key: 'outreachMeetings' },
     ot
-      ? { t: 'live', label: 'Opportunities created (outbound)', val: num(ot.createdOpps), ctx: 'contact-attributed to outbound sequences', key: 'outreachCreatedOpps', num: ot.createdOpps }
+      ? { t: 'live', label: 'Opportunities created (outbound)', val: num(ot.createdOpps), ctx: 'linked to the Outreach campaigns in Salesforce', key: 'outreachCreatedOpps', num: ot.createdOpps }
       : { t: 'na', label: 'Opportunities created (outbound)', ctx: 'outbound-attributed opportunities', key: 'outreachCreatedOpps' },
     ot
-      ? { t: 'live', label: 'Closed-won (outbound)', val: eur(ot.won), ctx: 'won value · contact-attributed to outbound sequences', key: 'outreachClosedWon', num: ot.won }
+      ? { t: 'live', label: 'Closed-won (outbound)', val: eur(ot.won), ctx: 'gross profit · linked to the Outreach campaigns in Salesforce', key: 'outreachClosedWon', num: ot.won }
       : { t: 'na', label: 'Closed-won (outbound)', ctx: 'outbound-attributed closed-won', key: 'outreachClosedWon' },
     outInfluenced != null
-      ? { t: 'live', label: 'Influenced pipeline (outbound)', val: eur(outInfluenced), ctx: 'open + won · contact-attributed to outbound sequences', key: 'outreachPipeline', num: outInfluenced }
+      ? { t: 'live', label: 'Influenced pipeline (outbound)', val: eur(outInfluenced), ctx: 'open + won · linked to the Outreach campaigns in Salesforce', key: 'outreachPipeline', num: outInfluenced }
       : { t: 'na', label: 'Influenced pipeline (outbound)', ctx: 'outbound-attributed pipeline', key: 'outreachPipeline' },
   ]
 }

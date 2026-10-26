@@ -32,10 +32,10 @@ const FACT_COLS =
 // Today (YYYY-MM-DD, browser runtime).
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
-// Upper bound for every "to date" read. The reporting window runs Q1–Q3 2026,
-// so we cap at the EARLIER of today and REPORTING_END_ISO (Q3 2026 close).
-// While Q3 is in progress that means "today" — so Q4 returns empty and YTD
-// stops at today (never leaks Q4 rows).
+// Upper bound for every "to date" read. The reporting window runs Q1–Q4 2026,
+// so we cap at the EARLIER of today and REPORTING_END_ISO (Q4 2026 close).
+// While Q4 is in progress that means "today" — so YTD stops at today and
+// future-dated rows never leak in.
 // If REPORTING_END_ISO is set null later, this falls back to plain "today".
 const toDateCapIso = () => {
   const today = todayIso()
@@ -59,7 +59,7 @@ export function quarterWindow(quarter) {
 //   q1..q4 → that quarter of REPORTING_YEAR (2026).
 //   ytd    → HISTORY_START_YEAR (2026) → now; all earlier years excluded.
 // FUTURE-DATE CAP: every figure is "to date" — rows dated after today are excluded.
-// A quarter that hasn't started yet (Q3/Q4) therefore returns nothing, and YTD stops
+// A quarter that hasn't started yet therefore returns nothing, and YTD stops
 // at today. This removes phantom funnel rows from SF closed-LOST opps that carry a
 // stale FUTURE CloseDate (they leak sql_count into future quarters with £0 pipeline /
 // 0 won; the monotonic floor then lifts Leads/MQL to match). Real figures are
@@ -794,13 +794,16 @@ export async function getMetricSource(metricKey, filters = {}) {
     const isOpps = spec.from === 'outreachOppRows'
     let raw = isOpps
       ? await fetchAll(() => scope(supabase.from('v_outreach_attributed_opps')
-          .select('opp_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id', 'sequence_name'])
+          .select('opp_id,opp_name,campaign_name,workstream,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id'])
       : await fetchAll(() => scope(supabase.from('v_outreach_meetings_v2')
           .select('meeting_key,sequence_name,region_code,year,quarter,activity_date'), 'activity_date'), ['meeting_key', 'sequence_name'])
 
     // The Outreach view is only the three marketing workstreams, and these tiers are the
-    // OUTBOUND prospecting ones — the same two filters the page applies.
-    raw = raw.filter((r) => isMarketingSequence(r.sequence_name) && outreachSeqCategory(r.sequence_name) === 'Outbound prospecting')
+    // OUTBOUND prospecting ones — the same two filters the page applies. Opportunities come from
+    // the workstreams' Salesforce campaigns, so they are grouped by that campaign.
+    raw = isOpps
+      ? raw.filter((r) => r.workstream)
+      : raw.filter((r) => isMarketingSequence(r.sequence_name) && outreachSeqCategory(r.sequence_name) === 'Outbound prospecting')
 
     const idOf = (r) => (isOpps ? r.opp_id : r.meeting_key)
     const UNQ = 'Unqualified opp'
@@ -825,16 +828,16 @@ export async function getMetricSource(metricKey, filters = {}) {
     for (const r of raw) if (!seen.has(idOf(r))) seen.set(idOf(r), valOf(r))
     const total = [...seen.values()].reduce((a, v) => a + v, 0)
 
-    const groups = [...groupBy(raw, (r) => r.sequence_name || null)]
+    const groups = [...groupBy(raw, (r) => (isOpps ? r.campaign_name : r.sequence_name) || null)]
       .map(([gKey, gRows]) => {
         const local = new Map()
         for (const r of gRows) if (!local.has(idOf(r))) local.set(idOf(r), valOf(r))
         return {
           key: gKey ?? '(none)',
-          label: gKey ?? 'Unnamed sequence',
+          label: gKey ?? (isOpps ? 'Unnamed campaign' : 'Unnamed sequence'),
           total: [...local.values()].reduce((a, v) => a + v, 0),
           items: [...local.entries()].map(([id, v]) => ({
-            key: id, label: id, total: v, rowCount: 1,
+            key: id, label: (isOpps && gRows.find((r) => r.opp_id === id)?.opp_name) || id, total: v, rowCount: 1,
             rows: gRows.filter((r) => idOf(r) === id).map((r) => ({
               date: isOpps ? r.created_date : r.activity_date,
               value: v, region: r.region_code ?? null,
@@ -848,7 +851,7 @@ export async function getMetricSource(metricKey, filters = {}) {
     const overlapping = groups.reduce((a, g) => a + g.total, 0) !== total
     return {
       metricKey, label: spec.label, unit: spec.unit, note: spec.note || null,
-      groupLabel: 'Sequence', subLabel: isOpps ? 'Opportunity' : 'Meeting',
+      groupLabel: isOpps ? 'Salesforce campaign' : 'Sequence', subLabel: isOpps ? 'Opportunity' : 'Meeting',
       rowLabel: isOpps ? 'Created' : 'Date',
       total, groups, hasData: groups.length > 0,
       gapNote: overlapping
@@ -2580,8 +2583,8 @@ export async function getCampaignThemes(filters = {}) {
   // W5 (Margot, 11 Aug): Q1 and Q2 list EXACTLY her 11 curated campaigns — one row per
   // client-facing campaign, aggregated over its Salesforce keys (pinnedCampaigns.js).
   // Everything not curated rolls into "Other activities" (kept so totals still reconcile
-  // to the Overview), except Q3-dated activity, which lists automatically (her list
-  // predates the Q3 window). A curated row renders even at all-zeros — the list is hers,
+  // to the Overview), except Q3/Q4-dated activity, which lists automatically (her list
+  // predates the Q3 and Q4 windows). A curated row renders even at all-zeros — the list is hers,
   // not activity-driven.
   const byKey = new Map(campaigns.map((c) => [c.campaignKey, c]))
   const curatedRows = CURATED_CAMPAIGNS.map((cc) => {
@@ -2616,10 +2619,11 @@ export async function getCampaignThemes(filters = {}) {
     }
   })
   // A saved placement (campaign_overrides.theme) always wins, so an activity moved by hand stays
-  // where it was put; otherwise only Q3-dated activity lists automatically, the rest is Other.
+  // where it was put; otherwise only Q3/Q4-dated activity lists automatically, the rest is Other.
+  const AUTO_LISTED = new Set(['Q3', 'Q4'])
   const rest = campaigns
     .filter((c) => !CURATED_KEY_SET.has(c.campaignKey))
-    .map((c) => (c.themeOverridden || c.theme.quarter === 'Q3' ? c : { ...c, theme: themeMeta('other') }))
+    .map((c) => (c.themeOverridden || AUTO_LISTED.has(c.theme.quarter) ? c : { ...c, theme: themeMeta('other') }))
   const allRows2 = [...curatedRows, ...rest]
 
   // Keep only campaigns whose own quarter matches the selected pill (crossover fix).
@@ -3022,9 +3026,14 @@ export async function getOutreachAttributedMeetings(filters = {}) {
   // 23 Jun are one meeting. `meeting_key` (normalised subject + date) is the counting unit —
   // the same key the report uses. Counting meeting_id here reported 6 where the report said 16.
   //
-  // The rule adds the client's date condition (20 Aug) on top of the report's basis: the person
-  // must have been emailed AND the meeting must not predate the outreach. The report reports
-  // influence and says so; this reports attribution. Both figures are surfaced.
+  // The rule (client, 20 Aug; tightened 26 Oct after the 23 Oct call) on top of the report's
+  // basis: the person was emailed, REPLIED to the outreach, met between the first email and 90
+  // days after replying, and had no meeting with CWSI before the outreach began. The report
+  // reports influence and says so; this reports attribution. Both figures are surfaced.
+  //
+  // OPPORTUNITIES are the client's 20 Aug basis: deals whose Salesforce primary campaign is one
+  // of the dedicated Outreach workflow campaigns (v_outreach_attributed_opps). A campaign belongs
+  // to a workstream, not to a sequence or seller, so opportunities report per workstream.
   const [attr, meetings, opps, ruleAudit] = await Promise.all([
     fetchAll(() => scope(supabase
       .from('v_outreach_meetings_v2')
@@ -3034,7 +3043,7 @@ export async function getOutreachAttributedMeetings(filters = {}) {
       .select('meeting_id,region_code,year,quarter,activity_date,contact_email'), 'activity_date'), ['meeting_id']),
     fetchAll(() => scope(supabase
       .from('v_outreach_attributed_opps')
-      .select('opp_id,sequence_id,sequence_name,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id', 'sequence_id']),
+      .select('opp_id,opp_name,account_name,campaign_name,workstream,region_code,year,quarter,created_date,is_won,is_closed,stage_name,amount_eur,margin_eur'), 'created_date'), ['opp_id']),
     // Quarter- and region-scoped, so the callout explaining the figure can never disagree with
     // the figure itself. Read from an all-time view, the card said 2 under Q2 while the sentence
     // beneath it still said 3.
@@ -3072,36 +3081,38 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     if (!perSeq.has(key)) perSeq.set(key, { sequence: key, category: cat, region: r.region_code, ids: new Set() })
     perSeq.get(key).ids.add(r.meeting_key)
   }
-  // ---- Opportunities (OR9): distinct opps per tier + per sequence; pipeline = open &
-  //      qualified, won = IsWon. Per-opp value counted once (an opp can span sequences). ----
+  // ---- Opportunities: Salesforce campaign-linked, one row per deal; pipeline = open &
+  //      qualified, won = IsWon. Every Outreach workflow campaign is outbound prospecting. ----
   const UNQ = 'Unqualified opp'
   const oppVal = new Map()             // opp_id -> { pipeline, won, pipelineRev, wonRev }
   const oppOut = new Set(), oppExcl = new Set(), oppAny = new Set()
-  const perSeqOpp = new Map()          // seqName -> { region, opps:Set, pipeline, won }
+  const perWorkstreamOpp = new Map()   // workstream -> { opps:Set, pipeline, won }
+  const oppDeals = []
   for (const o of opps) {
-    if (marketingOnly && !isMarketingSequence(o.sequence_name)) continue // 3 workstreams only (Margot 20 Jul)
-    if (filters.workstream && outreachWorkstream(o.sequence_name) !== filters.workstream) continue
+    if (!o.workstream) continue // only the 3 marketing workstreams' campaigns (the view already limits this)
+    if (filters.workstream && o.workstream !== filters.workstream) continue
     const amt = Number(o.amount_eur) || 0
-    // GROSS PROFIT is the reported basis here too, from 21 Sep — these deals now carry it
-    // (the contact-opportunity feed pulls Salesforce Gross Profit directly, so an Outreach deal
-    // no longer has to be campaign-linked to have a margin). A deal with no gross profit in
-    // Salesforce contributes NOTHING rather than its full value, exactly as everywhere else.
+    // GROSS PROFIT is the reported basis, as everywhere else. A deal with no gross profit in
+    // Salesforce contributes NOTHING rather than its full value.
     const gp = o.margin_eur == null ? null : Number(o.margin_eur) || 0
     const open = !o.is_closed && o.stage_name !== UNQ
     const pipe = open && gp != null ? gp : 0
     const won = o.is_won && gp != null ? gp : 0
     const pipeRev = open ? amt : 0
     const wonRev = o.is_won ? amt : 0
-    if (!oppVal.has(o.opp_id)) oppVal.set(o.opp_id, { pipeline: pipe, won, pipelineRev: pipeRev, wonRev, gpKnown: gp != null })
-    const cat = outreachSeqCategory(o.sequence_name)
-    oppAny.add(o.opp_id)
-    if (cat !== 'Broadcast / newsletter') oppExcl.add(o.opp_id)
-    if (cat === 'Outbound prospecting') oppOut.add(o.opp_id)
-    const key = o.sequence_name || '(unnamed sequence)'
-    if (!perSeqOpp.has(key)) perSeqOpp.set(key, { region: o.region_code, opps: new Set(), pipeline: 0, won: 0 })
-    const ps = perSeqOpp.get(key)
-    if (!ps.opps.has(o.opp_id)) { ps.opps.add(o.opp_id); ps.pipeline += pipe; ps.won += won }
+    if (oppVal.has(o.opp_id)) continue
+    oppVal.set(o.opp_id, { pipeline: pipe, won, pipelineRev: pipeRev, wonRev, gpKnown: gp != null })
+    oppAny.add(o.opp_id); oppExcl.add(o.opp_id); oppOut.add(o.opp_id)
+    if (!perWorkstreamOpp.has(o.workstream)) perWorkstreamOpp.set(o.workstream, { opps: new Set(), pipeline: 0, won: 0 })
+    const pw = perWorkstreamOpp.get(o.workstream)
+    pw.opps.add(o.opp_id); pw.pipeline += pipe; pw.won += won
+    oppDeals.push({
+      oppId: o.opp_id, name: o.opp_name, account: o.account_name, campaign: o.campaign_name,
+      workstream: o.workstream, region: o.region_code, created: o.created_date, stage: o.stage_name,
+      isWon: !!o.is_won, revenue: amt, grossProfit: gp,
+    })
   }
+  oppDeals.sort((a, b) => String(b.created).localeCompare(String(a.created)))
   const sumTier = (set) => {
     let p = 0, w = 0, pRev = 0, wRev = 0, known = 0
     for (const id of set) {
@@ -3125,21 +3136,20 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     }
   }
 
-  // ---- Merge meetings ∪ opps into one per-sequence row set ----
-  const names = new Set([...perSeq.keys(), ...perSeqOpp.keys()])
-  const bySequence = [...names].map((name) => {
+  // ---- Meetings per sequence (opportunities are per workstream — see above) ----
+  const bySequence = [...perSeq.keys()].map((name) => {
     const m = perSeq.get(name)
-    const o = perSeqOpp.get(name)
     return {
       sequence: name,
-      category: m?.category || outreachSeqCategory(name),
-      region: m?.region || o?.region || null,
-      meetings: m ? m.ids.size : 0,
-      createdOpps: o ? o.opps.size : 0,
-      oppValue: o ? o.pipeline : 0,
-      closedWon: o ? o.won : 0,
+      category: m.category,
+      region: m.region || null,
+      meetings: m.ids.size,
+      createdOpps: 0,
+      oppValue: 0,
+      closedWon: 0,
     }
-  }).sort((a, b) => (b.meetings - a.meetings) || (b.createdOpps - a.createdOpps))
+  }).sort((a, b) => b.meetings - a.meetings)
+  const oppByWorkstream = Object.fromEntries([...perWorkstreamOpp].map(([ws, v]) => [ws, { createdOpps: v.opps.size, pipeline: v.pipeline, won: v.won }]))
 
   const totalMeetings = new Set(meetings.map((m) => m.meeting_id)).size
   const withEmail = new Set(meetings.filter((m) => m.contact_email).map((m) => m.meeting_id)).size
@@ -3149,6 +3159,8 @@ export async function getOutreachAttributedMeetings(filters = {}) {
     tiers: { outbound: outbound.size, exclBroadcast: exclBroadcast.size, any: any.size },
     // DISTINCT opps per tier + pipeline/won (OR9)
     oppTiers: { outbound: sumTier(oppOut), exclBroadcast: sumTier(oppExcl), any: sumTier(oppAny) },
+    oppByWorkstream,
+    oppDeals,
     bySequence,
     // Coverage for the honesty note: how many meetings we could even attempt to match.
     // excluded = meetings dropped because none of their matches was one of the 3 marketing
@@ -3161,8 +3173,10 @@ export async function getOutreachAttributedMeetings(filters = {}) {
           candidates: Number(ruleAudit.candidates) || 0,
           rejectedNeverEmailed: Number(ruleAudit.rejected_never_emailed) || 0,
           rejectedBeforeOutreach: Number(ruleAudit.rejected_before_outreach) || 0,
+          rejectedNoReply: Number(ruleAudit.rejected_no_reply) || 0,
+          rejectedOutsideWindow: Number(ruleAudit.rejected_outside_window) || 0,
+          rejectedExistingRelationship: Number(ruleAudit.rejected_existing_relationship) || 0,
           attributed: Number(ruleAudit.attributed) || 0,
-          withReply: Number(ruleAudit.attributed_with_reply) || 0,
           // The all-time report's basis (emailed, no date test) — shown alongside so the
           // dashboard reconciles with the report rather than appearing to contradict it.
           influenced: Number(ruleAudit.influenced_report_basis) || 0,

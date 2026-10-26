@@ -44,8 +44,8 @@ export default function Outreach() {
           <strong>Channel scope:</strong> Outreach.io covers SDR-led sales engagement — multi-step
           cadences with replies and meetings booked. Figures are a <strong>cumulative lifetime
           snapshot</strong> (not a daily trend); <strong>region</strong> scopes them. <strong>Meetings booked</strong>{' '}
-          are now <strong>attributed via Salesforce</strong> — a meeting is credited to a sequence when its
-          contact is a member of that sequence (the agreed attribution method). This page reports on the{' '}
+          count only where the person <strong>replied to the outreach</strong> and met soon after; <strong>opportunities</strong>{' '}
+          count only where Salesforce links the deal to one of the <strong>Outreach campaigns</strong>. This page reports on the{' '}
           <strong>three marketing workstreams only</strong> — Historic Data Reactivation, Outbound Prospecting · SoPro,
           and Outbound Prospecting · Microsoft TUM; sales &amp; one-off account sequences are excluded throughout.
         </div>
@@ -116,9 +116,9 @@ function Body({ data, meetings }) {
           sequences are excluded on purpose. <strong>Open and reply rates are per email delivered</strong> — the same
           basis Outreach.io's own reports use, and one that can never read above 100%. The per-person rate
           (replies ÷ prospects, which reads higher because a cadence sends several emails to each person) is kept as
-          the smaller secondary line. <strong>Meetings and opportunities</strong> are credited only when the matched
-          prospect was <strong>actually contacted</strong> — people sitting in a sequence's queue who have not yet
-          received an email cannot claim credit.{' '}
+          the smaller secondary line. <strong>Meetings</strong> are credited only when the person was emailed by the
+          sequence and <strong>replied</strong>; <strong>opportunities</strong> only when the deal's Salesforce campaign is
+          one of the Outreach campaigns. Being emailed by a sequence is not, on its own, enough to claim a meeting or a deal.{' '}
           <Explain id="outreachReplyRate" />
         </div>
       </div>
@@ -186,17 +186,12 @@ function Body({ data, meetings }) {
           <div className="kpi-val">{outbound == null ? '—' : num(outbound)}</div>
           <div className="kpi-sub">
             <span className="kpi-target">
-              booked after the outreach began, with someone who was emailed · vs {MEETINGS_TARGET} target
+              with someone who replied to the outreach · vs {MEETINGS_TARGET} target
             </span>
             {rule && rule.influenced > 0 && (
               <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
                 {num(rule.influenced)} meetings involved someone we emailed at some point (the
                 all-time report's wider basis)
-              </span>
-            )}
-            {rule && (
-              <span className="kpi-target" style={{ display: 'block', opacity: 0.65 }}>
-                of which {num(rule.withReply)} also replied to the sequence
               </span>
             )}
           </div>
@@ -236,18 +231,18 @@ function Body({ data, meetings }) {
             <svg className="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
           </div>
           <div className="callout-body">
-            <strong>How meetings are credited to Outreach.</strong> A meeting counts only where the
-            person was <strong>actually emailed</strong> and the meeting took place{' '}
-            <strong>after the outreach began</strong>. Of{' '}
-            <strong>{num(rule.candidates)}</strong> meetings involving someone who appears in a
-            sequence, <strong>{num(rule.rejectedNeverEmailed)}</strong> were with people who had only
-            been queued and never emailed, and <strong>{num(rule.rejectedBeforeOutreach)}</strong>{' '}
-            took place <em>before</em> the outreach started — continuations of existing
-            relationships, which outbound cannot have created. That leaves{' '}
-            <strong>{num(rule.attributed)}</strong>
-            {rule.withReply === 0
-              ? ', none of whom replied to the sequence itself — so treat even these as indicative rather than outreach-generated.'
-              : `, of which ${rule.withReply} also replied to the sequence.`}
+            <strong>How meetings are credited to Outreach.</strong> A meeting counts only when the person
+            was <strong>emailed by the sequence</strong>, <strong>replied</strong> to it, met{' '}
+            <strong>between the first email and 90 days after replying</strong>, and had{' '}
+            <strong>no meeting with CWSI before the outreach began</strong>. Of{' '}
+            <strong>{num(rule.candidates)}</strong> meetings involving someone who appears in a sequence:{' '}
+            <strong>{num(rule.rejectedNeverEmailed)}</strong> were with people never emailed,{' '}
+            <strong>{num(rule.rejectedBeforeOutreach)}</strong> took place before the outreach started,{' '}
+            <strong>{num(rule.rejectedNoReply)}</strong> were with people who never replied to the outreach,{' '}
+            <strong>{num(rule.rejectedOutsideWindow)}</strong> fell more than 90 days after the reply, and{' '}
+            <strong>{num(rule.rejectedExistingRelationship)}</strong> were with people CWSI was already meeting
+            before the outreach — existing customer and project meetings the outreach did not create. That
+            leaves <strong>{num(rule.attributed)}</strong>.
             <br />
             <strong>Meetings, not attendees.</strong> Salesforce writes one record per person
             invited, so a meeting with three attendees appears three times. These figures count each
@@ -299,7 +294,7 @@ function Body({ data, meetings }) {
               </tr>
             </thead>
             <tbody>
-              {workstreams.map((g) => <WorkstreamGroup key={g.workstream} g={g} attrFor={attrFor} />)}
+              {workstreams.map((g) => <WorkstreamGroup key={g.workstream} g={g} attrFor={attrFor} opps={meetings?.oppByWorkstream?.[g.workstream]} />)}
               <tr className="total">
                 <td>Total · {num(kpis.totalSequences)} sequences</td>
                 <td className="r mono">{num(kpis.prospects)}</td>
@@ -307,18 +302,22 @@ function Body({ data, meetings }) {
                 <td className="r mono">{eb && eb.delivered > 0 ? ratePct(eb.openRate, 0) : 'n/a'}</td>
                 <td className="r mono">{eb && eb.delivered > 0 ? ratePct(eb.replyRate) : 'n/a'}</td>
                 <td className="r mono">{meetings ? num(meetings.tiers.outbound) : '—'}</td>
-                <td className="r mono">{meetings?.oppTiers?.outbound ? num(meetings.oppTiers.outbound.createdOpps) : '—'}</td>
+                <td className="r mono">{meetings?.oppTiers?.outbound?.createdOpps ? num(meetings.oppTiers.outbound.createdOpps) : '—'}</td>
                 <td className="r mono">{meetings?.oppTiers?.outbound && !isNA(meetings.oppTiers.outbound.won) ? eur(meetings.oppTiers.outbound.won) : '—'}</td>
               </tr>
             </tbody>
           </table>
           <div className="panel-note" style={{ padding: '8px 12px 12px', fontSize: 12, opacity: 0.7 }}>
-            Meetings, Created Opportunities and Closed Won are Salesforce-attributed (contacted prospects only). A meeting or
-            deal can involve prospects from several sequence groups, so those columns can overlap across rows — the{' '}
+            Meetings count only people who replied to the outreach. <strong>Created Opportunities and Closed Won come from the
+            Outreach campaigns in Salesforce</strong>, one campaign per workflow rather than per sequence or seller, so they are
+            shown on each workstream's subtotal line, not on the product rows. A meeting can involve prospects from several
+            sequence groups, so the meetings column can overlap across rows — the{' '}
             <strong>Total row shows the de-duplicated truth</strong>, counting each meeting and deal once.
           </div>
         </div>
       </div>
+
+      <OutreachDeals deals={meetings?.oppDeals} />
 
       {/* W3 — Seller performance (marketing campaigns only): the rep segment retained */}
       {sellers && sellers.length > 0 && (
@@ -334,8 +333,9 @@ function Body({ data, meetings }) {
         <div className="callout-body">
           <strong>Open % / Reply %</strong> are per <strong>email delivered</strong> and show "n/a" only where the
           per-step feed has no delivered count for that group yet. Engagement counts (prospects → replies) are the live
-          Outreach snapshot; <strong>Meetings booked / Created Opportunities / Closed Won</strong> are attributed from
-          Salesforce, counting only prospects who were actually contacted. <strong>Sequence set:</strong> per your
+          Outreach snapshot; <strong>Meetings booked</strong> come from Salesforce and count only people who replied to the
+          outreach; <strong>Created Opportunities / Closed Won</strong> are the deals Salesforce links to the Outreach
+          campaigns. <strong>Sequence set:</strong> per your
           feedback this view shows <strong>only the three marketing workstreams</strong> — Historic Data Reactivation,
           Outbound Prospecting · SoPro, and Outbound Prospecting · Microsoft TUM — with sales &amp;
           one-off account sequences excluded throughout.
@@ -351,7 +351,7 @@ function Body({ data, meetings }) {
 const rowOpenPct = (r) => (r.delivered > 0 ? `${Math.min(r.emailOpens / r.delivered, 1) * 100 < 100 ? (Math.min(r.emailOpens / r.delivered, 1) * 100).toFixed(0) : '100'}%` : 'n/a')
 const rowReplyPct = (r) => (r.delivered > 0 ? `${((r.emailReplies / r.delivered) * 100).toFixed(1)}%` : 'n/a')
 
-function WorkstreamGroup({ g, attrFor }) {
+function WorkstreamGroup({ g, attrFor, opps }) {
   const sub = g.subtotal
   const subEmail = g.rows.reduce((a, r) => ({ delivered: a.delivered + (r.delivered || 0), emailOpens: a.emailOpens + (r.emailOpens || 0), emailReplies: a.emailReplies + (r.emailReplies || 0) }), { delivered: 0, emailOpens: 0, emailReplies: 0 })
   const subAttr = attrFor(g.rows.flatMap((r) => r.sequenceNames || []))
@@ -400,8 +400,8 @@ function WorkstreamGroup({ g, attrFor }) {
         <td className="r mono">{rowOpenPct(subEmail)}</td>
         <td className="r mono">{rowReplyPct(subEmail)}</td>
         <td className="r mono">{subAttr.meetings ? num(subAttr.meetings) : '—'}</td>
-        <td className="r mono">{subAttr.createdOpps ? num(subAttr.createdOpps) : '—'}</td>
-        <td className="r mono">{subAttr.closedWon ? eur(subAttr.closedWon) : '—'}</td>
+        <td className="r mono">{opps?.createdOpps ? num(opps.createdOpps) : '—'}</td>
+        <td className="r mono">{opps?.won ? eur(opps.won) : '—'}</td>
       </tr>
     </>
   )
@@ -425,7 +425,7 @@ function SellerTable({ sellers, attrFor }) {
         <div className="left">
           <div className="panel-title">Seller Performance</div>
           <div className="panel-sub">
-            Per seller · the person whose mailbox the emails are sent from · engagement lifetime · meetings and opportunities follow the selected quarter
+            Per seller · the person whose mailbox the emails are sent from · engagement lifetime · meetings follow the selected quarter · opportunities are reported per workstream, from the Outreach campaigns
           </div>
         </div>
         <span className="chip blue">{num(sellers.length)} sellers</span>
@@ -443,8 +443,6 @@ function SellerTable({ sellers, attrFor }) {
               <th className="r">Opened <span style={{ opacity: 0.55 }}>of those emailed</span></th>
               <th className="r">Replied <span style={{ opacity: 0.55 }}>of those emailed</span></th>
               <th className="r">Meetings</th>
-              <th className="r">Opportunities created</th>
-              <th className="r">Closed Won €</th>
             </tr>
           </thead>
           <tbody>
@@ -462,8 +460,6 @@ function SellerTable({ sellers, attrFor }) {
                   <td className="r mono">{x.openRatePct == null ? '—' : `${x.openRatePct}%`}</td>
                   <td className="r mono">{x.replyRatePct == null ? '—' : `${x.replyRatePct}%`}</td>
                   <td className="r mono">{a.meetings ? num(a.meetings) : '—'}</td>
-                  <td className="r mono">{a.createdOpps ? num(a.createdOpps) : '—'}</td>
-                  <td className="r mono">{a.closedWon ? eur(a.closedWon) : '—'}</td>
                 </tr>
               )
             })}
@@ -474,7 +470,7 @@ function SellerTable({ sellers, attrFor }) {
               <td className="r mono">{num(tot('active'))}</td>
               <td className="r mono">{num(tot('emailed'))}</td>
               <td className="r mono">{num(tot('delivered'))}</td>
-              <td colSpan={5} />
+              <td colSpan={3} />
             </tr>
           </tbody>
         </table>
@@ -550,3 +546,57 @@ const Stage = ({ name, val, extra }) => (
     {extra ? <div className="stage-extra">{extra}</div> : null}
   </div>
 )
+
+// The deals behind the Outreach opportunity figures, listed so the number can be checked by
+// hand (client, 23 Oct: "who are those 13?"). Basis: the deal's Salesforce primary campaign is
+// one of the Outreach workflow campaigns — the client's 20 Aug choice.
+function OutreachDeals({ deals }) {
+  if (!deals) return null
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="left">
+          <div className="panel-title">Opportunities from the Outreach campaigns</div>
+          <div className="panel-sub">
+            Every deal Salesforce links to an Outreach campaign · follows the selected quarter, region and Type of Outreach
+          </div>
+        </div>
+        <span className="chip blue">{num(deals.length)} {deals.length === 1 ? 'opportunity' : 'opportunities'}</span>
+      </div>
+      <div className="panel-body no-pad">
+        {deals.length === 0 ? (
+          <div style={{ padding: '14px 16px', opacity: 0.75 }}>
+            No opportunities in this period have one of the Outreach campaigns as their Salesforce campaign.
+          </div>
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Opportunity</th>
+                <th>Account</th>
+                <th>Salesforce campaign</th>
+                <th>Created</th>
+                <th>Stage</th>
+                <th className="r">Gross profit €</th>
+                <th className="r">Revenue €</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deals.map((d) => (
+                <tr key={d.oppId}>
+                  <td>{d.name || d.oppId}</td>
+                  <td>{d.account || '—'}</td>
+                  <td>{d.campaign}</td>
+                  <td className="mono">{d.created}</td>
+                  <td>{d.stage}</td>
+                  <td className="r mono">{d.grossProfit == null ? '—' : eur(d.grossProfit)}</td>
+                  <td className="r mono">{eur(d.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}

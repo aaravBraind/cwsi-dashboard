@@ -1,6 +1,6 @@
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState, NotAvailablePanel } from '../States'
-import { usePipeline, useOpportunityStage, useOutreachAttributedMeetings } from '../../hooks/useDashboardData'
+import { usePipeline, useOpportunityStage } from '../../hooks/useDashboardData'
 import CurrentVsOngoing from '../CurrentVsOngoing'
 import SalesCycle from '../SalesCycle'
 import { useFilters } from '../../filters/FilterContext'
@@ -33,10 +33,6 @@ function Body({ data }) {
   const { funnel, bySource } = data
   const { filters } = useFilters()
   const quarterScoped = filters.quarter && filters.quarter !== 'ytd'
-  // Outreach opportunities (OV6: "Outreach opportunities are not showing"). Contact-attributed
-  // (a sequenced contact is on the opp), so it can overlap the campaign channels above — shown
-  // as an indicative row, NOT added to the Total, to avoid double-counting.
-  const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
   return (
     <>
       {/* Pipeline value — the € money metrics (S3 glossary). Counts live in the funnel
@@ -131,26 +127,8 @@ function Body({ data }) {
                   <td className="r mono">{eur(s.margin)}</td>
                 </tr>
               ))}
-              {outbound && (outbound.createdOpps > 0 || outbound.won > 0) && (
-                <tr style={{ opacity: 0.85 }}>
-                  <td>Outreach · outbound{' '}
-                    <span
-                      className="chip neu"
-                      title="These deals are matched to outreach by contact rather than through a Salesforce campaign. Their gross profit is now read directly from Salesforce, so they sit on the same basis as every other figure; they stay out of the total above because the same deal can also be campaign-attributed and would otherwise be counted twice."
-                    >contact-attributed</span>
-                  </td>
-                  <td className="r mono">—</td>
-                  <td className="r mono">—</td>
-                  <td className="r mono">{num(outbound.createdOpps)}</td>
-                  {/* Gross profit since 21 Sep — the contact-opportunity feed now carries it, so this
-                      row is on the same basis as every other money figure. NA until that feed has
-                      re-run, rather than a false zero. */}
-                  <td className="r mono">{isNA(outbound.pipeline) ? '—' : eur(outbound.pipeline)}</td>
-                  <td className="r mono">{isNA(outbound.won) ? '—' : eur(outbound.won)}</td>
-                </tr>
-              )}
               <tr className="total">
-                <td>Total <span style={{ fontWeight: 400, opacity: 0.6 }}>· excl. Outreach</span></td>
+                <td>Total</td>
                 <td className="r mono">{num(funnel.mql)}</td>
                 <td className="r mono">{num(funnel.sql)}</td>
                 <td className="r mono">{isNA(funnel.createdOpps) ? '—' : num(funnel.createdOpps)}</td>
@@ -162,10 +140,9 @@ function Body({ data }) {
           <div className="callout" style={{ margin: '4px 12px 12px' }}>
             <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
             <div className="callout-body">
-              <strong>Outreach, Paid &amp; Paid Search sources:</strong> <strong>Outreach</strong> (P4) opportunities are
-              shown as an indicative row — attributed by <em>contact</em> (a sequenced contact is on the opp), not by
-              campaign, so they can overlap the campaign rows above. They're therefore <strong>excluded from the
-              Total</strong> to avoid double-counting; the full breakdown is on the Outreach page. <strong>Paid social
+              <strong>Outreach, Paid &amp; Paid Search sources:</strong> <strong>Outreach</strong> opportunities are the
+              deals Salesforce links to the Outreach campaigns, so they sit in the <strong>Outreach</strong> row like any other
+              channel and are part of the Total; the full breakdown, with each deal listed, is on the Outreach page. <strong>Paid social
               (LinkedIn)</strong> (P5) is already represented here through its linked Salesforce campaigns — each LinkedIn
               ad is tied to a specific Salesforce campaign (the BeNeLux "Data That Moves" ad is linked to the
               "BeNeLux LinkedIn Ads — Data That Moves Your Business Forward" campaign), so its leads &amp; pipeline appear under the

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import QuarterPills from '../QuarterPills'
 import { Loading, ErrorState, EmptyState } from '../States'
-import { useBoardPack, useGenerateBoardPack, useSavedBoardPack, useOutreachAttributedMeetings, useUnassignedOpps } from '../../hooks/useDashboardData'
+import { useBoardPack, useGenerateBoardPack, useSavedBoardPack, useUnassignedOpps } from '../../hooks/useDashboardData'
 import { useFilters } from '../../filters/FilterContext'
 import { I } from '../icons'
 import Explain from '../Explain'
@@ -193,11 +193,6 @@ function Expandable({ icon, title, sub, chip, defaultOpen = true, children }) {
 
 // 2a. Channel contribution — who drove the pipeline (share of total).
 function ChannelSection({ channels, meta }) {
-  // Outreach isn't a Salesforce campaign channel (it's contact-attributed), so it's absent from
-  // the campaign-based channels above. Surface it as an indicative row — NOT in the donut/shares
-  // or any total — so the board sees it without double-counting it against the campaign channels.
-  const outbound = useOutreachAttributedMeetings().data?.oppTiers?.outbound
-  const showOutreach = outbound && (outbound.pipeline > 0 || outbound.won > 0)
   return (
     <Expandable
       icon={I.grid}
@@ -222,28 +217,9 @@ function ChannelSection({ channels, meta }) {
                 <td className="r">{c.closedWonDisplay}</td>
               </tr>
             ))}
-            {showOutreach && (
-              <tr style={{ opacity: 0.85 }}>
-                <td>Outreach · outbound <span className="chip neu">contact-attributed</span></td>
-                <td className="r">—</td>
-                <td className="r">{eur(outbound.pipeline)}</td>
-                <td className="r">{eur(outbound.won)}</td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
-      {showOutreach && (
-        <div className="callout" style={{ marginTop: 12 }}>
-          <div className="callout-icn"><svg className="icon icon-lg" viewBox="0 0 24 24">{I.info}</svg></div>
-          <div className="callout-body">
-            <strong>Outreach is shown separately, on purpose.</strong> Its opportunities are attributed by
-            <em> contact</em> (a sequenced contact is on the opp), not by campaign — so they can overlap the
-            campaign channels above. It's therefore listed as an indicative row and <strong>excluded from the
-            pipeline-share donut and any totals</strong> to avoid double-counting. Full detail is on the Outreach page.
-          </div>
-        </div>
-      )}
     </Expandable>
   )
 }

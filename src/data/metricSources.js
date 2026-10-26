@@ -294,7 +294,7 @@ export const METRIC_SOURCES = {
   },
   webinarAttendanceRate: { kind: 'ratio', label: 'Attendance rate (webinars)', num: 'webinarAttendees', den: 'webinarRegistrants' },
 
-  // ---- Outreach outcomes, attributed by contact ----------------------------
+  // ---- Outreach outcomes: meetings via replies, opportunities via the Outreach SF campaigns ----
   // Counted ONCE each, because Salesforce writes one row per meeting ATTENDEE — a meeting with
   // three attendees is three rows and one meeting. The de-duplication also spans sequences, but
   // that is a safety net rather than a description of the data: within the three marketing
@@ -303,7 +303,7 @@ export const METRIC_SOURCES = {
   // to the total. Outbound prospecting sequences only.
   outreachMeetings: {
     kind: 'distinct', from: 'outreachMeetingRows', label: 'Meetings booked (outbound)', unit: 'count',
-    note: 'Salesforce meetings attributed to outbound sequences, counted once per meeting rather than once per attendee.',
+    note: 'Salesforce meetings with someone who was emailed by an outbound sequence, replied to it, met between the first email and 90 days after replying, and had no meeting with CWSI before the outreach began. Counted once per meeting rather than once per attendee.',
   },
   outreachMqls: {
     kind: 'distinct', from: 'outreachMeetingRows', label: 'MQLs (meetings booked)', unit: 'count',
@@ -311,15 +311,15 @@ export const METRIC_SOURCES = {
   },
   outreachCreatedOpps: {
     kind: 'distinct', from: 'outreachOppRows', label: 'Opportunities created (outbound)', unit: 'count',
-    note: 'Opportunities attributed to outbound sequences by contact, counted once per deal. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
+    note: 'Opportunities linked to the Outreach campaigns in Salesforce. Counted where the deal\'s Salesforce primary campaign is one of the Outreach workflow campaigns — the basis you chose in August ("the specific campaign that generated the opportunity"), applied October 2026. Each deal is counted once.',
   },
   outreachClosedWon: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'won', label: 'Closed-won (outbound)', unit: 'money',
-    note: 'Gross profit on won opportunities attributed to outbound sequences, each deal valued once. Deal value is shown alongside it. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
+    note: 'Gross profit on won opportunities linked to the Outreach campaigns in Salesforce; deal value is shown alongside it. Counted where the deal\'s Salesforce primary campaign is one of the Outreach workflow campaigns — the basis you chose in August ("the specific campaign that generated the opportunity"), applied October 2026. Each deal is counted once.',
   },
   outreachPipeline: {
     kind: 'distinct', from: 'outreachOppRows', measure: 'openPlusWon', label: 'Influenced pipeline (outbound)', unit: 'money',
-    note: 'Gross profit on open qualified opportunities PLUS those already won, attributed to outbound sequences by contact — so closed-won is always a subset. Unqualified deals are excluded, each deal is valued once, and a deal with no gross profit in Salesforce contributes nothing rather than its full value. Counted only where the person was actually emailed and the deal was created ON OR AFTER the first email — outreach cannot have caused a deal that already existed. Same rule as the meetings figure (your instruction, Aug 2026; extended to opportunities Sep 2026).',
+    note: 'Gross profit on open qualified opportunities PLUS those already won, linked to the Outreach campaigns in Salesforce — so closed-won is always a subset. Unqualified deals are excluded, and a deal with no gross profit in Salesforce contributes nothing rather than its full value. Counted where the deal\'s Salesforce primary campaign is one of the Outreach workflow campaigns — the basis you chose in August ("the specific campaign that generated the opportunity"), applied October 2026. Each deal is counted once.',
   },
 
   // ---- Marketing email platform (Account Engagement) -----------------------

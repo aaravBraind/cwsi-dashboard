@@ -5,3 +5,8 @@ dist
 *.log
 .DS_Store
 docs/*
+# local secrets / tool config
+.mcp.json
+# workflow backups made before each n8n change
+*-bak
+*.bak

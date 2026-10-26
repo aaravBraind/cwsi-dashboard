@@ -232,7 +232,7 @@ export const METHODOLOGY = {
     what: 'Salesforce campaign types we can’t map to a marketing channel — plus campaigns with no type set at all.',
     source: 'Salesforce campaigns whose Type is Other, Telemarketing, Partners or Referral Program, is blank, or belongs to a system/list-import campaign (e.g. the “Salesforce Connector” integration bucket, newsletter contact lists).',
     calc: 'Every campaign that can’t be placed under LinkedIn Paid, Email, Events & Webinars or Organic SEO is grouped here, so nothing is silently dropped — the channel table always adds up to the total.',
-    caveat: 'This bucket is mostly system and housekeeping campaigns rather than marketing activity, but deals genuinely attributed to them are real revenue and stay counted. Outreach is deliberately NOT a row here: outreach deals are identified by contact matching (a different method), so they appear as the separately-labelled “Outreach · outbound” row instead.',
+    caveat: 'This bucket is mostly system and housekeeping campaigns rather than marketing activity, but deals genuinely attributed to them are real revenue and stay counted. Outreach is NOT in this bucket: the Outreach campaigns in Salesforce have their own Outreach channel row.',
   },
 
   // ── Events
@@ -277,10 +277,10 @@ export const METHODOLOGY = {
   },
   outreachOpps: {
     label: 'Opportunities from Outreach (outbound)',
-    what: 'Salesforce opportunities whose contact is a member of an outbound Outreach sequence — created count, influenced pipeline (open + won) and closed-won value.',
-    source: 'Salesforce opportunities joined to Outreach sequence membership by the contact’s email; scoped to the selected region and quarter.',
-    calc: 'An opportunity is credited to a sequence when its Salesforce contact matches a prospect in that sequence AND that prospect was actually contacted (tightened 11 Aug 2026: queued, failed and bounced prospects no longer claim credit — they never received anything). Counted DISTINCT per opportunity for the Outbound-prospecting tier only. Influenced pipeline = open-qualified value + closed-won value; closed-won = won value.',
-    caveat: 'Contact-attributed (a sequenced contact is on the opp), NOT campaign-attributed — so these can overlap the campaign channels on the Pipeline page and are shown separately, not added to the campaign total. Pipeline reads as contact-touch (full deal value, revenue), not "generated", and can be dominated by a single large sales-led deal.',
+    what: 'Salesforce opportunities linked to the Outreach campaigns — created count, influenced pipeline (open + won) and closed-won, on gross profit.',
+    source: 'Salesforce opportunities whose primary campaign is one of the dedicated Outreach workflow campaigns (“2026 - Outreach … Workflow”); scoped to the selected region and quarter.',
+    calc: 'A deal counts for Outreach when Salesforce records one of the Outreach workflow campaigns as its campaign — the basis CWSI chose on 20 Aug 2026 (“the specific campaign that generated the opportunity, which Salesforce records at the campaign level”), applied on 26 Oct 2026. Each campaign belongs to one workstream (the Secure workflows to Historic Data Reactivation, the SoPro and Microsoft TUM workflows to their own), so opportunities are reported per workstream rather than per sequence or seller. Influenced pipeline = open qualified gross profit + won gross profit; closed-won = won gross profit. Every deal is listed on the Outreach page.',
+    caveat: 'Until 26 Oct 2026 this figure credited any deal where one of the contacts had at some point been emailed by a sequence. That counted renewals and add-ons with existing customers who had been loaded into the sequences, so it overstated Outreach several times over (65 deals in 2026 against 2 on this basis). A deal only counts here if it is linked to an Outreach campaign in Salesforce, so a deal the outreach helped win but that carries another campaign will not show — that is a Salesforce data-entry question rather than a dashboard one.',
   },
   marketingSpend: {
     label: 'Marketing Spend (actual)',
@@ -291,14 +291,14 @@ export const METHODOLOGY = {
   },
   outreachMeetings: {
     label: 'Meetings booked (Outreach-attributed)',
-    what: 'Salesforce meetings that the outreach can reasonably be said to have produced — the person was actually emailed, and the meeting happened after the outreach began.',
+    what: 'Salesforce meetings that the outreach can reasonably be said to have produced — the person replied to the outreach and met soon after.',
     source: 'Salesforce meetings (Event, Type = Meeting) joined to Outreach prospects on the contact’s email address, then to the sequence that emailed them.',
     calc:
-      'TWO CONDITIONS, both required, adopted at CWSI’s request on 20 Aug 2026. (1) The person was ACTUALLY EMAILED — at least one email landed and did not bounce; someone sitting unworked in a sequence’s queue cannot claim credit. (2) The meeting took place ON OR AFTER the date that person was first worked; a meeting that predates the outreach cannot have been caused by it. Where someone sits on several sequences the test passes if ANY of them had emailed them before the meeting, so a sequence added later never disqualifies a meeting an earlier one earned.\n\n' +
-      'MEETINGS ARE COUNTED, NOT ATTENDEES. Salesforce writes one Event record per person invited, each with its own record ID, so a meeting with three attendees appears three times. Meetings are identified by subject + date, with “Following:”, “RE:” and “FW:” stripped because Outlook adds those to the same booking. Counting records rather than meetings inflated this figure by roughly double before it was corrected on 24 Aug 2026.',
+      'FOUR CONDITIONS, all required (tightened 26 Oct 2026 after CWSI pointed out meetings that could never have come from Outreach). (1) The person was EMAILED by the sequence — at least one email landed and did not bounce. (2) They REPLIED to the outreach. (3) The meeting took place between the first email and 90 DAYS AFTER THE REPLY. (4) CWSI had NO MEETING with that person before the outreach began — otherwise it is an existing customer or project relationship the outreach did not create. Where someone sits on several sequences the test passes if any one of them meets all four.\n\n' +
+      'A note on replies: the sales engagement platform stamps a reply date when a prospect answers ANY email, including a seller’s ordinary one-to-one mail, and then closes the sequence. A reply date on someone the sequence never emailed is therefore not counted as a reply to the outreach.\n\n' +
+      'MEETINGS ARE COUNTED, NOT ATTENDEES. Salesforce writes one Event record per person invited, so a meeting with three attendees appears three times. Meetings are identified by subject + date, with “Following:”, “RE:” and “FW:” stripped because Outlook adds those to the same booking.',
     caveat:
-      'THIS DIFFERS DELIBERATELY FROM THE ALL-TIME OUTREACH PROGRAMME REPORT, and both are right. That report applies only the first condition — the person was emailed — and states plainly that its figure “indicates influence, not attribution”. On the same data it shows 16 where this page shows 3: the 13 in between are meetings with people we had emailed, but which took place BEFORE the outreach started — continuations of existing relationships. This page reports the narrower, causal question because the figure sits beside opportunities and closed-won, where it reads as credit.\n\n' +
-      'The match is email-based, so coverage is partial: a contact who used a different address in Outreach than in Salesforce will not match. And note that none of the currently attributed meetings involved a reply to the sequence, so even these should be read as indicative rather than outreach-generated — the reply figure is the stronger signal of interest.',
+      'This differs deliberately from the all-time Outreach programme report, which counts any meeting with someone who was emailed and says its figure “indicates influence, not attribution”. Until 26 Oct 2026 this page used conditions (1) and the meeting-after-first-email test only, which credited delivery and account meetings with existing customers (findings presentations, project kick-offs) because those people had been loaded into a sequence. The match is email-based, so a contact who used a different address in the two systems will not match.',
   },
 }
 
